@@ -166,80 +166,128 @@ Each user has a single memory profile stored as a JSON document. Here is the ful
 
 ---
 
+## Database Schema: memory_facts
+
+Extracted facts are stored in PostgreSQL with pgvector for semantic search. The `memory_facts` table:
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `id` | UUID | Primary key |
+| `userId` | UUID | References user |
+| `content` | TEXT | The fact itself |
+| `category` | ENUM | One of the 7 memory categories |
+| `importance` | REAL | 0.0–1.0, assigned during extraction |
+| `confidence` | REAL | 0.0–1.0, extraction certainty |
+| `temporal` | BOOLEAN | Whether the fact has a time component |
+| `entities` | JSONB | Names, places, events mentioned |
+| `emotion` | TEXT | Emotion if relevant |
+| `embedding` | VECTOR(1024) | Voyage AI embedding for semantic search |
+| `sourceConversationId` | UUID | Conversation the fact was extracted from |
+| `sourceDate` | TIMESTAMP | When the source conversation occurred |
+| `lastAccessedAt` | TIMESTAMP | Last time this fact was retrieved |
+| `createdAt` | TIMESTAMP | When the fact was stored |
+
+**Indexes:**
+- **HNSW** on `embedding` (vector cosine distance) — for fast semantic similarity search
+- **GIN** on `to_tsvector('english', content)` — for full-text search
+- **B-tree** on `(userId, category)` — for user-scoped category filtering
+
+---
+
+## Hybrid Retrieval
+
+Memory retrieval uses a **single SQL query** that combines four scoring signals into a weighted hybrid score. Implemented in `apps/api/src/services/retrieval.ts`.
+
+### Scoring Components
+
+| Signal | Weight | Description |
+|--------|--------|-------------|
+| **Semantic similarity** | 40% | pgvector cosine distance between query embedding and fact embedding. `(1 - (embedding <=> query_embedding))` maps distance to similarity (0–1). |
+| **Full-text matching** | 20% | PostgreSQL `ts_rank` on `to_tsvector(content)` vs `to_tsquery(keywords)`. Catches exact phrase and keyword matches. |
+| **Recency decay** | 25% | Exponential decay with ~14-day half-life: `EXP(-0.05 * days_since_created)`. Recent facts rank higher. |
+| **Importance** | 15% | Value assigned during extraction (0–1). Life events, relationships, health issues get higher importance. |
+
+### Simplified SQL Query
+
+```sql
+SELECT
+  id, content, category, importance, created_at,
+  (
+    (1 - (embedding <=> $query_embedding::vector)) * 0.4
+    + COALESCE(ts_rank(to_tsvector('english', content), to_tsquery('english', $keywords), 32), 0) * 0.2
+    + EXP(-0.05 * EXTRACT(EPOCH FROM (NOW() - created_at)) / 86400) * 0.25
+    + importance * 0.15
+  ) AS hybrid_score
+FROM memory_facts
+WHERE user_id = $userId
+  AND embedding IS NOT NULL
+ORDER BY hybrid_score DESC
+LIMIT 10;
+```
+
+The query is executed via Drizzle's `db.execute()` with parameterized values. Keywords are derived from the user's message (words > 2 chars, joined with `&` for AND semantics).
+
+---
+
 ## How Facts Are Extracted
 
-Memory extraction runs as a nightly batch job at 2:00 AM. Here is the process:
+Memory extraction runs as a nightly batch job at 11:00 PM. Implemented in `apps/api/src/jobs/nightlyExtraction.ts`.
 
 ### Step 1: Gather the Day's Conversations
 
-For each user who had conversations that day, load all messages chronologically.
+For each user who had conversations that day, load all messages chronologically from the `conversations` and `messages` tables.
 
 ### Step 2: Send to Claude for Extraction
 
-The extraction prompt instructs Claude (`claude-sonnet-4-6`) to:
+The extraction logic in `apps/api/src/ai/extraction.ts` calls Claude (`claude-sonnet-4-6`) with the prompt from `apps/api/src/ai/prompts.ts` (`EXTRACTION_SYSTEM_PROMPT`). Claude is instructed to:
 
 1. Read through all messages from the day
 2. Identify any new facts, updates to existing facts, or changes in status
-3. Return structured JSON matching the memory profile schema
-4. Flag any unresolved emotional moments as pending follow-ups
+3. Return structured JSON with `facts`, `followups`, and `profileUpdates`
+4. For each fact: `content`, `category`, `confidence`, `importance`, `updateType`, `entities`, `emotion`, `temporal`
+5. Flag any unresolved emotional moments as pending follow-ups
 
-**Extraction prompt (simplified):**
+### Step 3: Store Facts and Update Profile
 
-```
-You are a memory extraction system for Ally, a personal AI companion.
+- **New facts** (confidence >= 0.7): Inserted into `memory_facts` with embeddings generated via Voyage AI
+- **Updates/Corrections**: Handled by the merge logic in `apps/api/src/services/memory.ts` (`storeExtractedFacts`)
+- **Follow-ups**: Added to `pending_followups` in the memory profile via `addFollowups`
+- **Profile updates**: Applied to the `memory_profiles` JSONB via `updateProfile`
 
-Given the following conversation(s) from today, extract any new or updated
-facts about the user. Return ONLY facts that are explicitly stated or
-strongly implied. Do not infer or assume.
+### Step 4: Embeddings
 
-Categories: personal_info, relationships, work, health, interests, goals,
-emotional_patterns
-
-For each fact, provide:
-- category
-- content (the fact itself)
-- confidence (0.0-1.0, how certain you are this is accurate)
-- update_type: "new" | "update" | "correction"
-
-Also identify any unresolved emotional moments that Ally should follow up on.
-
-Current memory profile:
-{existing_profile}
-
-Today's conversations:
-{messages}
-```
-
-### Step 3: Merge Into Existing Profile
-
-The merge logic follows these rules:
-
-- **New facts** (confidence >= 0.7): Added to the appropriate category
-- **Updates** (confidence >= 0.7): Replace or augment the existing fact
-- **Corrections**: User explicitly corrected something Ally believed. The old fact is replaced.
-- **Low confidence facts** (< 0.7): Stored in a staging area, confirmed on next mention
-- **Contradictions**: If a new fact contradicts an existing one, flag for clarification rather than silently overwriting
-
-### Step 4: Update Follow-ups
-
-- New emotional moments are added to `pending_followups`
-- Follow-ups that were addressed in today's conversations are marked `resolved: true`
-- Resolved follow-ups older than 30 days are archived
+Each stored fact is embedded using Voyage AI (`voyage-3-lite`, 1024 dimensions) and the vector is stored in the `embedding` column for hybrid retrieval.
 
 ---
 
 ## How Memory Is Injected Into Conversations
 
-When a user sends a message, the AI layer builds the full context for Claude:
+When a user sends a message via the Elysia API (`apps/api/src/routes/chat.ts`), the AI layer builds context using a **3-tier memory system**:
 
 ```
 [System Prompt - Ally's personality]
-[Memory Context Block]
-[Recent Conversation History]
+[Hot Memory - Structured profile, always loaded]
+[Cold Memory - Retrieved facts via hybrid search]
+[Warm Memory - Recent conversation history]
 [User's New Message]
 ```
 
-The **Memory Context Block** is assembled by `ai/utils/context_builder.py`:
+### Tier 1: Hot Memory
+
+The structured memory profile (JSONB in `memory_profiles`) is always loaded. It includes:
+- `personal_info`, `relationships`, `work`, `health`, `interests`, `goals`, `emotional_patterns`, `pending_followups`
+
+Assembled by `apps/api/src/ai/prompts.ts` (`buildAllySystemPrompt`).
+
+### Tier 2: Warm Memory
+
+The last 20 messages from the current conversation. Loaded by `loadRecentHistory()` in `apps/api/src/services/retrieval.ts`.
+
+### Tier 3: Cold Memory
+
+Facts retrieved via **hybrid retrieval** from `memory_facts`. The user's message is used as the query; `retrieveRelevantFacts()` returns the top 8 facts by hybrid score. These are injected as "Additional relevant memories" in the system prompt.
+
+**Memory Context Block structure:**
 
 ```
 Here is what you remember about {preferred_name}:
@@ -251,10 +299,6 @@ Here is what you remember about {preferred_name}:
 
 **Work:** {work summary}
 
-**Health & Wellness:** {health summary}
-
-**Interests:** {interests list}
-
 **Active Goals:**
 {formatted goals with status}
 
@@ -263,16 +307,23 @@ Here is what you remember about {preferred_name}:
 
 **Things to follow up on:**
 {pending_followups, ordered by priority}
+
+**Additional relevant memories:**
+- [category] {content}  (from cold memory / hybrid retrieval)
 ```
 
-### Context Window Management
+---
 
-The memory profile is injected in full for users with smaller profiles. For users with large profiles (after months of use), the system applies relevance filtering:
+## Context Window Management
 
-1. **Always include:** `personal_info`, `pending_followups`, active `goals`
-2. **Include if relevant:** Facts from categories that match keywords in the current message (e.g., if the user mentions "work," include the full `work` section)
-3. **Summarize:** Categories not relevant to the current conversation are condensed to one-line summaries
-4. **Token budget:** Memory context is capped at 2000 tokens to leave room for conversation history and response
+The retrieval pipeline manages context size:
+
+1. **Hot memory** is always included (profile size varies; typically compact)
+2. **Cold memory** is capped at 8 facts per request (configurable `limit` in `retrieveRelevantFacts`)
+3. **Warm memory** is capped at 20 recent messages
+4. **Token budget**: Memory context is designed to stay within ~2000 tokens to leave room for conversation history and response
+
+Hybrid retrieval ensures that the 8 facts included are the most relevant: semantically similar to the message, keyword-matched, recent, and important. No full-profile loading — only the most pertinent facts are injected.
 
 ---
 
@@ -280,9 +331,9 @@ The memory profile is injected in full for users with smaller profiles. For user
 
 ### User Control
 
-- Users can view everything Ally remembers about them via `GET /api/memory/profile`
-- Users can delete individual facts via `DELETE /api/memory/facts/:id`
-- Users can delete their entire memory profile via `DELETE /api/memory/profile`
+- Users can view everything Ally remembers about them via `GET /api/v1/memory/profile`
+- Users can delete individual facts via `DELETE /api/v1/memory/facts/:id`
+- Users can delete their entire memory profile via `DELETE /api/v1/memory/profile`
 - Deletion is permanent and irreversible
 
 ### Data Handling
@@ -307,59 +358,42 @@ The memory profile is injected in full for users with smaller profiles. For user
 
 - Memory profiles are encrypted at rest in the database (handled by mobile team's DB configuration)
 - All API communication is over HTTPS
-- Memory data in transit between Node backend and Python AI layer stays on localhost (never leaves the server)
+- Memory data in transit stays on the server (Elysia backend is all-TypeScript; no cross-process transfer)
 
 ---
 
 ## Scaling Considerations
 
-### Phase 1: File-Based / Single JSON Document (MVP)
+### Phase 1: PostgreSQL + pgvector (Current)
 
-Current approach. Each user's memory profile is a single JSON document stored in a `JSONB` column in PostgreSQL.
+Current approach. Facts are stored in `memory_facts` with pgvector embeddings. Hybrid retrieval runs in a single SQL query using HNSW (vector), GIN (full-text), and B-tree (user+category) indexes.
 
 **Pros:**
-- Simple to implement and query
-- Easy to load the full profile in one read
-- PostgreSQL JSONB supports indexing for specific fields
+- Single database, no separate vector store
+- Hybrid scoring in one query
+- Good for thousands of users and hundreds of facts per user
 
 **Cons:**
-- Full profile must be loaded every time (no partial reads)
-- Large profiles may slow down context building
-- No semantic search capability
+- HNSW index tuning may be needed at scale
+- Embedding generation adds latency to extraction
 
-**Works well for:** Up to ~10,000 users, profiles under 50KB
+**Works well for:** Up to ~50,000 users, profiles with hundreds of facts
 
-### Phase 2: Structured Tables
+### Phase 2: Tune HNSW + Redis Caching
 
-Split the memory profile into normalized tables:
+- Tune HNSW index parameters (`m`, `ef_construction`) for better recall/latency tradeoff
+- Cache hot facts (e.g., top 50 per user) in Redis to reduce DB load for frequent chatters
+- Consider materialized views for common retrieval patterns
 
-```
-memory_facts
-  id          UUID
-  user_id     UUID
-  category    TEXT
-  content     TEXT
-  confidence  FLOAT
-  source_date DATE
-  metadata    JSONB
-  created_at  TIMESTAMP
-  updated_at  TIMESTAMP
-```
+**When to migrate:** Query latency exceeds 100ms, or DB CPU from vector search becomes a bottleneck.
 
-**Pros:**
-- Query individual facts efficiently
-- Category-level filtering without loading full profile
-- Better for analytics and reporting
+### Phase 3: Dedicated Vector DB (Qdrant)
 
-**When to migrate:** Profile sizes regularly exceed 50KB, or you need category-level queries for features like the weekly insights report.
+Offload vector search to a dedicated store (e.g., Qdrant) while keeping PostgreSQL for metadata, full-text, and transactional data.
 
-### Phase 3: Vector Database
+**How it would work:**
+- Sync embeddings to Qdrant on fact insert/update
+- Run vector search in Qdrant, join with PostgreSQL for importance/recency/full-text
+- Or: use Qdrant's payload filtering for hybrid-like scoring
 
-Add a vector store (e.g., Pinecone, pgvector) for semantic memory retrieval.
-
-**How it works:**
-- Each fact is embedded and stored as a vector
-- When the user sends a message, the message is embedded and the most semantically relevant facts are retrieved
-- Replaces keyword-based relevance filtering with true semantic matching
-
-**When to migrate:** Users have 500+ facts and the keyword-based relevance filtering starts missing important context, or when response quality degrades due to context window limitations.
+**When to migrate:** Millions of facts, or when pgvector limits are hit (e.g., index rebuild time, memory).

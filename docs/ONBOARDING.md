@@ -18,8 +18,8 @@ This sets the tone for the entire relationship. By letting users introduce thems
 - An immediate sense of being heard as a person, not a form entry
 
 **What gets extracted:**
-- `personal_info.preferred_name`
-- `personal_info.full_name` (if provided)
+- `personalInfo.preferredName`
+- `personalInfo.fullName` (if provided)
 - Initial tone calibration (casual vs. formal based on their style)
 
 ---
@@ -33,11 +33,11 @@ This sets the tone for the entire relationship. By letting users introduce thems
 Gives Ally a baseline understanding of who this person is today. Without this, Ally would need several conversations to piece together basic context. With it, the first real conversation can already reference their world.
 
 **What gets extracted:**
-- `personal_info.location`
-- `personal_info.living_situation`
-- `work.role`, `work.company_type`
+- `personalInfo.location`
+- `personalInfo.livingSituation`
+- `work.role`, `work.companyType`
 - `relationships` (partner, roommates, pets mentioned)
-- Any other relevant `personal_info`
+- Any other relevant `personalInfo`
 
 ---
 
@@ -51,9 +51,9 @@ Identifies what the user is most likely to want to talk about in their first few
 
 **What gets extracted:**
 - `goals` (with status "active")
-- `work.current_projects` or `work.current_goals`
-- `emotional_patterns.primary_stressors` (if stress-related)
-- `pending_followups` (things to proactively ask about)
+- `work.currentProjects` or `work.currentGoals`
+- `emotionalPatterns.primaryStressors` (if stress-related)
+- `pendingFollowups` (things to proactively ask about)
 
 ---
 
@@ -70,10 +70,10 @@ This is the emotional intelligence question. It tells Ally:
 - How to calibrate emotional responses from day one
 
 **What gets extracted:**
-- `emotional_patterns.primary_stressors`
-- `emotional_patterns.coping_mechanisms`
+- `emotionalPatterns.primaryStressors`
+- `emotionalPatterns.copingMechanisms`
 - `relationships` (support people mentioned)
-- `emotional_patterns.sensitivities` (if any sensitive topics surface)
+- `emotionalPatterns.sensitivities` (if any sensitive topics surface)
 
 ---
 
@@ -99,48 +99,20 @@ Directly shapes how Ally behaves. A user who says "I want accountability" will g
 
 ### Step 1: User Completes All 5 Questions
 
-The mobile app collects all 5 answers and sends them as a single `POST /api/onboarding` request. The questions are presented one at a time in the app with a conversational, low-pressure UI (not a form).
+The mobile app collects all 5 answers and sends them as a single `POST /api/v1/onboarding` request. The questions are presented one at a time in the app with a conversational, low-pressure UI (not a form).
 
 ### Step 2: AI Processing
 
-The backend sends the answers to `ai/onboarding.py`, which calls Claude (`claude-sonnet-4-6`) with this prompt:
+The backend sends the answers to `apps/api/src/ai/onboarding.ts`, which calls Claude (`claude-sonnet-4-6`) via the Anthropic TypeScript SDK. The system prompt instructs Claude to:
 
-```
-You are building the initial memory profile for Ally, a personal AI
-companion. The user just completed onboarding. Based on their answers,
-create a structured memory profile and a warm, personalized first greeting.
+1. Create a structured memory profile from the answers
+2. Write a warm, personalized first greeting (2-3 sentences) that shows Ally was listening
 
-The greeting should:
-- Use their preferred name
-- Reference something specific they shared
-- Feel like a natural response, not a summary
-- End with a question that opens up conversation
-- Be 3-5 sentences, warm but not gushing
-
-Onboarding answers:
-1. Name/greeting: {answer_1}
-2. Life context: {answer_2}
-3. Current focus: {answer_3}
-4. Stress/support: {answer_4}
-5. Expectations: {answer_5}
-
-Return JSON with:
-{
-  "memory_profile": { ... full profile schema ... },
-  "greeting": "string",
-  "behavior_config": {
-    "proactive_checkins": true/false,
-    "goal_tracking_emphasis": "high/medium/low",
-    "emotional_support_emphasis": "high/medium/low",
-    "advice_giving": "active/only_when_asked"
-  }
-}
-```
+The prompt and response format are defined in `apps/api/src/ai/prompts.ts`.
 
 ### Step 3: Store and Respond
 
-- The memory profile is saved to the database
-- The behavior config is stored alongside the profile
+- The memory profile is saved to the `memory_profiles` table (PostgreSQL JSONB)
 - The greeting is returned to the mobile app
 - The mobile app displays the greeting as Ally's first message in the chat interface
 
@@ -190,17 +162,17 @@ Present the 5 questions sequentially and collect responses as strings.
 ### 2. Submit Onboarding
 
 ```http
-POST /v1/api/onboarding
+POST /api/v1/onboarding
 Authorization: Bearer <jwt>
 Content-Type: application/json
 
 {
   "answers": {
-    "name_and_greeting": "I'm Sarah, you can call me Sar",
-    "life_context": "Product manager at a startup in Austin. I live with my partner Alex and our dog Benny.",
-    "current_focus": "Trying to get promoted this quarter. Also training for a half marathon in June.",
-    "stress_and_support": "Work deadlines make me spiral. I usually call my best friend Maya or go for a run.",
-    "ally_expectations": "I want someone to check in on me and hold me accountable for my goals. And just someone to talk to on rough days."
+    "nameAndGreeting": "I'm Sarah, you can call me Sar",
+    "lifeContext": "Product manager at a startup in Austin. I live with my partner Alex and our dog Benny.",
+    "currentFocus": "Trying to get promoted this quarter. Also training for a half marathon in June.",
+    "stressAndSupport": "Work deadlines make me spiral. I usually call my best friend Maya or go for a run.",
+    "allyExpectations": "I want someone to check in on me and hold me accountable for my goals. And just someone to talk to on rough days."
   }
 }
 ```
@@ -210,7 +182,7 @@ Content-Type: application/json
 ```json
 {
   "greeting": "Hey Sar! Really glad to meet you. Sounds like you've got an exciting few months ahead -- chasing a promotion AND a half marathon is no joke. I love that you've got Maya and your runs as your go-to pressure valves. I'm here to keep you on track and be another one of those outlets. So tell me -- how's the training going? Are you following a specific plan?",
-  "memory_profile_created": true
+  "memoryProfileCreated": true
 }
 ```
 

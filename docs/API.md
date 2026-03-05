@@ -1,6 +1,6 @@
 # Ally API Documentation
 
-Base URL: `https://api.ally-app.com/v1` (production) | `http://localhost:3000/v1` (local)
+Base URL: `https://api.ally-app.com/api/v1` (production) | `http://localhost:3000/api/v1` (local)
 
 All endpoints require authentication unless noted otherwise.
 
@@ -21,7 +21,7 @@ Authorization: Bearer <jwt_token>
   "sub": "user-uuid-here",
   "email": "user@example.com",
   "tier": "pro",
-  "trial_ends_at": "2026-04-01T00:00:00Z",
+  "trialEndsAt": "2026-04-01T00:00:00Z",
   "iat": 1709500000,
   "exp": 1709586400
 }
@@ -50,13 +50,13 @@ All errors follow a consistent format:
 | Code                     | Status | Description                                      |
 |--------------------------|--------|--------------------------------------------------|
 | `UNAUTHORIZED`           | 401    | Missing or invalid JWT                           |
-| `TOKEN_EXPIRED`          | 401    | JWT has expired, client should refresh            |
-| `FORBIDDEN`              | 403    | User's tier does not allow this feature           |
-| `NOT_FOUND`              | 404    | Requested resource does not exist                 |
-| `RATE_LIMIT_EXCEEDED`    | 429    | Daily message limit reached for user's tier       |
-| `VALIDATION_ERROR`       | 422    | Request body failed validation                    |
-| `AI_UNAVAILABLE`         | 503    | Claude API is down or timed out                   |
-| `INTERNAL_ERROR`         | 500    | Unexpected server error                           |
+| `TOKEN_EXPIRED`          | 401    | JWT has expired, client should refresh           |
+| `FORBIDDEN`              | 403    | User's tier does not allow this feature          |
+| `NOT_FOUND`              | 404    | Requested resource does not exist                |
+| `RATE_LIMIT_EXCEEDED`    | 429    | Daily message limit reached for user's tier      |
+| `VALIDATION_ERROR`       | 422    | Request body failed validation                   |
+| `AI_UNAVAILABLE`         | 503    | Claude API is down or timed out                  |
+| `INTERNAL_ERROR`         | 500    | Unexpected server error                          |
 
 ---
 
@@ -83,55 +83,106 @@ X-RateLimit-Reset: 1709600000
 
 ## Endpoints
 
-### POST /api/chat
+### GET /api/v1/health
 
-Send a message to Ally and receive a response.
+Health check. No authentication required.
+
+**Response (200):**
+
+```json
+{
+  "status": "ok",
+  "version": "1.0.0",
+  "uptime": 86400
+}
+```
+
+**Example:**
+
+```bash
+curl http://localhost:3000/api/v1/health
+```
+
+---
+
+### POST /api/v1/chat
+
+Send a message to Ally and receive a response. Supports both synchronous (JSON) and streaming (SSE) modes.
 
 **Request:**
 
 ```json
 {
   "message": "I had a really tough day at work today.",
-  "conversation_id": "conv-uuid-here"
+  "conversationId": "conv-uuid-here",
+  "stream": false
 }
 ```
 
-| Field             | Type   | Required | Description                                            |
-|-------------------|--------|----------|--------------------------------------------------------|
-| `message`         | string | Yes      | The user's message (max 4000 characters)               |
-| `conversation_id` | string | No       | Existing conversation ID. Omit to start a new one.     |
+| Field             | Type    | Required | Description                                            |
+|-------------------|---------|----------|--------------------------------------------------------|
+| `message`         | string  | Yes      | The user's message (max 4000 characters)               |
+| `conversationId`  | string  | No       | Existing conversation ID. Omit to start a new one.     |
+| `stream`          | boolean | No       | If `true`, returns SSE stream instead of JSON. Default `false`. |
 
-**Response (200):**
+#### Synchronous Response (200)
 
 ```json
 {
   "response": "I'm sorry to hear that. You mentioned last week that the project deadline was stressing you out -- is that what made today tough, or was it something new?",
-  "conversation_id": "conv-uuid-here",
-  "message_id": "msg-uuid-here"
+  "conversationId": "conv-uuid-here",
+  "messageId": "msg-uuid-here"
 }
 ```
 
 | Field             | Type   | Description                                |
 |-------------------|--------|--------------------------------------------|
 | `response`        | string | Ally's response message                    |
-| `conversation_id` | string | Conversation ID (new or existing)          |
-| `message_id`      | string | Unique ID for Ally's response message      |
+| `conversationId`  | string | Conversation ID (new or existing)          |
+| `messageId`       | string | Unique ID for Ally's response message      |
 
-**Example:**
+#### Streaming Response (SSE)
+
+When `stream: true`, returns `text/event-stream` with the following event types:
+
+```
+data: {"type":"token","content":"I'm"}
+
+data: {"type":"token","content":" sorry"}
+
+data: {"type":"token","content":" to hear"}
+
+data: {"type":"done","conversationId":"conv-uuid","messageId":"msg-uuid","fullResponse":"I'm sorry to hear..."}
+```
+
+| Event Type | Fields | Description |
+|-----------|--------|-------------|
+| `token`   | `content` | Individual text token as it's generated |
+| `done`    | `conversationId`, `messageId`, `fullResponse` | Final event with complete metadata |
+| `error`   | `message` | Sent if streaming fails mid-response |
+
+**Examples:**
 
 ```bash
-curl -X POST http://localhost:3000/v1/api/chat \
+# Synchronous
+curl -X POST http://localhost:3000/api/v1/chat \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
     "message": "I had a really tough day at work today.",
-    "conversation_id": "550e8400-e29b-41d4-a716-446655440000"
+    "conversationId": "550e8400-e29b-41d4-a716-446655440000"
   }'
+
+# Streaming
+curl -X POST http://localhost:3000/api/v1/chat \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"message": "How are you?", "stream": true}'
 ```
 
 ---
 
-### POST /api/onboarding
+### POST /api/v1/onboarding
 
 Submit onboarding answers to create an initial memory profile and receive Ally's first personalized greeting.
 
@@ -140,54 +191,54 @@ Submit onboarding answers to create an initial memory profile and receive Ally's
 ```json
 {
   "answers": {
-    "name_and_greeting": "I'm Sarah, you can call me Sar",
-    "life_context": "I'm a product manager at a startup. Living in Austin with my partner and our dog.",
-    "current_focus": "Trying to get promoted this quarter and also training for a half marathon.",
-    "stress_and_support": "Work deadlines stress me out the most. I usually vent to my best friend Maya.",
-    "ally_expectations": "I want someone to check in on me and help me stay on track with my goals."
+    "nameAndGreeting": "I'm Sarah, you can call me Sar",
+    "lifeContext": "I'm a product manager at a startup. Living in Austin with my partner and our dog.",
+    "currentFocus": "Trying to get promoted this quarter and also training for a half marathon.",
+    "stressAndSupport": "Work deadlines stress me out the most. I usually vent to my best friend Maya.",
+    "allyExpectations": "I want someone to check in on me and help me stay on track with my goals."
   }
 }
 ```
 
-| Field                        | Type   | Required | Description                                    |
-|------------------------------|--------|----------|------------------------------------------------|
-| `answers.name_and_greeting`  | string | Yes      | How user wants to be addressed                 |
-| `answers.life_context`       | string | Yes      | Basic life situation                           |
-| `answers.current_focus`      | string | Yes      | What they're focused on right now              |
-| `answers.stress_and_support` | string | Yes      | Stress sources and coping mechanisms           |
-| `answers.ally_expectations`  | string | Yes      | What they want from Ally                       |
+| Field                     | Type   | Required | Description                                    |
+|---------------------------|--------|----------|------------------------------------------------|
+| `answers.nameAndGreeting` | string | Yes      | How user wants to be addressed                 |
+| `answers.lifeContext`     | string | Yes      | Basic life situation                           |
+| `answers.currentFocus`    | string | Yes      | What they're focused on right now              |
+| `answers.stressAndSupport`| string | Yes      | Stress sources and coping mechanisms           |
+| `answers.allyExpectations`| string | Yes      | What they want from Ally                       |
 
 **Response (201):**
 
 ```json
 {
   "greeting": "Hey Sar! I'm really glad to meet you. It sounds like you've got a lot of exciting things going on -- a promotion push AND a half marathon? That's impressive. I'll be here whenever you need to talk through the work stress or celebrate a good training run. And I'll definitely check in to make sure you're staying on track. How's the marathon training going so far?",
-  "memory_profile_created": true
+  "memoryProfileCreated": true
 }
 ```
 
 **Example:**
 
 ```bash
-curl -X POST http://localhost:3000/v1/api/onboarding \
+curl -X POST http://localhost:3000/api/v1/onboarding \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
     "answers": {
-      "name_and_greeting": "I'\''m Sarah, you can call me Sar",
-      "life_context": "Product manager at a startup in Austin.",
-      "current_focus": "Getting promoted and training for a half marathon.",
-      "stress_and_support": "Work deadlines. I vent to my friend Maya.",
-      "ally_expectations": "Check in on me and help me stay on track."
+      "nameAndGreeting": "I'\''m Sarah, you can call me Sar",
+      "lifeContext": "Product manager at a startup in Austin.",
+      "currentFocus": "Getting promoted and training for a half marathon.",
+      "stressAndSupport": "Work deadlines. I vent to my friend Maya.",
+      "allyExpectations": "Check in on me and help me stay on track."
     }
   }'
 ```
 
 ---
 
-### GET /api/briefing
+### GET /api/v1/briefing
 
-Retrieve the user's morning briefing for today.
+Retrieve the user's morning briefing for a given date.
 
 **Query Parameters:**
 
@@ -204,27 +255,29 @@ Retrieve the user's morning briefing for today.
     "date": "2026-03-04",
     "content": "Good morning, Sar! Here's what's on my mind for you today:\n\nYou mentioned yesterday that your big presentation is this afternoon -- you've been prepping hard and I know you're going to nail it. Remember that breathing technique we talked about if the nerves kick in.\n\nAlso, it's Day 3 of your half marathon training plan. Today's supposed to be an easy 3-mile run. The weather in Austin looks perfect for it -- 65 and sunny.\n\nOne more thing: you said you'd call your mom this week. Maybe tonight after the presentation? You'll probably have good news to share.\n\nHave a great day. I'm here if you need me.",
     "delivered": true,
-    "created_at": "2026-03-04T05:00:00Z"
+    "createdAt": "2026-03-04T05:00:00Z"
   }
 }
 ```
+
+Returns `{ "briefing": null }` if no briefing exists for the requested date.
 
 **Tier restriction:** Pro and Premium only. Returns 403 for Free Trial and Basic users.
 
 **Example:**
 
 ```bash
-curl http://localhost:3000/v1/api/briefing \
+curl http://localhost:3000/api/v1/briefing \
   -H "Authorization: Bearer $TOKEN"
 
 # Specific date
-curl "http://localhost:3000/v1/api/briefing?date=2026-03-03" \
+curl "http://localhost:3000/api/v1/briefing?date=2026-03-03" \
   -H "Authorization: Bearer $TOKEN"
 ```
 
 ---
 
-### GET /api/briefing/history
+### GET /api/v1/briefing/history
 
 Retrieve past briefings.
 
@@ -245,17 +298,16 @@ Retrieve past briefings.
       "date": "2026-03-04",
       "content": "Good morning, Sar! ...",
       "delivered": true,
-      "created_at": "2026-03-04T05:00:00Z"
+      "createdAt": "2026-03-04T05:00:00Z"
     },
     {
       "id": "brief-uuid-2",
       "date": "2026-03-03",
       "content": "Hey Sar, happy Monday! ...",
       "delivered": true,
-      "created_at": "2026-03-03T05:00:00Z"
+      "createdAt": "2026-03-03T05:00:00Z"
     }
   ],
-  "total": 28,
   "limit": 7,
   "offset": 0
 }
@@ -266,13 +318,13 @@ Retrieve past briefings.
 **Example:**
 
 ```bash
-curl "http://localhost:3000/v1/api/briefing/history?limit=5&offset=0" \
+curl "http://localhost:3000/api/v1/briefing/history?limit=5&offset=0" \
   -H "Authorization: Bearer $TOKEN"
 ```
 
 ---
 
-### GET /api/memory/profile
+### GET /api/v1/memory/profile
 
 Retrieve the user's memory profile (what Ally remembers about them).
 
@@ -281,12 +333,12 @@ Retrieve the user's memory profile (what Ally remembers about them).
 ```json
 {
   "profile": {
-    "user_id": "user-uuid-here",
-    "personal_info": {
-      "preferred_name": "Sar",
-      "full_name": "Sarah",
+    "userId": "user-uuid-here",
+    "personalInfo": {
+      "preferredName": "Sar",
+      "fullName": "Sarah",
       "location": "Austin, TX",
-      "living_situation": "Lives with partner and dog"
+      "livingSituation": "Lives with partner and dog"
     },
     "relationships": [
       {
@@ -302,13 +354,13 @@ Retrieve the user's memory profile (what Ally remembers about them).
     ],
     "work": {
       "role": "Product Manager",
-      "company_type": "Startup",
-      "current_goals": ["Get promoted this quarter"],
+      "companyType": "Startup",
+      "currentGoals": ["Get promoted this quarter"],
       "stressors": ["Project deadlines"]
     },
     "health": {
-      "fitness_goals": ["Training for half marathon"],
-      "current_routine": "Following a training plan"
+      "fitnessGoals": ["Training for half marathon"],
+      "currentRoutine": "Following a training plan"
     },
     "interests": [],
     "goals": [
@@ -323,26 +375,28 @@ Retrieve the user's memory profile (what Ally remembers about them).
         "status": "active"
       }
     ],
-    "emotional_patterns": {
-      "primary_stressors": ["Work deadlines"],
-      "coping_mechanisms": ["Talking to Maya"],
-      "mood_trends": []
+    "emotionalPatterns": {
+      "primaryStressors": ["Work deadlines"],
+      "copingMechanisms": ["Talking to Maya"],
+      "moodTrends": []
     },
-    "updated_at": "2026-03-04T02:15:00Z"
+    "updatedAt": "2026-03-04T02:15:00Z"
   }
 }
 ```
 
+Returns `{ "profile": null }` if no memory profile exists.
+
 **Example:**
 
 ```bash
-curl http://localhost:3000/v1/api/memory/profile \
+curl http://localhost:3000/api/v1/memory/profile \
   -H "Authorization: Bearer $TOKEN"
 ```
 
 ---
 
-### DELETE /api/memory/profile
+### DELETE /api/v1/memory/profile
 
 Delete the user's entire memory profile. This is irreversible.
 
@@ -358,13 +412,13 @@ Delete the user's entire memory profile. This is irreversible.
 **Example:**
 
 ```bash
-curl -X DELETE http://localhost:3000/v1/api/memory/profile \
+curl -X DELETE http://localhost:3000/api/v1/memory/profile \
   -H "Authorization: Bearer $TOKEN"
 ```
 
 ---
 
-### GET /api/memory/facts
+### GET /api/v1/memory/facts
 
 List individual facts Ally has stored, with optional filtering.
 
@@ -372,7 +426,7 @@ List individual facts Ally has stored, with optional filtering.
 
 | Param      | Type   | Required | Description                                                     |
 |------------|--------|----------|-----------------------------------------------------------------|
-| `category` | string | No       | Filter by category (personal_info, relationships, work, etc.)   |
+| `category` | string | No       | Filter by category (personalInfo, relationships, work, etc.)    |
 | `limit`    | number | No       | Number of facts to return (default 20, max 100)                 |
 | `offset`   | number | No       | Pagination offset (default 0)                                   |
 
@@ -385,14 +439,14 @@ List individual facts Ally has stored, with optional filtering.
       "id": "fact-uuid-1",
       "category": "relationships",
       "content": "Best friend is named Maya",
-      "source_date": "2026-03-01",
+      "sourceDate": "2026-03-01",
       "confidence": 0.95
     },
     {
       "id": "fact-uuid-2",
       "category": "work",
       "content": "Has a big presentation on March 4",
-      "source_date": "2026-03-02",
+      "sourceDate": "2026-03-02",
       "confidence": 0.90
     }
   ],
@@ -405,13 +459,13 @@ List individual facts Ally has stored, with optional filtering.
 **Example:**
 
 ```bash
-curl "http://localhost:3000/v1/api/memory/facts?category=work&limit=10" \
+curl "http://localhost:3000/api/v1/memory/facts?category=work&limit=10" \
   -H "Authorization: Bearer $TOKEN"
 ```
 
 ---
 
-### DELETE /api/memory/facts/:factId
+### DELETE /api/v1/memory/facts/:factId
 
 Delete a specific fact from the user's memory.
 
@@ -420,20 +474,20 @@ Delete a specific fact from the user's memory.
 ```json
 {
   "deleted": true,
-  "fact_id": "fact-uuid-1"
+  "factId": "fact-uuid-1"
 }
 ```
 
 **Example:**
 
 ```bash
-curl -X DELETE http://localhost:3000/v1/api/memory/facts/fact-uuid-1 \
+curl -X DELETE http://localhost:3000/api/v1/memory/facts/fact-uuid-1 \
   -H "Authorization: Bearer $TOKEN"
 ```
 
 ---
 
-### GET /api/conversations
+### GET /api/v1/conversations
 
 List the user's conversations.
 
@@ -442,7 +496,7 @@ List the user's conversations.
 | Param   | Type   | Required | Description                                    |
 |---------|--------|----------|------------------------------------------------|
 | `limit` | number | No       | Number of conversations to return (default 10, max 50) |
-| `offset`| number | No       | Pagination offset (default 0)                  |
+| `offset`| number | No       | Pagination offset (default 0)                   |
 
 **Response (200):**
 
@@ -452,9 +506,9 @@ List the user's conversations.
     {
       "id": "conv-uuid-1",
       "preview": "I had a really tough day at work today...",
-      "message_count": 12,
-      "created_at": "2026-03-04T14:30:00Z",
-      "last_message_at": "2026-03-04T15:45:00Z"
+      "messageCount": 12,
+      "createdAt": "2026-03-04T14:30:00Z",
+      "lastMessageAt": "2026-03-04T15:45:00Z"
     }
   ],
   "total": 23,
@@ -466,13 +520,13 @@ List the user's conversations.
 **Example:**
 
 ```bash
-curl "http://localhost:3000/v1/api/conversations?limit=5" \
+curl "http://localhost:3000/api/v1/conversations?limit=5" \
   -H "Authorization: Bearer $TOKEN"
 ```
 
 ---
 
-### GET /api/conversations/:conversationId
+### GET /api/v1/conversations/:conversationId
 
 Retrieve full message history for a conversation.
 
@@ -481,54 +535,58 @@ Retrieve full message history for a conversation.
 | Param   | Type   | Required | Description                                 |
 |---------|--------|----------|---------------------------------------------|
 | `limit` | number | No       | Number of messages to return (default 50, max 200) |
-| `before`| string | No       | Message ID to paginate before               |
+| `before`| string | No       | Message ID (UUID) to paginate before        |
 
 **Response (200):**
 
 ```json
 {
-  "conversation_id": "conv-uuid-1",
+  "conversationId": "conv-uuid-1",
   "messages": [
     {
       "id": "msg-uuid-1",
       "role": "user",
       "content": "I had a really tough day at work today.",
-      "created_at": "2026-03-04T14:30:00Z"
+      "createdAt": "2026-03-04T14:30:00Z"
     },
     {
       "id": "msg-uuid-2",
       "role": "ally",
       "content": "I'm sorry to hear that. You mentioned last week that the project deadline was stressing you out -- is that what made today tough?",
-      "created_at": "2026-03-04T14:30:05Z"
+      "createdAt": "2026-03-04T14:30:05Z"
     }
   ],
-  "has_more": false
+  "hasMore": false
 }
 ```
 
 **Example:**
 
 ```bash
-curl http://localhost:3000/v1/api/conversations/conv-uuid-1 \
+curl http://localhost:3000/api/v1/conversations/conv-uuid-1 \
+  -H "Authorization: Bearer $TOKEN"
+
+# With pagination
+curl "http://localhost:3000/api/v1/conversations/conv-uuid-1?limit=50&before=msg-uuid-1" \
   -H "Authorization: Bearer $TOKEN"
 ```
 
 ---
 
-### GET /api/insights/weekly
+### GET /api/v1/insights/weekly
 
-Retrieve the user's weekly emotional insight summary. Premium only.
+Retrieve the user's weekly emotional insight summary.
 
 **Response (200):**
 
 ```json
 {
   "insight": {
-    "week_of": "2026-02-24",
+    "weekOf": "2026-02-24",
     "summary": "This was a high-energy week for you, Sar. You talked a lot about the upcoming presentation and I noticed your confidence growing as the week went on. Work stress was your main theme (mentioned in 4 out of 6 conversations), but you balanced it well with your training runs. One thing I want to flag: you mentioned feeling guilty about not calling your mom twice this week. That seems to weigh on you more than you let on.",
-    "mood_trend": "improving",
-    "top_themes": ["work stress", "marathon training", "family guilt"],
-    "follow_up_suggestions": [
+    "moodTrend": "improving",
+    "topThemes": ["work stress", "marathon training", "family guilt"],
+    "followUpSuggestions": [
       "Check in about the presentation outcome",
       "Ask about the call with mom"
     ]
@@ -536,44 +594,22 @@ Retrieve the user's weekly emotional insight summary. Premium only.
 }
 ```
 
+Returns `{ "insight": null, "message": "..." }` when no insight is available (e.g., insufficient data).
+
 **Tier restriction:** Premium only.
 
 **Example:**
 
 ```bash
-curl http://localhost:3000/v1/api/insights/weekly \
+curl http://localhost:3000/api/v1/insights/weekly \
   -H "Authorization: Bearer $TOKEN"
 ```
 
 ---
 
-### GET /api/user/tier
+### GET /api/v1/user/tier
 
-Check the user's current subscription tier and limits.
-
-**Response (200):**
-
-```json
-{
-  "tier": "pro",
-  "messages_today": 12,
-  "messages_limit": null,
-  "features": {
-    "morning_briefings": true,
-    "proactive_followups": false,
-    "weekly_insights": false,
-    "memory_retention_days": null
-  },
-  "trial_ends_at": null
-}
-```
-
-**Example:**
-
-```bash
-curl http://localhost:3000/v1/api/user/tier \
-  -H "Authorization: Bearer $TOKEN"
-```
+> **Not yet implemented.** This endpoint will return the user's current subscription tier and limits. Check back for future updates.
 
 ---
 
@@ -581,7 +617,7 @@ curl http://localhost:3000/v1/api/user/tier \
 
 These endpoints are called by external services, not the mobile app.
 
-### POST /api/webhooks/subscription
+### POST /api/v1/webhooks/subscription
 
 Called by the mobile team's Stripe integration when a user's subscription changes.
 
@@ -589,14 +625,14 @@ Called by the mobile team's Stripe integration when a user's subscription change
 
 ```json
 {
-  "user_id": "user-uuid-here",
+  "userId": "user-uuid-here",
   "event": "subscription_updated",
   "tier": "premium",
-  "effective_at": "2026-03-04T00:00:00Z"
+  "effectiveAt": "2026-03-04T00:00:00Z"
 }
 ```
 
-**Authentication:** Verified via `X-Webhook-Secret` header instead of JWT.
+**Authentication:** Verified via `x-webhook-secret` header instead of JWT.
 
 **Response (200):**
 
@@ -609,37 +645,13 @@ Called by the mobile team's Stripe integration when a user's subscription change
 **Example:**
 
 ```bash
-curl -X POST http://localhost:3000/v1/api/webhooks/subscription \
-  -H "X-Webhook-Secret: $WEBHOOK_SECRET" \
+curl -X POST http://localhost:3000/api/v1/webhooks/subscription \
+  -H "x-webhook-secret: $WEBHOOK_SECRET" \
   -H "Content-Type: application/json" \
   -d '{
-    "user_id": "550e8400-e29b-41d4-a716-446655440000",
+    "userId": "550e8400-e29b-41d4-a716-446655440000",
     "event": "subscription_updated",
     "tier": "premium",
-    "effective_at": "2026-03-04T00:00:00Z"
+    "effectiveAt": "2026-03-04T00:00:00Z"
   }'
-```
-
----
-
-## Health Check
-
-### GET /api/health
-
-No authentication required.
-
-**Response (200):**
-
-```json
-{
-  "status": "ok",
-  "version": "1.0.0",
-  "uptime": 86400
-}
-```
-
-**Example:**
-
-```bash
-curl http://localhost:3000/v1/api/health
 ```

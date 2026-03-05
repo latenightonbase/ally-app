@@ -1,0 +1,49 @@
+{
+  "name": "@ally/mobile",
+  "version": "0.0.0",
+  "private": true,
+  "main": "expo-router/entry",
+  "scripts": {
+    "dev": "expo start",
+    "android": "expo run:android",
+    "ios": "expo run:ios",
+    "web": "expo start --web",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@expo/vector-icons": "^15.1.1",
+    "@react-native-async-storage/async-storage": "2.2.0",
+    "clsx": "^2.1.1",
+    "expo": "~55.0.4",
+    "expo-constants": "~55.0.7",
+    "expo-dev-client": "~55.0.10",
+    "expo-font": "~55.0.4",
+    "expo-gl": "~55.0.9",
+    "expo-haptics": "~55.0.8",
+    "expo-linear-gradient": "~55.0.8",
+    "expo-linking": "~55.0.7",
+    "expo-router": "~55.0.3",
+    "expo-splash-screen": "~55.0.10",
+    "expo-status-bar": "~55.0.4",
+    "moti": "^0.30.0",
+    "nativewind": "^4.2.2",
+    "react": "19.2.0",
+    "react-dom": "19.2.0",
+    "react-native": "0.83.2",
+    "react-native-css-interop": "^0.2.2",
+    "react-native-gesture-handler": "~2.30.0",
+    "react-native-reanimated": "4.2.1",
+    "react-native-safe-area-context": "~5.6.2",
+    "react-native-screens": "~4.23.0",
+    "react-native-web": "^0.21.2",
+    "react-native-webview": "13.16.0",
+    "tailwind-merge": "^3.5.0",
+    "tailwindcss": "^3.4.17",
+    "zustand": "^5.0.11"
+  },
+  "devDependencies": {
+    "@types/react": "~19.2.2",
+    "babel-preset-expo": "^55.0.10",
+    "typescript": "~5.9.2"
+  }
+}

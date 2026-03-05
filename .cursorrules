@@ -1,0 +1,34 @@
+You are working on Ally, a personal AI companion app.
+
+## Stack
+- Bun runtime (NOT Node.js) — use `bun` for all commands
+- Turborepo monorepo with Bun workspaces
+- Elysia backend (apps/api/) — Bun-native, TypeScript only
+- Expo 55 / React Native (apps/mobile/) — NativeWind, Zustand, expo-router
+- PostgreSQL + pgvector via Drizzle ORM
+- Claude claude-sonnet-4-6 via @anthropic-ai/sdk
+- Voyage AI voyage-3-lite for embeddings
+
+## Code Style
+- TypeScript strict mode everywhere
+- ESM only (import/export, never require)
+- No `any` unless interfacing with untyped libraries — prefer `unknown` + narrowing
+- No comments that narrate what code does — only explain non-obvious intent
+- camelCase for variables/functions, PascalCase for types/classes
+- Thin route handlers — business logic in services/ or ai/
+- Shared types go in packages/shared, not duplicated
+
+## Architecture
+- Memory system has 3 tiers: hot (JSONB profile), warm (recent messages), cold (pgvector facts with hybrid retrieval)
+- AI prompts are centralized in apps/api/src/ai/prompts.ts
+- All AI calls go through apps/api/src/ai/client.ts
+- Database schema is in apps/api/src/db/schema.ts (Drizzle)
+- Never modify _legacy/ — it's reference only
+
+## Do NOT
+- Use npm/yarn/npx (use bun/bunx)
+- Add Python code
+- Add Express.js patterns
+- Use CommonJS (require/module.exports)
+- Hardcode secrets
+- Skip type checking (always run tsc --noEmit)

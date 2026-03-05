@@ -7,7 +7,7 @@ Ally is a personal AI companion that remembers everything users share, sends per
 ```
                           +--------------------+
                           |   Mobile App       |
-                          |  (iOS / Android)   |
+                          |  (Expo / RN 0.83)  |
                           |  [Mobile Team]     |
                           +--------+-----------+
                                    |
@@ -15,46 +15,88 @@ Ally is a personal AI companion that remembers everything users share, sends per
                                    |
                           +--------v-----------+
                           |   Backend API      |
-                          |  (Node / Express)  |
+                          |  (Elysia / Bun)    |
                           |  [This Repo]       |
                           +--------+-----------+
                                    |
                     +--------------+--------------+
                     |              |               |
            +-------v---+  +------v------+  +-----v-------+
-           | AI Layer   |  | Cron Jobs   |  | Database    |
-           | (Python +  |  | (Node +     |  | (PostgreSQL)|
-           |  Claude)   |  |  Python)    |  | [Mobile     |
-           | [This Repo]|  | [This Repo] |  |  Team]      |
+           | AI Layer   |  | Background |  | Database    |
+           | (TypeScript|  | Jobs       |  | (PostgreSQL |
+           | + Claude)  |  | (in-process|  | + pgvector) |
+           | [This Repo]|  | [This Repo]|  | [Neon]      |
            +------------+  +-------------+  +-------------+
 ```
+
+## Stack
+
+| Layer        | Technology                                      |
+|--------------|--------------------------------------------------|
+| Runtime      | Bun                                              |
+| Monorepo     | Turborepo with Bun workspaces                    |
+| Frontend     | Expo 55 / React Native 0.83, NativeWind, Zustand, expo-router |
+| Backend      | Elysia (Bun-native), TypeScript                  |
+| Database     | PostgreSQL + pgvector (Neon)                     |
+| ORM          | Drizzle ORM                                      |
+| AI           | Claude claude-sonnet-4-6 via @anthropic-ai/sdk  |
+| Embeddings   | Voyage AI voyage-3-lite (1024 dimensions)        |
+| Auth         | JWT verification (tokens issued by mobile team)  |
+
+All AI logic is implemented in TypeScript. No Python.
+
+---
 
 ## Responsibility Split
 
 ### This Repo Contains
 
-| Component       | Tech Stack      | Purpose                                                  |
-|-----------------|-----------------|----------------------------------------------------------|
-| Backend API     | Node.js/Express | REST endpoints for chat, onboarding, memory, briefings   |
-| AI Layer        | Python + Claude | Conversation handling, memory extraction, briefing gen    |
-| Cron Jobs       | Node + Python   | Nightly memory extraction, morning briefing generation   |
-| Documentation   | Markdown        | Architecture, API docs, memory system, personality guide |
+| Component       | Tech Stack        | Purpose                                                  |
+|-----------------|-------------------|----------------------------------------------------------|
+| Backend API     | Elysia (Bun)      | REST endpoints for chat, onboarding, memory, briefings   |
+| AI Layer        | TypeScript + Claude | Conversation handling, memory extraction, briefing gen  |
+| Background Jobs | TypeScript        | Nightly extraction, daily briefings, weekly insights, re-engagement |
+| Frontend        | Expo / React Native | Mobile app (iOS + Android)                              |
+| Documentation   | Markdown          | Architecture, API docs, memory system, personality guide |
 
 ### Mobile Team Builds
 
 | Component          | Purpose                                                  |
 |--------------------|----------------------------------------------------------|
-| iOS/Android App    | UI, local state, push notification handling              |
-| Database           | PostgreSQL schema, migrations, hosting                   |
+| Database Hosting   | Neon PostgreSQL, schema, migrations                      |
 | Authentication     | JWT issuance, user signup/login, token refresh           |
 | Stripe Integration | Subscription management, tier enforcement                |
 | Push Notifications | APNs/FCM integration, delivery infrastructure           |
 
 ---
 
+## Directory Structure
+
+```
+ally-app/
+├── apps/
+│   ├── mobile/          # Expo React Native (iOS + Android)
+│   └── api/             # Elysia backend (TypeScript)
+│       └── src/
+│           ├── index.ts         # Entry point
+│           ├── routes/          # chat, onboarding, briefing, memory, conversations, insights, webhooks, health
+│           ├── middleware/     # auth (JWT), tierCheck
+│           ├── ai/              # client, conversation, extraction, briefing, followup, onboarding, prompts
+│           ├── services/        # memory, embedding, retrieval (hybrid search)
+│           ├── jobs/            # scheduler, nightlyExtraction, dailyBriefings, weeklyInsights, reengagement
+│           └── db/              # schema (Drizzle + pgvector), migrations
+├── packages/
+│   ├── shared/          # Types, Zod schemas, constants (tiers, errors)
+│   └── tsconfig/        # Shared TS configs (base, node, react-native)
+├── docs/
+└── _legacy/             # Old Node/Express + Python implementation
+```
+
+---
+
 ## Component Breakdown
 
-### 1. Backend API (Node/Express)
+### 1. Backend API (Elysia / Bun)
 
 The central REST API that the mobile app communicates with. Handles request validation, authentication verification, tier enforcement, and routes work to the AI layer.
 
@@ -63,79 +105,79 @@ The central REST API that the mobile app communicates with. Handles request vali
 - Enforce rate limits per tier
 - Route chat messages to the AI layer
 - Serve memory profiles and briefings from storage
-- Expose onboarding endpoints
+- Expose onboarding, conversations, insights, and webhook endpoints
 
-**Directory:** `server/`
+**Directory:** `apps/api/src/`
 
 ```
-server/
-  index.js              # Express app entry point
+apps/api/src/
+  index.ts              # Elysia app entry point
   routes/
-    chat.js             # POST /api/chat
-    onboarding.js       # POST /api/onboarding
-    briefing.js         # GET /api/briefing
-    memory.js           # GET /api/memory/profile
+    chat.ts             # POST /chat
+    onboarding.ts       # POST /onboarding
+    briefing.ts         # GET /briefing
+    memory.ts           # GET /memory/profile
+    conversations.ts    # Conversation list, history
+    insights.ts         # Weekly insights (Premium)
+    webhooks.ts         # Stripe, push callbacks
+    health.ts           # Health check
   middleware/
-    auth.js             # JWT verification
-    rateLimiter.js       # Tier-based rate limiting
-    tierCheck.js         # Feature gating by subscription tier
+    auth.ts             # JWT verification
+    tierCheck.ts        # Feature gating by subscription tier
+  ai/
+    client.ts           # Anthropic SDK wrapper
+    conversation.ts     # Chat turn handling
+    extraction.ts       # Memory extraction
+    briefing.ts         # Briefing generation
+    followup.ts         # Follow-up detection
+    onboarding.ts       # Onboarding processing
+    prompts/            # System, briefing, extraction prompts
   services/
-    aibridge.js          # Spawns Python AI scripts
+    memory.ts           # Memory profile CRUD
+    embedding.ts        # Voyage AI embeddings
+    retrieval.ts        # Hybrid search (semantic + FTS + recency)
+  jobs/
+    scheduler.ts        # In-process job scheduler
+    nightlyExtraction.ts
+    dailyBriefings.ts
+    weeklyInsights.ts
+    reengagement.ts
+  db/
+    schema.ts           # Drizzle schema + pgvector
+    migrations/         # SQL migrations
 ```
 
-### 2. AI Layer (Python + Claude)
+### 2. AI Layer (TypeScript + Claude)
 
-All AI logic lives in Python scripts that the Node backend invokes via child processes. Every AI call uses `claude-sonnet-4-6`.
+All AI logic lives in TypeScript modules using the `@anthropic-ai/sdk`. Every AI call uses `claude-sonnet-4-6`.
 
 **Key responsibilities:**
-- Process chat messages with full memory context
+- Process chat messages with full memory context (hot + warm + cold)
 - Extract facts from conversations (nightly batch job)
 - Generate personalized morning briefings
 - Process onboarding answers into initial memory profiles
 - Detect emotional patterns and flag follow-up opportunities
 
-**Directory:** `ai/`
+**Directory:** `apps/api/src/ai/`
 
-```
-ai/
-  chat.py               # Handle a single chat turn
-  extract_memories.py    # Nightly memory extraction from conversations
-  generate_briefing.py   # Morning briefing generation
-  onboarding.py          # Process onboarding answers
-  prompts/
-    system_prompt.txt    # Ally's core personality prompt
-    briefing_prompt.txt  # Briefing generation template
-    extraction_prompt.txt # Memory extraction instructions
-  utils/
-    claude_client.py     # Wrapper around Claude API (claude-sonnet-4-6)
-    memory_loader.py     # Load and format memory profile for context
-    context_builder.py   # Assemble full prompt with memory + history
-```
+### 3. Background Jobs
 
-### 3. Cron Jobs
+Scheduled tasks that run in-process (Phase 1) or via Trigger.dev (Phase 2+).
 
-Scheduled tasks that run outside the request/response cycle.
-
-| Job                    | Schedule       | Script                      | Purpose                                         |
+| Job                    | Schedule       | Module                      | Purpose                                         |
 |------------------------|----------------|-----------------------------|-------------------------------------------------|
-| Memory Extraction      | 2:00 AM daily  | `ai/extract_memories.py`    | Scan day's conversations, extract new facts      |
-| Morning Briefing       | 5:00 AM daily  | `ai/generate_briefing.py`   | Generate personalized briefing per user           |
-| Follow-up Detection    | 3:00 AM daily  | `ai/detect_followups.py`    | Flag unresolved emotional moments for follow-up   |
+| Nightly Extraction     | 11:00 PM daily | `jobs/nightlyExtraction.ts` | Extract facts from today's conversations        |
+| Daily Briefings        | 5:00 AM daily  | `jobs/dailyBriefings.ts`    | Generate personalized briefing per user (Pro+)  |
+| Weekly Insights        | Sunday 8:00 PM | `jobs/weeklyInsights.ts`    | Emotional week summary (Premium)                |
+| Re-engagement          | 6:00 PM daily  | `jobs/reengagement.ts`      | Check-in with inactive users (3+ days)         |
 
-**Directory:** `cron/`
+**Directory:** `apps/api/src/jobs/`
 
-```
-cron/
-  scheduler.js          # Node-cron setup
-  run_extraction.sh     # Shell wrapper for memory extraction
-  run_briefing.sh       # Shell wrapper for briefing generation
-```
+### 4. Database (Neon PostgreSQL + pgvector)
 
-### 4. Database (Mobile Team)
+The database is hosted on Neon. This repo defines the schema via Drizzle and runs migrations.
 
-The database is owned and hosted by the mobile team. This repo interacts with it via environment variables for the connection string.
-
-**Expected schema (for reference):**
+**Schema:**
 
 ```
 users
@@ -149,7 +191,10 @@ users
 conversations
   id              UUID PRIMARY KEY
   user_id         UUID REFERENCES users(id)
+  preview         TEXT
+  message_count   INTEGER
   created_at      TIMESTAMP
+  last_message_at TIMESTAMP
 
 messages
   id              UUID PRIMARY KEY
@@ -160,16 +205,68 @@ messages
 
 memory_profiles
   user_id         UUID PRIMARY KEY REFERENCES users(id)
-  profile_json    JSONB
+  profile         JSONB
   updated_at      TIMESTAMP
+
+memory_facts
+  id                      UUID PRIMARY KEY
+  user_id                 UUID REFERENCES users(id)
+  content                 TEXT
+  category                TEXT
+  importance              FLOAT
+  confidence              FLOAT
+  temporal                TEXT
+  entities                JSONB
+  emotion                 TEXT
+  embedding               vector(1024)    -- pgvector
+  source_conversation_id   UUID
+  source_date             TIMESTAMP
+  last_accessed_at        TIMESTAMP
+  created_at              TIMESTAMP
+  -- HNSW vector index, GIN full-text index, B-tree on user+category
 
 briefings
   id              UUID PRIMARY KEY
   user_id         UUID REFERENCES users(id)
+  date            DATE
   content         TEXT
   delivered       BOOLEAN DEFAULT FALSE
   created_at      TIMESTAMP
+
+job_runs
+  id              UUID PRIMARY KEY
+  job_name        TEXT
+  user_id         UUID
+  status          TEXT
+  metadata        JSONB
+  started_at      TIMESTAMP
+  completed_at    TIMESTAMP
 ```
+
+---
+
+## Memory Architecture (Tiered + Hybrid Retrieval)
+
+Ally uses a three-tier memory model:
+
+| Tier   | Source                    | When Loaded                    |
+|--------|---------------------------|--------------------------------|
+| **Hot**  | `memory_profiles.profile` (JSONB) | Always — name, relationships, goals, emotional patterns |
+| **Warm** | Recent conversation history | Last N messages from active conversation |
+| **Cold** | `memory_facts` with embeddings | Retrieved via hybrid search when relevant |
+
+### Cold Memory Retrieval (Hybrid Search)
+
+Facts are retrieved using a weighted combination of:
+
+| Signal                 | Weight | Mechanism                                      |
+|------------------------|--------|------------------------------------------------|
+| Semantic similarity    | 40%    | pgvector cosine distance (Voyage voyage-3-lite) |
+| Full-text matching    | 20%    | PostgreSQL tsvector/tsquery                    |
+| Recency decay         | 25%    | Exponential decay by `source_date`             |
+| Importance scoring    | 15%    | Stored `importance` field                     |
+
+Embeddings are 1024-dimensional (Voyage AI voyage-3-lite). The `memory_facts` table has an HNSW vector index for fast approximate nearest-neighbor search.
 
 ---
 
@@ -179,18 +276,16 @@ briefings
 
 ```
 1. User sends message via mobile app
-2. Mobile app sends POST /api/chat with JWT + message
+2. Mobile app sends POST /chat with JWT + message
 3. Backend validates JWT, checks rate limit for user's tier
-4. Backend calls ai/chat.py via child process, passing:
-   - user_id
-   - message text
-   - conversation_id
-5. chat.py:
-   a. Loads user's memory profile from DB
-   b. Loads recent conversation history
-   c. Builds full context (system prompt + memory + history + new message)
-   d. Calls Claude claude-sonnet-4-6
-   e. Returns Ally's response
+4. Backend loads context:
+   a. Hot memory: user's memory profile from memory_profiles
+   b. Warm memory: recent conversation history from messages
+   c. Cold memory: hybrid search on memory_facts (embedding + FTS + recency)
+5. AI layer (conversation.ts):
+   a. Builds full context (system prompt + hot + warm + cold + new message)
+   b. Calls Claude claude-sonnet-4-6 via @anthropic-ai/sdk
+   c. Returns Ally's response
 6. Backend stores both messages in DB
 7. Backend returns Ally's response to mobile app
 ```
@@ -198,86 +293,42 @@ briefings
 ### Morning Briefing Flow
 
 ```
-1. Cron fires at 5:00 AM (user's local timezone)
+1. Job fires at 5:00 AM (dailyBriefings)
 2. For each user with briefings enabled (Pro + Premium):
-   a. Load user's memory profile
-   b. Load any pending follow-ups
-   c. Check calendar/weather APIs if connected
-   d. Call Claude claude-sonnet-4-6 with briefing prompt + context
-   e. Store generated briefing in DB
-   f. Trigger push notification via mobile team's push service
+   a. Load user's memory profile (hot)
+   b. Load recent facts and any pending follow-ups (cold)
+   c. Call Claude claude-sonnet-4-6 with briefing prompt + context
+   d. Store generated briefing in briefings table
+   e. Mobile team triggers push notification
 ```
 
 ### Nightly Memory Extraction Flow
 
 ```
-1. Cron fires at 2:00 AM
+1. Job fires at 11:00 PM (nightlyExtraction)
 2. For each user with conversations today:
    a. Load all messages from the day
    b. Load existing memory profile
    c. Call Claude claude-sonnet-4-6 with extraction prompt + messages
-   d. Claude returns structured JSON of new/updated facts
-   e. Merge new facts into existing memory profile
-   f. Save updated profile to DB
+   d. Claude returns structured facts
+   e. Generate embeddings for each fact via Voyage AI
+   f. Insert new rows into memory_facts
+   g. Merge high-level updates into memory_profiles.profile
 ```
 
 ### Onboarding Flow
 
 ```
-1. User completes 5 onboarding questions in mobile app
-2. Mobile app sends POST /api/onboarding with answers
-3. Backend calls ai/onboarding.py with answers
-4. onboarding.py:
+1. User completes onboarding questions in mobile app
+2. Mobile app sends POST /onboarding with answers
+3. Backend calls ai/onboarding.ts with answers
+4. onboarding.ts:
    a. Calls Claude claude-sonnet-4-6 to process answers into structured memory
-   b. Creates initial memory profile
+   b. Creates initial memory profile in memory_profiles
    c. Generates Ally's first personalized greeting
 5. Backend stores memory profile in DB
 6. Backend returns greeting to mobile app
 ```
-
----
-
-## How Node Bridges to Python
-
-The Node backend spawns Python scripts as child processes using Node's `child_process.execFile`. Communication happens via stdin/stdout with JSON.
-
-```javascript
-// server/services/aibridge.js (simplified)
-const { execFile } = require('child_process');
-
-function callAI(script, input) {
-  return new Promise((resolve, reject) => {
-    const proc = execFile('python3', [`ai/${script}`], {
-      timeout: 30000,
-      env: { ...process.env }
-    });
-
-    let stdout = '';
-    proc.stdin.write(JSON.stringify(input));
-    proc.stdin.end();
-
-    proc.stdout.on('data', (data) => { stdout += data; });
-    proc.on('close', (code) => {
-      if (code !== 0) reject(new Error(`AI script exited with code ${code}`));
-      else resolve(JSON.parse(stdout));
-    });
-  });
-}
-```
-
-Python scripts read from stdin and write JSON to stdout:
-
-```python
-# ai/chat.py (simplified)
-import sys
-import json
-
-input_data = json.loads(sys.stdin.read())
-# ... process with Claude ...
-print(json.dumps({"response": ally_response}))
-```
-
-This approach keeps the AI layer cleanly separated, allows independent Python dependency management, and avoids the complexity of running a second HTTP server.
 
 ---
 
@@ -286,10 +337,10 @@ This approach keeps the AI layer cleanly separated, allows independent Python de
 Every request is scoped to a single user via their JWT. The isolation model:
 
 - **Data isolation:** All DB queries are filtered by `user_id`. There is no cross-user data access.
-- **Memory isolation:** Each user has their own memory profile document. Memory extraction and briefing generation are per-user.
+- **Memory isolation:** Each user has their own memory profile and memory_facts. Memory extraction and briefing generation are per-user.
 - **Rate limiting:** Tracked per `user_id`, enforced per tier.
 - **AI context:** Each AI call receives only the requesting user's data. No shared context between users.
-- **Cron jobs:** Process users independently. One user's failure does not block others.
+- **Background jobs:** Process users independently. One user's failure does not block others.
 
 ### Tier Enforcement
 
@@ -310,33 +361,33 @@ Tier is checked at the middleware level before any AI processing occurs. The mob
 
 | Variable             | Purpose                                    | Example                          |
 |----------------------|--------------------------------------------|----------------------------------|
+| `DATABASE_URL`       | PostgreSQL connection string (Neon)        | `postgres://user:pass@host/db`   |
 | `ANTHROPIC_API_KEY`  | Claude API authentication                  | `sk-ant-...`                     |
-| `DATABASE_URL`       | PostgreSQL connection string               | `postgres://user:pass@host/db`   |
+| `VOYAGE_API_KEY`     | Voyage AI embeddings                       | `pa-...`                         |
 | `JWT_SECRET`         | Shared secret for JWT verification         | (from mobile team)               |
+| `WEBHOOK_SECRET`     | Stripe/webhook signature verification      | `whsec_...`                      |
+| `PORT`               | Elysia server port                         | `3000`                           |
 | `NODE_ENV`           | Environment flag                           | `development` / `production`     |
-| `PORT`               | Express server port                        | `3000`                           |
-| `PUSH_SERVICE_URL`   | Mobile team's push notification endpoint   | `https://push.example.com`       |
-| `LOG_LEVEL`          | Logging verbosity                          | `info` / `debug`                 |
 
 ---
 
-## Scaling Considerations
+## Scaling Phases
 
-**Phase 1 (MVP, <1000 users):**
-- Single Node process
-- Memory profiles stored as JSON in PostgreSQL
-- Python scripts spawned per-request
-- Cron jobs run sequentially
+**Phase 1 (MVP, <1K users):**
+- Single Bun process
+- Neon free tier
+- In-process cron (scheduler.ts)
+- pgvector for embeddings
+- All AI logic in TypeScript
 
-**Phase 2 (1000-10,000 users):**
-- Add Redis for rate limiting and session caching
-- Queue AI requests through Bull/BullMQ
-- Run Python AI layer as a persistent FastAPI service instead of spawning per-request
-- Parallelize cron jobs
+**Phase 2 (1K–10K users):**
+- Redis for rate limiting and caching
+- Trigger.dev for background jobs
+- Tune HNSW indexes for pgvector
+- Consider connection pooling
 
-**Phase 3 (10,000+ users):**
-- Horizontal scaling behind a load balancer
-- Dedicated AI service cluster
-- Move memory profiles to a vector database for semantic search
-- Shard cron jobs across workers
-- Add CDN for static briefing assets
+**Phase 3 (10K+ users):**
+- Dedicated vector DB (e.g., Qdrant) if pgvector becomes a bottleneck
+- Horizontal scaling behind load balancer
+- Job sharding across workers
+- Python AI service only if TypeScript throughput limits are hit
