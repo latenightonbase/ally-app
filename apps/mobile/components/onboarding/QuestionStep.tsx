@@ -32,6 +32,7 @@ interface QuestionStepProps {
 
   canContinue: boolean;
   onNext: () => void;
+  buttonTitle?: string;
 }
 
 export function QuestionStep({
@@ -50,6 +51,7 @@ export function QuestionStep({
   onSelectChoice,
   canContinue,
   onNext,
+  buttonTitle = "Continue",
 }: QuestionStepProps) {
   const { theme } = useTheme();
   const inputRef = useRef<RNTextInput>(null);
@@ -167,7 +169,7 @@ export function QuestionStep({
         className="mt-12"
       >
         <Button
-          title="Continue"
+          title={buttonTitle}
           onPress={onNext}
           disabled={!canContinue}
           size="lg"
