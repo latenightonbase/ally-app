@@ -1,7 +1,7 @@
 {
   "info": {
     "_postman_id": "ally-api-collection",
-    "name": "Ally API v1",
+    "name": "Ally API",
     "description": "Complete API collection for the Ally personal AI companion backend.\n\nSetup:\n1. Import the ally-local environment\n2. Set jwtSecret and webhookSecret to match your .env\n3. Run the \"Generate Auth Token\" request first to populate authToken\n4. All authenticated requests will use the token automatically",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
@@ -23,349 +23,551 @@
   ],
   "item": [
     {
-      "name": "Auth",
+      "name": "v1",
+      "description": "The V1 of the Ally API",
       "item": [
         {
-          "name": "Generate Auth Token",
-          "event": [
+          "name": "Auth",
+          "item": [
             {
-              "listen": "prerequest",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "// This generates a JWT locally for testing.",
-                  "// In production, tokens come from your auth provider.",
-                  "//",
-                  "// Since Postman can't sign JWTs natively, use this curl command instead:",
-                  "// See docs/MANUAL_TESTING.md for the curl/bun approach to generate tokens."
-                ]
+              "name": "Generate Auth Token",
+              "event": [
+                {
+                  "listen": "prerequest",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "// This generates a JWT locally for testing.",
+                      "// In production, tokens come from your auth provider.",
+                      "//",
+                      "// Since Postman can't sign JWTs natively, use this curl command instead:",
+                      "// See docs/MANUAL_TESTING.md for the curl/bun approach to generate tokens."
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/health",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "health"
+                  ]
+                },
+                "description": "Placeholder — JWT generation requires a script outside Postman.\n\nGenerate a token using the helper script described in docs/MANUAL_TESTING.md, then paste it into the authToken environment variable."
               }
             }
-          ],
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/api/v1/health",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "health"]
-            },
-            "description": "Placeholder — JWT generation requires a script outside Postman.\n\nGenerate a token using the helper script described in docs/MANUAL_TESTING.md, then paste it into the authToken environment variable."
-          }
-        }
-      ]
-    },
-    {
-      "name": "Health",
-      "item": [
+          ]
+        },
         {
-          "name": "Health Check",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/api/v1/health",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "health"]
-            },
-            "description": "Public health check endpoint. Returns API status, uptime, version, and database connectivity."
-          }
-        }
-      ]
-    },
-    {
-      "name": "Chat",
-      "item": [
-        {
-          "name": "Send Message (non-streaming)",
-          "event": [
+          "name": "Health",
+          "item": [
             {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "const json = pm.response.json();",
-                  "if (json.conversationId) {",
-                  "  pm.environment.set('conversationId', json.conversationId);",
-                  "}"
-                ]
+              "name": "Health Check",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/health",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "health"
+                  ]
+                },
+                "description": "Public health check endpoint. Returns API status, uptime, version, and database connectivity."
               }
             }
-          ],
-          "request": {
-            "method": "POST",
-            "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "Authorization", "value": "Bearer {{authToken}}" }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"message\": \"Hey Ally, how are you today?\",\n  \"stream\": false\n}"
-            },
-            "url": {
-              "raw": "{{baseUrl}}/api/v1/chat",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "chat"]
-            },
-            "description": "Send a chat message and receive the full response at once.\n\nThe conversationId is auto-saved to the environment for follow-up messages."
-          }
+          ]
         },
         {
-          "name": "Send Message (streaming SSE)",
-          "request": {
-            "method": "POST",
-            "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "Authorization", "value": "Bearer {{authToken}}" }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"message\": \"Tell me something encouraging\",\n  \"stream\": true\n}"
+          "name": "Chat",
+          "item": [
+            {
+              "name": "Send Message (non-streaming)",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "const json = pm.response.json();",
+                      "if (json.conversationId) {",
+                      "  pm.environment.set('conversationId', json.conversationId);",
+                      "}"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{authToken}}"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"message\": \"Hey Ally, how are you today?\",\n  \"stream\": false\n}"
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/chat",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "chat"
+                  ]
+                },
+                "description": "Send a chat message and receive the full response at once.\n\nThe conversationId is auto-saved to the environment for follow-up messages."
+              }
             },
-            "url": {
-              "raw": "{{baseUrl}}/api/v1/chat",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "chat"]
+            {
+              "name": "Send Message (streaming SSE)",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{authToken}}"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"message\": \"Tell me something encouraging\",\n  \"stream\": true\n}"
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/chat",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "chat"
+                  ]
+                },
+                "description": "Send a chat message with SSE streaming.\n\nPostman shows the raw SSE text. For a better experience, use curl:\n\ncurl -N -X POST http://localhost:3000/api/v1/chat \\\n  -H 'Content-Type: application/json' \\\n  -H 'Authorization: Bearer YOUR_TOKEN' \\\n  -d '{\"message\": \"Tell me something encouraging\", \"stream\": true}'"
+              }
             },
-            "description": "Send a chat message with SSE streaming.\n\nPostman shows the raw SSE text. For a better experience, use curl:\n\ncurl -N -X POST http://localhost:3000/api/v1/chat \\\n  -H 'Content-Type: application/json' \\\n  -H 'Authorization: Bearer YOUR_TOKEN' \\\n  -d '{\"message\": \"Tell me something encouraging\", \"stream\": true}'"
-          }
+            {
+              "name": "Continue Conversation",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{authToken}}"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"message\": \"Thanks! Can you tell me more?\",\n  \"conversationId\": \"{{conversationId}}\"\n}"
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/chat",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "chat"
+                  ]
+                },
+                "description": "Continue an existing conversation. Uses the conversationId saved from a previous chat request."
+              }
+            }
+          ]
         },
         {
-          "name": "Continue Conversation",
-          "request": {
-            "method": "POST",
-            "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "Authorization", "value": "Bearer {{authToken}}" }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"message\": \"Thanks! Can you tell me more?\",\n  \"conversationId\": \"{{conversationId}}\"\n}"
-            },
-            "url": {
-              "raw": "{{baseUrl}}/api/v1/chat",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "chat"]
-            },
-            "description": "Continue an existing conversation. Uses the conversationId saved from a previous chat request."
-          }
-        }
-      ]
-    },
-    {
-      "name": "Onboarding",
-      "item": [
-        {
-          "name": "Submit Onboarding",
-          "request": {
-            "method": "POST",
-            "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "Authorization", "value": "Bearer {{authToken}}" }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"answers\": {\n    \"nameAndGreeting\": \"I'm Alex, you can call me Al\",\n    \"lifeContext\": \"Software engineer at a startup in SF\",\n    \"currentFocus\": \"Getting promoted and training for a half marathon\",\n    \"stressAndSupport\": \"Work deadlines stress me out. I cope by running.\",\n    \"allyExpectations\": \"A friend who remembers things and checks in\"\n  }\n}"
-            },
-            "url": {
-              "raw": "{{baseUrl}}/api/v1/onboarding",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "onboarding"]
-            },
-            "description": "Complete user onboarding. Creates a memory profile from the answers."
-          }
-        }
-      ]
-    },
-    {
-      "name": "Memory",
-      "item": [
-        {
-          "name": "Get Memory Profile",
-          "request": {
-            "method": "GET",
-            "header": [
-              { "key": "Authorization", "value": "Bearer {{authToken}}" }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/v1/memory/profile",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "memory", "profile"]
+          "name": "Onboarding",
+          "item": [
+            {
+              "name": "Submit Onboarding",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{authToken}}"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"answers\": {\n    \"nameAndGreeting\": \"I'm Alex, you can call me Al\",\n    \"lifeContext\": \"Software engineer at a startup in SF\",\n    \"currentFocus\": \"Getting promoted and training for a half marathon\",\n    \"stressAndSupport\": \"Work deadlines stress me out. I cope by running.\",\n    \"allyExpectations\": \"A friend who remembers things and checks in\"\n  }\n}"
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/onboarding",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "onboarding"
+                  ]
+                },
+                "description": "Complete user onboarding. Creates a memory profile from the answers."
+              }
             }
-          }
+          ]
         },
         {
-          "name": "Delete Memory Profile",
-          "request": {
-            "method": "DELETE",
-            "header": [
-              { "key": "Authorization", "value": "Bearer {{authToken}}" }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/v1/memory/profile",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "memory", "profile"]
-            }
-          }
-        },
-        {
-          "name": "List Memory Facts",
-          "request": {
-            "method": "GET",
-            "header": [
-              { "key": "Authorization", "value": "Bearer {{authToken}}" }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/v1/memory/facts?limit=20&offset=0",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "memory", "facts"],
-              "query": [
-                { "key": "limit", "value": "20" },
-                { "key": "offset", "value": "0" },
-                { "key": "category", "value": "work", "disabled": true }
-              ]
-            }
-          }
-        },
-        {
-          "name": "Delete Memory Fact",
-          "request": {
-            "method": "DELETE",
-            "header": [
-              { "key": "Authorization", "value": "Bearer {{authToken}}" }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/v1/memory/facts/FACT_ID_HERE",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "memory", "facts", "FACT_ID_HERE"]
-            }
-          }
-        }
-      ]
-    },
-    {
-      "name": "Conversations",
-      "item": [
-        {
-          "name": "List Conversations",
-          "request": {
-            "method": "GET",
-            "header": [
-              { "key": "Authorization", "value": "Bearer {{authToken}}" }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/v1/conversations?limit=20&offset=0",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "conversations"],
-              "query": [
-                { "key": "limit", "value": "20" },
-                { "key": "offset", "value": "0" }
-              ]
-            }
-          }
-        },
-        {
-          "name": "Get Conversation Messages",
-          "request": {
-            "method": "GET",
-            "header": [
-              { "key": "Authorization", "value": "Bearer {{authToken}}" }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/v1/conversations/{{conversationId}}?limit=50",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "conversations", "{{conversationId}}"],
-              "query": [
-                { "key": "limit", "value": "50" },
-                { "key": "before", "value": "", "disabled": true }
-              ]
-            }
-          }
-        }
-      ]
-    },
-    {
-      "name": "Briefing",
-      "item": [
-        {
-          "name": "Get Today's Briefing",
-          "request": {
-            "method": "GET",
-            "header": [
-              { "key": "Authorization", "value": "Bearer {{authToken}}" }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/v1/briefing",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "briefing"],
-              "query": [
-                { "key": "date", "value": "2026-03-05", "disabled": true }
-              ]
-            }
-          }
-        },
-        {
-          "name": "Briefing History",
-          "request": {
-            "method": "GET",
-            "header": [
-              { "key": "Authorization", "value": "Bearer {{authToken}}" }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/v1/briefing/history?limit=10",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "briefing", "history"],
-              "query": [
-                { "key": "limit", "value": "10" },
-                { "key": "offset", "value": "0", "disabled": true }
-              ]
-            }
-          }
-        }
-      ]
-    },
-    {
-      "name": "Insights",
-      "item": [
-        {
-          "name": "Get Weekly Insight",
-          "request": {
-            "method": "GET",
-            "header": [
-              { "key": "Authorization", "value": "Bearer {{authToken}}" }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/v1/insights/weekly",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "insights", "weekly"]
+          "name": "Memory",
+          "item": [
+            {
+              "name": "Get Memory Profile",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{authToken}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/memory/profile",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "memory",
+                    "profile"
+                  ]
+                }
+              }
             },
-            "description": "Requires premium tier."
-          }
-        }
-      ]
-    },
-    {
-      "name": "Webhooks",
-      "item": [
+            {
+              "name": "Delete Memory Profile",
+              "request": {
+                "method": "DELETE",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{authToken}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/memory/profile",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "memory",
+                    "profile"
+                  ]
+                }
+              }
+            },
+            {
+              "name": "List Memory Facts",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{authToken}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/memory/facts?limit=20&offset=0",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "memory",
+                    "facts"
+                  ],
+                  "query": [
+                    {
+                      "key": "limit",
+                      "value": "20"
+                    },
+                    {
+                      "key": "offset",
+                      "value": "0"
+                    },
+                    {
+                      "key": "category",
+                      "value": "work",
+                      "disabled": true
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "Delete Memory Fact",
+              "request": {
+                "method": "DELETE",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{authToken}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/memory/facts/FACT_ID_HERE",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "memory",
+                    "facts",
+                    "FACT_ID_HERE"
+                  ]
+                }
+              }
+            }
+          ]
+        },
         {
-          "name": "Subscription Updated",
-          "request": {
-            "method": "POST",
-            "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "x-webhook-secret", "value": "{{webhookSecret}}" }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"userId\": \"USER_UUID_HERE\",\n  \"event\": \"subscription_updated\",\n  \"tier\": \"premium\",\n  \"effectiveAt\": \"2026-03-05T00:00:00Z\"\n}"
+          "name": "Conversations",
+          "item": [
+            {
+              "name": "List Conversations",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{authToken}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/conversations?limit=20&offset=0",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "conversations"
+                  ],
+                  "query": [
+                    {
+                      "key": "limit",
+                      "value": "20"
+                    },
+                    {
+                      "key": "offset",
+                      "value": "0"
+                    }
+                  ]
+                }
+              }
             },
-            "url": {
-              "raw": "{{baseUrl}}/api/v1/webhooks/subscription",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "webhooks", "subscription"]
+            {
+              "name": "Get Conversation Messages",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{authToken}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/conversations/{{conversationId}}?limit=50",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "conversations",
+                    "{{conversationId}}"
+                  ],
+                  "query": [
+                    {
+                      "key": "limit",
+                      "value": "50"
+                    },
+                    {
+                      "key": "before",
+                      "value": "",
+                      "disabled": true
+                    }
+                  ]
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "Briefing",
+          "item": [
+            {
+              "name": "Get Today's Briefing",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{authToken}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/briefing",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "briefing"
+                  ],
+                  "query": [
+                    {
+                      "key": "date",
+                      "value": "2026-03-05",
+                      "disabled": true
+                    }
+                  ]
+                }
+              }
             },
-            "description": "Simulates a subscription webhook from your payment provider."
-          }
+            {
+              "name": "Briefing History",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{authToken}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/briefing/history?limit=10",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "briefing",
+                    "history"
+                  ],
+                  "query": [
+                    {
+                      "key": "limit",
+                      "value": "10"
+                    },
+                    {
+                      "key": "offset",
+                      "value": "0",
+                      "disabled": true
+                    }
+                  ]
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "Insights",
+          "item": [
+            {
+              "name": "Get Weekly Insight",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{authToken}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/insights/weekly",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "insights",
+                    "weekly"
+                  ]
+                },
+                "description": "Requires premium tier."
+              }
+            }
+          ]
+        },
+        {
+          "name": "Webhooks",
+          "item": [
+            {
+              "name": "Subscription Updated",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "x-webhook-secret",
+                    "value": "{{webhookSecret}}"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"userId\": \"USER_UUID_HERE\",\n  \"event\": \"subscription_updated\",\n  \"tier\": \"premium\",\n  \"effectiveAt\": \"2026-03-05T00:00:00Z\"\n}"
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/webhooks/subscription",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "webhooks",
+                    "subscription"
+                  ]
+                },
+                "description": "Simulates a subscription webhook from your payment provider."
+              }
+            }
+          ]
         }
       ]
     }
