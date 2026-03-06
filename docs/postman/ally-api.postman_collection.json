@@ -1,7 +1,7 @@
 {
   "info": {
     "_postman_id": "ally-api-collection",
-    "name": "Ally API",
+    "name": "Ally",
     "description": "Complete API collection for the Ally personal AI companion backend.\n\nSetup:\n1. Import the ally-local environment\n2. Set jwtSecret and webhookSecret to match your .env\n3. Run the \"Generate Auth Token\" request first to populate authToken\n4. All authenticated requests will use the token automatically",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
