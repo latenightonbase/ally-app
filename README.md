@@ -13,7 +13,6 @@ ally-app/
 │   ├── shared/          Shared types, schemas, constants
 │   └── tsconfig/        Shared TypeScript configurations
 ├── docs/                Architecture, API, memory system docs
-└── _legacy/             Previous Node/Express + Python implementation
 ```
 
 ### Tech Stack
