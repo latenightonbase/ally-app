@@ -7,6 +7,8 @@ dist/
 .env
 .env.local
 .env.production
+.env.test
+.env.test.live
 
 .DS_Store
 *.log

@@ -1,7 +1,7 @@
 import { AIError } from "../ai/client";
 
 const VOYAGE_API_URL = "https://api.voyageai.com/v1/embeddings";
-const VOYAGE_MODEL = "voyage-3-lite";
+const VOYAGE_MODEL = "voyage-4-lite";
 const MAX_RETRIES = 2;
 const RETRY_DELAY_MS = 1000;
 

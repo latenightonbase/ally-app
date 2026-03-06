@@ -40,7 +40,7 @@ Ally is a personal AI companion that remembers everything users share, sends per
 | Database     | PostgreSQL + pgvector (Neon)                     |
 | ORM          | Drizzle ORM                                      |
 | AI           | Claude claude-sonnet-4-6 via @anthropic-ai/sdk  |
-| Embeddings   | Voyage AI voyage-3-lite (1024 dimensions)        |
+| Embeddings   | Voyage AI voyage-4-lite (1024 dimensions)        |
 | Auth         | JWT verification (tokens issued by mobile team)  |
 
 All AI logic is implemented in TypeScript. No Python.
@@ -261,12 +261,12 @@ Facts are retrieved using a weighted combination of:
 
 | Signal                 | Weight | Mechanism                                      |
 |------------------------|--------|------------------------------------------------|
-| Semantic similarity    | 40%    | pgvector cosine distance (Voyage voyage-3-lite) |
+| Semantic similarity    | 40%    | pgvector cosine distance (Voyage voyage-4-lite) |
 | Full-text matching    | 20%    | PostgreSQL tsvector/tsquery                    |
 | Recency decay         | 25%    | Exponential decay by `source_date`             |
 | Importance scoring    | 15%    | Stored `importance` field                     |
 
-Embeddings are 1024-dimensional (Voyage AI voyage-3-lite). The `memory_facts` table has an HNSW vector index for fast approximate nearest-neighbor search.
+Embeddings are 1024-dimensional (Voyage AI voyage-4-lite). The `memory_facts` table has an HNSW vector index for fast approximate nearest-neighbor search.
 
 ---
 

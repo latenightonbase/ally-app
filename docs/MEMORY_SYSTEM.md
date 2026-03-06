@@ -256,7 +256,7 @@ The extraction logic in `apps/api/src/ai/extraction.ts` calls Claude (`claude-so
 
 ### Step 4: Embeddings
 
-Each stored fact is embedded using Voyage AI (`voyage-3-lite`, 1024 dimensions) and the vector is stored in the `embedding` column for hybrid retrieval.
+Each stored fact is embedded using Voyage AI (`voyage-4-lite`, 1024 dimensions) and the vector is stored in the `embedding` column for hybrid retrieval.
 
 ---
 

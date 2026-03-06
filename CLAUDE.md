@@ -13,7 +13,7 @@ Ally is a personal AI companion mobile app. This monorepo contains the Expo/Reac
 - **Backend:** Elysia (Bun-native web framework), TypeScript
 - **Database:** PostgreSQL + pgvector via Drizzle ORM (hosted on Neon)
 - **AI:** Claude claude-sonnet-4-6 via `@anthropic-ai/sdk` (TypeScript, NOT Python)
-- **Embeddings:** Voyage AI `voyage-3-lite` (1024 dimensions)
+- **Embeddings:** Voyage AI `voyage-4-lite` (1024 dimensions)
 - **Frontend:** Expo 55, React Native 0.83, NativeWind, Zustand, expo-router
 - **Validation:** TypeBox (Elysia built-in) for routes, Zod in `packages/shared` for shared schemas
 
@@ -136,7 +136,75 @@ In `apps/api/src/jobs/`. Scheduled via a persistent, interval-based scheduler. J
 
 ## Testing
 
-No test framework is set up yet. When adding tests, use `bun:test` (Bun's built-in test runner).
+Uses `bun:test` (Bun's built-in test runner). Tests live in `apps/api/src/__tests__/`.
+
+### Three Test Tiers
+
+| Tier | Directory | What it tests | Mocking | Speed | When to run |
+|------|-----------|---------------|---------|-------|-------------|
+| **Unit** | `__tests__/unit/` | Middleware, AI layer, services in isolation | AI + embeddings mocked | Fast (~2s) | Always — every change |
+| **Integration** | `__tests__/integration/` | Full request → middleware → handler → DB → response | AI + embeddings mocked, real DB | Medium (~15s) | Always — every change |
+| **E2E** | `__tests__/e2e/` | Real Claude, real Voyage AI, real pgvector retrieval | Nothing mocked | Slow (~60s), costs money | On-demand — before releases, after prompt changes, when validating AI quality |
+
+### Running Tests
+
+```bash
+cd apps/api
+bun run test               # Unit + integration (30s timeout)
+bun run test:unit          # Unit tests only (fast, no DB)
+bun run test:integration   # Integration tests (requires .env.test)
+bun run test:coverage      # With coverage report
+
+# E2E tests — requires .env.test.live with real API keys
+bun run test:e2e                # All E2E tests (60s timeout)
+bun run test:e2e:embeddings     # Embedding quality only
+bun run test:e2e:retrieval      # Retrieval ranking only
+```
+
+### Test Architecture
+
+- **Unit tests** — Test middleware, AI layer, services in isolation. AI and embedding services are always mocked via the preload in `__tests__/setup.ts`.
+- **Integration tests** — Test full request → middleware → handler → DB → response cycle using `app.handle(request)`. Uses a real Neon test branch database. AI/embeddings still mocked.
+- **E2E tests** — Hit real Claude and Voyage AI APIs. Use a separate preload (`__tests__/setup.e2e.ts`) that loads `.env.test.live` and does NOT mock anything. Test files:
+  - `embedding-quality.test.ts` — Voyage API quality, cosine similarity assertions
+  - `retrieval-ranking.test.ts` — Hybrid retrieval with real vectors in pgvector
+  - `chat-live.test.ts` — Full chat pipeline including SSE streaming
+  - `onboarding-live.test.ts` — Structured output parsing from real Claude
+  - `extraction-pipeline.test.ts` — Memory extraction + embedding + storage + retrieval
+  - `memory-lifecycle.test.ts` — Golden path: onboard → chat → extract → retrieve → chat with context
+  - `prompt-regression.test.ts` — Fixture-based prompt quality assertions (catches regressions in `prompts.ts`)
+
+### Mocking (Unit + Integration)
+
+The global preload (`__tests__/setup.ts`) automatically mocks:
+- `ai/client.ts` — `callClaude`, `callClaudeStreaming`, `callClaudeStructured` return canned responses
+- `services/embedding.ts` — `generateEmbedding` returns zero vectors (1024 dims)
+
+**Never** call real Claude or Voyage AI in unit/integration tests. If you need different mock responses, use `mock.module()` within the specific test file.
+
+### E2E Test Setup
+
+E2E tests require a `.env.test.live` file with real API keys:
+```bash
+cp apps/api/.env.test.live.example apps/api/.env.test.live
+# Fill in real ANTHROPIC_API_KEY and VOYAGE_API_KEY
+```
+
+E2E tests use a separate Bun config (`bunfig.e2e.toml`) that preloads `setup.e2e.ts` instead of `setup.ts`. This means imports go to the real modules, not mocks.
+
+### Writing New Tests
+
+1. Place unit tests in `__tests__/unit/<layer>/` matching the source structure
+2. Place integration tests in `__tests__/integration/routes/` or `__tests__/integration/jobs/`
+3. Place E2E tests in `__tests__/e2e/` — each file should be self-contained (seed own data, clean up after)
+4. Use helpers from `__tests__/helpers/`: `signTestToken()` for auth, `seedUsers()`/`seedConversation()` for DB data, `createTestApp()` for route tests
+5. E2E helpers live in `__tests__/e2e/helpers.ts`: `e2eCleanup()`, `e2eSeedUser()`, `buildE2EProfile()`, `cosineSimilarity()`
+6. Always call `truncateAll()` in `beforeEach` for integration tests to ensure isolation
+7. Run `bun run test` before considering backend work complete
+
+### Manual Testing
+
+See `docs/MANUAL_TESTING.md` for Postman setup, curl cheatsheets, and SSE streaming debugging. A Postman collection is available at `docs/postman/`.
 
 ## Environment Variables
 

@@ -7,7 +7,7 @@ You are working on Ally, a personal AI companion app.
 - Expo 55 / React Native (apps/mobile/) — NativeWind, Zustand, expo-router
 - PostgreSQL + pgvector via Drizzle ORM
 - Claude claude-sonnet-4-6 via @anthropic-ai/sdk
-- Voyage AI voyage-3-lite for embeddings
+- Voyage AI voyage-4-lite for embeddings
 
 ## Code Style
 - TypeScript strict mode everywhere

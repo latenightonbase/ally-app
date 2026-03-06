@@ -78,6 +78,80 @@ bun run db:studio     # Open Drizzle Studio (database UI)
 
 Schema lives in `apps/api/src/db/schema.ts`. After modifying it, generate and run a migration.
 
+## Testing
+
+The backend has a three-tier test suite using `bun:test`.
+
+### Test Tiers
+
+| Tier | Command | What | Speed | When |
+|------|---------|------|-------|------|
+| Unit | `bun run test:unit` | Middleware, services, AI layer (all mocked) | ~2s | Every change |
+| Integration | `bun run test:integration` | Full HTTP lifecycle with real DB (AI mocked) | ~15s | Every change |
+| E2E | `bun run test:e2e` | Real Claude + Voyage + pgvector (nothing mocked) | ~60s | Before releases, after prompt changes |
+
+```bash
+cd apps/api
+bun run test               # Unit + integration
+bun run test:unit          # Unit only (no DB)
+bun run test:integration   # Integration only (requires .env.test)
+bun run test:coverage      # With coverage report
+bun run test:e2e           # E2E (requires .env.test.live with real API keys)
+bun run test:e2e:embeddings  # Embedding quality only
+bun run test:e2e:retrieval   # Retrieval ranking only
+```
+
+### Test Database
+
+Integration and E2E tests run against a Neon test branch. The connection string is in `apps/api/.env.test` (not committed to git). Ask a team member for the test branch credentials, or create your own Neon branch.
+
+### E2E Test Setup
+
+E2E tests hit real Claude and Voyage AI APIs, which costs money. They require a separate env file:
+
+```bash
+cp apps/api/.env.test.live.example apps/api/.env.test.live
+# Fill in real ANTHROPIC_API_KEY and VOYAGE_API_KEY
+```
+
+### Test Structure
+
+```
+apps/api/src/__tests__/
+  setup.ts             # Global preload: env vars, AI/embedding mocks
+  setup.e2e.ts         # E2E preload: env vars only, NO mocks
+  helpers/
+    jwt.ts             # Sign test JWTs
+    seed.ts            # Seed DB with test data
+    app.ts             # Create test Elysia app instance
+  unit/                # Fast, no DB, mocked dependencies
+  integration/         # Real DB, mocked AI only
+  e2e/                 # Real everything: Claude, Voyage, pgvector
+    helpers.ts         # E2E seed/cleanup utilities
+    embedding-quality  # Voyage vector quality assertions
+    retrieval-ranking  # Hybrid search with real vectors
+    chat-live          # Full chat with streaming
+    onboarding-live    # Structured output parsing
+    extraction-pipeline # Extract + embed + store + retrieve
+    memory-lifecycle   # Golden path end-to-end
+    prompt-regression  # Prompt quality fixture assertions
+```
+
+### Writing Tests
+
+- Use `truncateAll()` in `beforeEach` for DB isolation (unit/integration)
+- Use `signTestToken()` for authenticated requests
+- Use `seedUsers()`, `seedConversation()`, `seedMemoryProfile()`, etc. for test data
+- AI and embedding services are always mocked in unit/integration — never call real APIs
+- E2E tests use their own helpers (`e2e/helpers.ts`): `e2eCleanup()`, `e2eSeedUser()`, `buildE2EProfile()`
+- Run `bun run test` before submitting PRs
+
+### Manual Testing
+
+For Postman setup, curl cheatsheets (including SSE streaming), and JWT generation:
+- See `docs/MANUAL_TESTING.md`
+- Import the Postman collection from `docs/postman/`
+
 ## Git Workflow
 
 - `main` is the primary branch

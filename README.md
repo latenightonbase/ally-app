@@ -27,7 +27,7 @@ ally-app/
 | Database | PostgreSQL + pgvector (Neon) |
 | ORM | Drizzle |
 | AI | Claude claude-sonnet-4-6 (Anthropic SDK) |
-| Embeddings | Voyage AI voyage-3-lite |
+| Embeddings | Voyage AI voyage-4-lite |
 | Validation | TypeBox (Elysia built-in) + Zod (shared schemas) |
 | Auth | JWT verification (tokens issued by mobile team) |
 
