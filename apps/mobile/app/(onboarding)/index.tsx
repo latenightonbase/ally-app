@@ -12,6 +12,7 @@ import { useTheme } from "../../context/ThemeContext";
 
 const QUESTIONS = [
   "Hey! I'm Ally. What should I call you?",
+  "Now, what would you like to name your agent? This is your personal companion — make it yours.",
   "Give me the quick snapshot — what does your life look like right now?",
   "What's taking up most of your mental energy right now?",
   "When things get tough, what does that usually look like for you? And who or what helps you get through it?",
@@ -64,10 +65,10 @@ export default function OnboardingScreen() {
     const payload = {
       answers: {
         nameAndGreeting: answers[0].trim(),
-        lifeContext: answers[1].trim(),
-        currentFocus: answers[2].trim(),
-        stressAndSupport: answers[3].trim(),
-        allyExpectations: answers[4].trim(),
+        lifeContext: answers[2].trim(),
+        currentFocus: answers[3].trim(),
+        stressAndSupport: answers[4].trim(),
+        allyExpectations: answers[5].trim(),
       },
     };
 
@@ -85,7 +86,7 @@ export default function OnboardingScreen() {
 
       completeOnboarding({
         name: answers[0].trim(),
-        allyName: "Ally",
+        allyName: answers[1].trim() || "Ally",
         job: "",
         challenges: "",
         interests: [],
