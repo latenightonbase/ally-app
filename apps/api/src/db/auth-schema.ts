@@ -1,5 +1,10 @@
 import { relations } from "drizzle-orm";
-import { pgTable, text, timestamp, boolean, index } from "drizzle-orm/pg-core";
+import { pgTable, text, timestamp, boolean, index, jsonb } from "drizzle-orm/pg-core";
+
+export interface NotificationPreferences {
+  dailyPingTime: string; // e.g. "9:00 AM"
+  timezone: string; // e.g. "America/New_York"
+}
 
 export const user = pgTable("user", {
   id: text("id").primaryKey(),
@@ -7,6 +12,9 @@ export const user = pgTable("user", {
   email: text("email").notNull().unique(),
   emailVerified: boolean("email_verified").default(false).notNull(),
   image: text("image"),
+  allyName: text("ally_name").default("Ally"),
+  notificationPreferences: jsonb("notification_preferences").$type<NotificationPreferences>(),
+  expoPushToken: text("expo_push_token"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at")
     .defaultNow()

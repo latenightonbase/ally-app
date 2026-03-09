@@ -155,6 +155,61 @@ export async function submitOnboarding(
   });
 }
 
+// --- Dynamic Onboarding ---
+
+export interface OnboardingQA {
+  question: string;
+  answer: string;
+}
+
+export interface DynamicOnboardingQuestion {
+  title: string;
+  subtitle?: string;
+  type: "text" | "multiline" | "chips" | "choice";
+  options?: string[];
+  choices?: { label: string; value: string }[];
+  placeholder?: string;
+}
+
+export interface OnboardingFollowupResponse {
+  questions: DynamicOnboardingQuestion[];
+  summary: string;
+}
+
+export async function getOnboardingFollowups(input: {
+  userName: string;
+  allyName: string;
+  conversation: OnboardingQA[];
+  dynamicRound: number;
+}): Promise<OnboardingFollowupResponse> {
+  return apiRequest<OnboardingFollowupResponse>("/api/v1/onboarding/followup", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export async function completeOnboardingDynamic(input: {
+  userName: string;
+  allyName: string;
+  conversation: OnboardingQA[];
+  dailyPingTime: string;
+  timezone: string;
+}): Promise<OnboardingResponse> {
+  return apiRequest<OnboardingResponse>("/api/v1/onboarding/complete", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+// --- Push Token ---
+
+export async function registerPushToken(token: string): Promise<void> {
+  await apiRequest("/api/v1/users/push-token", {
+    method: "POST",
+    body: JSON.stringify({ token }),
+  });
+}
+
 // --- Conversations ---
 
 export interface ConversationSummary {

@@ -9,6 +9,8 @@ export interface UserProfile {
   challenges: string;
   interests: string[];
   briefingTime: string;
+  dailyPingTime: string;
+  timezone: string;
 }
 
 export interface ChatMessage {
@@ -39,6 +41,8 @@ const INITIAL_USER: UserProfile = {
   challenges: "",
   interests: [],
   briefingTime: "9:00 AM",
+  dailyPingTime: "9:00 AM",
+  timezone: "",
 };
 
 export const useAppStore = create<AppState>()(

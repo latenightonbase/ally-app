@@ -9,6 +9,7 @@ import { memoryRoutes } from "./routes/memory";
 import { conversationRoutes } from "./routes/conversations";
 import { insightRoutes } from "./routes/insights";
 import { webhookRoutes } from "./routes/webhooks";
+import { userRoutes } from "./routes/users";
 import { startScheduler } from "./jobs/scheduler";
 import { auth } from "./lib/auth";
 
@@ -64,6 +65,7 @@ const app = new Elysia()
   .use(conversationRoutes)
   .use(insightRoutes)
   .use(webhookRoutes)
+  .use(userRoutes)
   .listen(process.env.PORT ?? 3000);
 
 if (process.env.NODE_ENV !== "test") {
