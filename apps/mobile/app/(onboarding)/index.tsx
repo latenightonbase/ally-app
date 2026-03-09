@@ -57,7 +57,7 @@ const TIME_PICKER_QUESTION: DynamicOnboardingQuestion = {
 
 // Max number of dynamic AI rounds (after seed question)
 // Only 1 round: seed answer → 1-2 followup questions → time picker
-const MAX_DYNAMIC_ROUNDS = 1;
+const MAX_DYNAMIC_ROUNDS = 2;
 
 interface StepData {
   question: DynamicOnboardingQuestion;
