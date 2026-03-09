@@ -6,13 +6,13 @@ import { TEST_USER, TEST_FREE_USER, TEST_PREMIUM_USER } from "./jwt";
 export async function truncateAll() {
   await db.execute(sql`
     TRUNCATE TABLE job_runs, briefings, memory_facts, memory_profiles,
-                   messages, conversations, users
+                   messages, conversations, "user", session, account, verification
     CASCADE
   `);
 }
 
 export async function seedUsers() {
-  await db.insert(schema.users).values([
+  await db.insert(schema.user).values([
     { id: TEST_USER.id, email: TEST_USER.email, name: TEST_USER.name, tier: TEST_USER.tier },
     { id: TEST_FREE_USER.id, email: TEST_FREE_USER.email, name: TEST_FREE_USER.name, tier: TEST_FREE_USER.tier },
     { id: TEST_PREMIUM_USER.id, email: TEST_PREMIUM_USER.email, name: TEST_PREMIUM_USER.name, tier: TEST_PREMIUM_USER.tier },

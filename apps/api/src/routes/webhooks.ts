@@ -12,9 +12,9 @@ export const webhookRoutes = new Elysia({ prefix: "/api/v1/webhooks" }).post(
     }
 
     await db
-      .update(schema.users)
-      .set({ tier: body.tier as any })
-      .where(eq(schema.users.id, body.userId));
+      .update(schema.user)
+      .set({ tier: body.tier })
+      .where(eq(schema.user.id, body.userId));
 
     return { acknowledged: true };
   },

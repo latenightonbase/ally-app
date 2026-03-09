@@ -35,10 +35,10 @@ describe("POST /api/v1/webhooks/subscription", () => {
     const body = await json(res);
     expect(body.acknowledged).toBe(true);
 
-    const user = await db.query.users.findFirst({
-      where: eq(schema.users.id, TEST_USER.id),
+    const updatedUser = await db.query.user.findFirst({
+      where: eq(schema.user.id, TEST_USER.id),
     });
-    expect(user?.tier).toBe("premium");
+    expect(updatedUser?.tier).toBe("premium");
   });
 
   it("returns 401 with invalid webhook secret", async () => {

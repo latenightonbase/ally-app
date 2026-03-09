@@ -1,39 +1,26 @@
 import { Elysia } from "elysia";
-import { jwtVerify } from "jose";
+import { auth } from "../lib/auth";
 import type { Tier } from "@ally/shared";
-
-const JWT_SECRET = new TextEncoder().encode(
-  process.env.JWT_SECRET ?? "dev-secret",
-);
 
 export const authMiddleware = new Elysia({ name: "auth" }).derive(
   { as: "scoped" },
   async ({ headers, set }) => {
-    const authorization = headers.authorization;
-    if (!authorization?.startsWith("Bearer ")) {
+    const session = await auth.api.getSession({
+      headers: new Headers(headers as Record<string, string>),
+    });
+
+    if (!session) {
       set.status = 401;
-      throw new Error("Missing or invalid authorization header");
+      throw new Error("Not authenticated");
     }
 
-    const token = authorization.slice(7);
-
-    try {
-      const { payload } = await jwtVerify(token, JWT_SECRET);
-      return {
-        user: {
-          id: payload.sub as string,
-          email: payload.email as string,
-          tier: payload.tier as Tier,
-          trialEndsAt: (payload.trial_ends_at as string) ?? null,
-        },
-      };
-    } catch (e) {
-      set.status = 401;
-      throw new Error(
-        e instanceof Error && e.message.includes("expired")
-          ? "Token has expired, please refresh"
-          : "Invalid token",
-      );
-    }
+    return {
+      user: {
+        id: session.user.id,
+        email: session.user.email,
+        tier: ((session.user as any).tier ?? "free_trial") as Tier,
+        trialEndsAt: null,
+      },
+    };
   },
 );

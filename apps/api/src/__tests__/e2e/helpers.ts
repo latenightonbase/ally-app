@@ -15,12 +15,12 @@ export async function e2eCleanup() {
     )
   `);
   await db.execute(sql`DELETE FROM conversations WHERE user_id = ${E2E_USER_ID}`);
-  await db.execute(sql`DELETE FROM users WHERE id = ${E2E_USER_ID}`);
+  await db.execute(sql`DELETE FROM "user" WHERE id = ${E2E_USER_ID}`);
 }
 
 export async function e2eSeedUser() {
   await db
-    .insert(schema.users)
+    .insert(schema.user)
     .values({
       id: E2E_USER_ID,
       email: "e2e@ally-test.com",

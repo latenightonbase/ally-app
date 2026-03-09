@@ -14,6 +14,9 @@ import {
 import { sql } from "drizzle-orm";
 import { vector } from "drizzle-orm/pg-core";
 import type { MemoryProfile } from "@ally/shared";
+import { user } from "./auth-schema";
+
+export { user, session, account, verification } from "./auth-schema";
 
 export const tierEnum = pgEnum("tier", [
   "free_trial",
@@ -34,22 +37,13 @@ export const memoryCategoryEnum = pgEnum("memory_category", [
   "emotional_patterns",
 ]);
 
-export const users = pgTable("users", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  email: text("email").notNull().unique(),
-  name: text("name").notNull(),
-  tier: tierEnum("tier").notNull().default("free_trial"),
-  trialEndsAt: timestamp("trial_ends_at", { withTimezone: true }),
-  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
-});
-
 export const conversations = pgTable(
   "conversations",
   {
     id: uuid("id").primaryKey().defaultRandom(),
-    userId: uuid("user_id")
+    userId: text("user_id")
       .notNull()
-      .references(() => users.id, { onDelete: "cascade" }),
+      .references(() => user.id, { onDelete: "cascade" }),
     preview: text("preview"),
     messageCount: integer("message_count").notNull().default(0),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
@@ -85,9 +79,9 @@ export const messages = pgTable(
 );
 
 export const memoryProfiles = pgTable("memory_profiles", {
-  userId: uuid("user_id")
+  userId: text("user_id")
     .primaryKey()
-    .references(() => users.id, { onDelete: "cascade" }),
+    .references(() => user.id, { onDelete: "cascade" }),
   profile: jsonb("profile").$type<MemoryProfile>().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 });
@@ -96,9 +90,9 @@ export const memoryFacts = pgTable(
   "memory_facts",
   {
     id: uuid("id").primaryKey().defaultRandom(),
-    userId: uuid("user_id")
+    userId: text("user_id")
       .notNull()
-      .references(() => users.id, { onDelete: "cascade" }),
+      .references(() => user.id, { onDelete: "cascade" }),
     content: text("content").notNull(),
     category: memoryCategoryEnum("category").notNull(),
     importance: real("importance").notNull().default(0.5),
@@ -135,9 +129,9 @@ export const briefings = pgTable(
   "briefings",
   {
     id: uuid("id").primaryKey().defaultRandom(),
-    userId: uuid("user_id")
+    userId: text("user_id")
       .notNull()
-      .references(() => users.id, { onDelete: "cascade" }),
+      .references(() => user.id, { onDelete: "cascade" }),
     date: text("date").notNull(),
     content: text("content").notNull(),
     delivered: boolean("delivered").notNull().default(false),
@@ -156,7 +150,7 @@ export const jobRuns = pgTable(
   {
     id: uuid("id").primaryKey().defaultRandom(),
     jobName: text("job_name").notNull(),
-    userId: uuid("user_id").references(() => users.id),
+    userId: text("user_id").references(() => user.id),
     status: text("status").notNull().default("running"),
     metadata: jsonb("metadata").$type<Record<string, unknown>>(),
     startedAt: timestamp("started_at", { withTimezone: true }).defaultNow().notNull(),

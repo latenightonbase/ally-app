@@ -2,17 +2,35 @@ import React, { useState } from "react";
 import { ScrollView, View, Text, Alert } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { MotiView } from "moti";
+import { router } from "expo-router";
 import { useTheme } from "../../context/ThemeContext";
 import { useAppStore } from "../../store/useAppStore";
 import { ThemePicker } from "../../components/settings/ThemePicker";
 import { SubscriptionCard } from "../../components/settings/SubscriptionCard";
 import { SettingsRow } from "../../components/settings/SettingsRow";
+import { authClient, useSession } from "../../lib/auth";
+import { deleteMemoryProfile } from "../../lib/api";
 
 export default function SettingsScreen() {
   const { themeId, setTheme } = useTheme();
   const user = useAppStore((s) => s.user);
   const resetOnboarding = useAppStore((s) => s.resetOnboarding);
+  const { data: session } = useSession();
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
+
+  const handleSignOut = () => {
+    Alert.alert("Sign Out", "Are you sure you want to sign out?", [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Sign Out",
+        onPress: async () => {
+          await authClient.signOut();
+          resetOnboarding();
+          router.replace("/");
+        },
+      },
+    ]);
+  };
 
   const handleResetOnboarding = () => {
     Alert.alert(
@@ -23,9 +41,15 @@ export default function SettingsScreen() {
         {
           text: "Reset",
           style: "destructive",
-          onPress: resetOnboarding,
+          onPress: async () => {
+            try {
+              await deleteMemoryProfile();
+            } catch {}
+            resetOnboarding();
+            router.replace("/");
+          },
         },
-      ]
+      ],
     );
   };
 
@@ -38,13 +62,13 @@ export default function SettingsScreen() {
         {
           text: "Clear",
           style: "destructive",
-          onPress: () => {
-            // Just reset memories, keep everything else
-            const store = useAppStore.getState();
-            useAppStore.setState({ memories: [] });
+          onPress: async () => {
+            try {
+              await deleteMemoryProfile();
+            } catch {}
           },
         },
-      ]
+      ],
     );
   };
 
@@ -106,8 +130,14 @@ export default function SettingsScreen() {
           <SettingsRow
             icon="person-outline"
             label="Name"
-            value={user.name}
+            value={session?.user?.name ?? user.name}
             showChevron
+            onPress={() => {}}
+          />
+          <SettingsRow
+            icon="mail-outline"
+            label="Email"
+            value={session?.user?.email ?? ""}
             onPress={() => {}}
           />
           <SettingsRow
@@ -127,6 +157,12 @@ export default function SettingsScreen() {
             icon="refresh-outline"
             label={`Reset ${user.allyName || "Ally"}`}
             onPress={handleResetOnboarding}
+            danger
+          />
+          <SettingsRow
+            icon="log-out-outline"
+            label="Sign Out"
+            onPress={handleSignOut}
             danger
           />
 

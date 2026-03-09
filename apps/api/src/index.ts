@@ -10,6 +10,7 @@ import { conversationRoutes } from "./routes/conversations";
 import { insightRoutes } from "./routes/insights";
 import { webhookRoutes } from "./routes/webhooks";
 import { startScheduler } from "./jobs/scheduler";
+import { auth } from "./lib/auth";
 
 const app = new Elysia()
   .use(
@@ -20,16 +21,21 @@ const app = new Elysia()
         "Content-Type",
         "Authorization",
         "X-Webhook-Secret",
+        "Cookie",
       ],
       exposeHeaders: [
         "X-RateLimit-Limit",
         "X-RateLimit-Remaining",
         "X-RateLimit-Reset",
+        "Set-Cookie",
       ],
       credentials: true,
     }),
   )
   .use(loggerMiddleware)
+  .all("/api/auth/*", async ({ request }) => {
+    return auth.handler(request);
+  })
   .onError(({ error, set }) => {
     const message =
       error && typeof error === "object" && "message" in error

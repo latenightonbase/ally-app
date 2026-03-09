@@ -14,7 +14,7 @@ export async function runReengagement() {
     last_activity: Date;
   }>(sql`
     SELECT u.id as user_id, MAX(c.last_message_at) as last_activity
-    FROM ${schema.users} u
+    FROM ${schema.user} u
     LEFT JOIN ${schema.conversations} c ON c.user_id = u.id
     GROUP BY u.id
     HAVING MAX(c.last_message_at) < ${threeDaysAgo}

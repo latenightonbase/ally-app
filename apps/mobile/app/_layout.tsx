@@ -6,13 +6,11 @@ import { StatusBar } from "expo-status-bar";
 import * as SplashScreen from "expo-splash-screen";
 import { vars } from "nativewind";
 import { ThemeProvider, useTheme } from "../context/ThemeContext";
-import { useAppStore } from "../store/useAppStore";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 
 SplashScreen.preventAutoHideAsync();
 
 function RootNavigation() {
-  const isOnboarded = useAppStore((s) => s.isOnboarded);
   const { theme } = useTheme();
 
   useEffect(() => {
@@ -34,6 +32,7 @@ function RootNavigation() {
         }}
       >
         <Stack.Screen name="index" />
+        <Stack.Screen name="(auth)" />
         <Stack.Screen name="(onboarding)" />
         <Stack.Screen name="(tabs)" />
       </Stack>

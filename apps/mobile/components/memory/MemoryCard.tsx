@@ -3,10 +3,16 @@ import { View, Text, Pressable, TextInput } from "react-native";
 import { MotiView } from "moti";
 import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
-import type { Memory } from "../../constants/mockData";
+
+interface MemoryItem {
+  id: string;
+  text: string;
+  category: string;
+  createdAt: Date;
+}
 
 interface MemoryCardProps {
-  memory: Memory;
+  memory: MemoryItem;
   index: number;
   onEdit: (id: string, text: string) => void;
   onDelete: (id: string) => void;

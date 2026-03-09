@@ -11,8 +11,10 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@better-auth/expo": "^1.5.4",
     "@expo/vector-icons": "^15.1.1",
     "@react-native-async-storage/async-storage": "2.2.0",
+    "better-auth": "^1.5.4",
     "clsx": "^2.1.1",
     "expo": "~55.0.4",
     "expo-constants": "~55.0.7",
@@ -23,8 +25,10 @@
     "expo-linear-gradient": "~55.0.8",
     "expo-linking": "~55.0.7",
     "expo-router": "~55.0.3",
+    "expo-secure-store": "^55.0.8",
     "expo-splash-screen": "~55.0.10",
     "expo-status-bar": "~55.0.4",
+    "expo-web-browser": "^55.0.9",
     "moti": "^0.30.0",
     "nativewind": "^4.2.2",
     "react": "19.2.0",

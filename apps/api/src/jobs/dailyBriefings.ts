@@ -7,14 +7,14 @@ export async function runDailyBriefings() {
   const today = new Date().toISOString().split("T")[0];
   console.log(`[daily-briefings] Generating briefings for ${today}`);
 
-  const eligibleUsers = await db.query.users.findMany({
+  const eligibleUsers = await db.query.user.findMany({
     where: and(
-      eq(schema.users.tier, "pro" as any),
+      eq(schema.user.tier, "pro"),
     ),
   });
 
-  const premiumUsers = await db.query.users.findMany({
-    where: eq(schema.users.tier, "premium" as any),
+  const premiumUsers = await db.query.user.findMany({
+    where: eq(schema.user.tier, "premium"),
   });
 
   const allEligible = [...eligibleUsers, ...premiumUsers];

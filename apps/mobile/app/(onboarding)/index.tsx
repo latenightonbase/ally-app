@@ -9,6 +9,7 @@ import { ProgressBackground } from "../../components/onboarding/ProgressBackgrou
 import { QuestionStep } from "../../components/onboarding/QuestionStep";
 import { useAppStore } from "../../store/useAppStore";
 import { useTheme } from "../../context/ThemeContext";
+import { submitOnboarding } from "../../lib/api";
 
 const QUESTIONS = [
   "Hey! I'm Ally. What should I call you?",
@@ -62,27 +63,14 @@ export default function OnboardingScreen() {
     setSubmitting(true);
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
 
-    const payload = {
-      answers: {
+    try {
+      await submitOnboarding({
         nameAndGreeting: answers[0].trim(),
         lifeContext: answers[2].trim(),
         currentFocus: answers[3].trim(),
         stressAndSupport: answers[4].trim(),
         allyExpectations: answers[5].trim(),
-      },
-    };
-
-    try {
-      const res = await fetch(
-        `${process.env.EXPO_PUBLIC_API_URL}/api/v1/onboarding`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload),
-        },
-      );
-
-      if (!res.ok) throw new Error("Submission failed");
+      });
 
       completeOnboarding({
         name: answers[0].trim(),

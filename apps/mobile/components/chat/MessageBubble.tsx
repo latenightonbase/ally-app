@@ -2,10 +2,10 @@ import React from "react";
 import { View, Text } from "react-native";
 import { MotiView } from "moti";
 import { Avatar } from "../ui/Avatar";
-import type { Message } from "../../constants/mockData";
+import type { ChatMessage } from "../../store/useAppStore";
 
 interface MessageBubbleProps {
-  message: Message;
+  message: ChatMessage;
   isLatest: boolean;
 }
 

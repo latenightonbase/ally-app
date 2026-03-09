@@ -7,8 +7,8 @@ import type { WeeklyInsight } from "@ally/shared";
 export async function runWeeklyInsights() {
   console.log("[weekly-insights] Starting...");
 
-  const premiumUsers = await db.query.users.findMany({
-    where: eq(schema.users.tier, "premium" as any),
+  const premiumUsers = await db.query.user.findMany({
+    where: eq(schema.user.tier, "premium"),
   });
 
   const weekAgo = new Date();

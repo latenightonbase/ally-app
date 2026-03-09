@@ -13,7 +13,7 @@ import { MessageBubble } from "../../components/chat/MessageBubble";
 import { ChatInput } from "../../components/chat/ChatInput";
 import { TypingIndicator } from "../../components/chat/TypingIndicator";
 import { useAppStore } from "../../store/useAppStore";
-import { MOCK_ALLY_RESPONSES } from "../../constants/mockData";
+import { sendMessage } from "../../lib/api";
 
 const CHAT_SUGGESTIONS = [
   "How are you feeling today?",
@@ -27,32 +27,16 @@ const CHAT_SUGGESTIONS = [
 export default function ChatScreen() {
   const messages = useAppStore((s) => s.messages);
   const addMessage = useAppStore((s) => s.addMessage);
-  const user = useAppStore((s) => s.user);
+  const activeConversationId = useAppStore((s) => s.activeConversationId);
+  const setActiveConversationId = useAppStore((s) => s.setActiveConversationId);
   const [isTyping, setIsTyping] = useState(false);
   const flatListRef = useRef<FlatList>(null);
-  const responseIndexRef = useRef(0);
   const insets = useSafeAreaInsets();
 
-  // Height of floating tab bar (64) + bottom inset/margin + extra spacing
   const tabBarHeight = 64 + Math.max(insets.bottom, Platform.OS === "ios" ? 16 : 12) + 16;
 
-  const getAllyResponse = useCallback(() => {
-    const template =
-      MOCK_ALLY_RESPONSES[responseIndexRef.current % MOCK_ALLY_RESPONSES.length];
-    responseIndexRef.current += 1;
-
-    return template
-      .replace("{name}", user.name)
-      .replace(
-        "{interests}",
-        user.interests.length > 0
-          ? user.interests[Math.floor(Math.random() * user.interests.length)]
-          : "the things you enjoy"
-      );
-  }, [user.name, user.interests]);
-
   const handleSend = useCallback(
-    (text: string) => {
+    async (text: string) => {
       addMessage(text, true);
 
       setTimeout(() => {
@@ -60,24 +44,37 @@ export default function ChatScreen() {
       }, 100);
 
       setIsTyping(true);
-      setTimeout(() => {
-        setIsTyping(false);
-        const response = getAllyResponse();
-        addMessage(response, false);
 
+      try {
+        const result = await sendMessage(
+          text,
+          activeConversationId ?? undefined,
+        );
+
+        if (!activeConversationId) {
+          setActiveConversationId(result.conversationId);
+        }
+
+        addMessage(result.response, false);
+      } catch (e) {
+        const errMsg =
+          e instanceof Error ? e.message : "Something went wrong";
+        addMessage(`Sorry, I couldn't respond right now. ${errMsg}`, false);
+      } finally {
+        setIsTyping(false);
         setTimeout(() => {
           flatListRef.current?.scrollToEnd({ animated: true });
         }, 100);
-      }, 1500 + Math.random() * 1000);
+      }
     },
-    [addMessage, getAllyResponse]
+    [addMessage, activeConversationId, setActiveConversationId],
   );
 
   const handleSuggestionPress = useCallback(
     (suggestion: string) => {
       handleSend(suggestion);
     },
-    [handleSend]
+    [handleSend],
   );
 
   const showSuggestions = messages.length <= 1;
