@@ -15,12 +15,12 @@ interface ScheduledJob {
 }
 
 const jobs: ScheduledJob[] = [
-  {
-    name: "nightly_extraction",
-    cronExpression: "0 23 * * *",
-    handler: runNightlyExtraction,
-    enabled: true,
-  },
+  // {
+  //   name: "nightly_extraction",
+  //   cronExpression: "0 23 * * *",
+  //   handler: runNightlyExtraction,
+  //   enabled: true,
+  // },
   {
     name: "daily_briefings",
     cronExpression: "0 5 * * *",
