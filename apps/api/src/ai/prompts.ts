@@ -8,22 +8,22 @@ export function buildAllySystemPrompt(
 
   if (profile) {
     const p = profile;
-    const name = p.personalInfo.preferredName ?? "there";
+    const name = p.personalInfo?.preferredName ?? "there";
 
     memoryBlock += `\nHere is what you remember about ${name}:\n\n`;
 
-    if (p.personalInfo.preferredName || p.personalInfo.location) {
+    if (p.personalInfo?.preferredName || p.personalInfo?.location) {
       const parts: string[] = [];
-      if (p.personalInfo.fullName)
+      if (p.personalInfo?.fullName)
         parts.push(`Full name: ${p.personalInfo.fullName}`);
-      if (p.personalInfo.location)
+      if (p.personalInfo?.location)
         parts.push(`Lives in ${p.personalInfo.location}`);
-      if (p.personalInfo.livingSituation)
+      if (p.personalInfo?.livingSituation)
         parts.push(p.personalInfo.livingSituation);
       if (parts.length) memoryBlock += `**About them:** ${parts.join(". ")}\n\n`;
     }
 
-    if (p.relationships.length > 0) {
+    if (p.relationships?.length > 0) {
       memoryBlock += `**People in their life:**\n`;
       for (const r of p.relationships) {
         memoryBlock += `- ${r.name} (${r.relation}): ${r.notes}\n`;
@@ -31,14 +31,14 @@ export function buildAllySystemPrompt(
       memoryBlock += "\n";
     }
 
-    if (p.work.role) {
+    if (p.work?.role) {
       const workParts = [`${p.work.role}${p.work.company ? ` at ${p.work.company}` : ""}`];
-      if (p.work.stressors.length)
+      if (p.work.stressors?.length)
         workParts.push(`Stressors: ${p.work.stressors.join(", ")}`);
       memoryBlock += `**Work:** ${workParts.join(". ")}\n\n`;
     }
 
-    if (p.goals.filter((g) => g.status === "active").length > 0) {
+    if (p.goals?.filter((g) => g.status === "active").length > 0) {
       memoryBlock += `**Active Goals:**\n`;
       for (const g of p.goals.filter((g) => g.status === "active")) {
         memoryBlock += `- ${g.description} (${g.category})${g.progressNotes ? ` — ${g.progressNotes}` : ""}\n`;
@@ -46,18 +46,20 @@ export function buildAllySystemPrompt(
       memoryBlock += "\n";
     }
 
-    if (p.emotionalPatterns.primaryStressors.length > 0) {
-      memoryBlock += `**Emotional Patterns:** Primary stressors: ${p.emotionalPatterns.primaryStressors.join(", ")}. `;
-      if (p.emotionalPatterns.copingMechanisms.length)
-        memoryBlock += `Coping mechanisms: ${p.emotionalPatterns.copingMechanisms.join(", ")}. `;
-      if (p.emotionalPatterns.sensitivities.length)
-        memoryBlock += `Sensitivities (handle with care): ${p.emotionalPatterns.sensitivities.join(", ")}.`;
+    const ep = p.emotionalPatterns;
+    if (ep?.primaryStressors?.length > 0) {
+      memoryBlock += `**Emotional Patterns:** Primary stressors: ${ep.primaryStressors.join(", ")}. `;
+      if (ep.copingMechanisms?.length)
+        memoryBlock += `Coping mechanisms: ${ep.copingMechanisms.join(", ")}. `;
+      if (ep.sensitivities?.length)
+        memoryBlock += `Sensitivities (handle with care): ${ep.sensitivities.join(", ")}.`;
       memoryBlock += "\n\n";
     }
 
-    if (p.pendingFollowups.filter((f) => !f.resolved).length > 0) {
+    const followups = Array.isArray(p.pendingFollowups) ? p.pendingFollowups : [];
+    if (followups.filter((f) => !f.resolved).length > 0) {
       memoryBlock += `**Things to follow up on:**\n`;
-      for (const f of p.pendingFollowups.filter((f) => !f.resolved)) {
+      for (const f of followups.filter((f) => !f.resolved)) {
         memoryBlock += `- [${f.priority}] ${f.topic}: ${f.context}\n`;
       }
       memoryBlock += "\n";
@@ -81,10 +83,11 @@ Your core traits:
 - You ask thoughtful follow-up questions that show you've been paying attention
 - You proactively bring up things you think are relevant (upcoming events, unresolved feelings)
 - You never use bullet points, numbered lists, or markdown in conversation — you talk like a real person
-- You keep responses concise (2-4 sentences usually, longer when the moment calls for it)
+- You MUST keep responses short: 1-3 sentences by default. Only go longer (4-5 sentences max) for emotionally heavy moments or when the user explicitly asks for detail.
+- Never over-explain, repeat yourself, or pad your responses. Say what matters and stop.
 - You acknowledge emotions before jumping to solutions
 
-You are NOT a therapist, life coach, or productivity tool. You're a friend.
+You are NOT a therapist, life coach, or productivity tool. You're a friend. Talk like one — brief, warm, real.
 ${memoryBlock}`;
 }
 

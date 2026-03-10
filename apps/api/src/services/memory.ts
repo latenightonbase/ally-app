@@ -68,12 +68,41 @@ export async function getOrCreateProfile(
   return defaultProfile;
 }
 
+/**
+ * Deep-merge two objects: for each key in `source`, if both values are
+ * plain objects, recurse; if both are arrays, concatenate; otherwise
+ * the source value wins.
+ */
+function deepMerge<T extends Record<string, any>>(target: T, source: Partial<T>): T {
+  const result = { ...target };
+  for (const key of Object.keys(source) as (keyof T)[]) {
+    const sv = source[key];
+    const tv = target[key];
+    if (sv === undefined || sv === null) continue;
+    if (Array.isArray(tv) && Array.isArray(sv)) {
+      (result as any)[key] = [...tv, ...sv];
+    } else if (
+      typeof tv === "object" &&
+      tv !== null &&
+      !Array.isArray(tv) &&
+      typeof sv === "object" &&
+      sv !== null &&
+      !Array.isArray(sv)
+    ) {
+      (result as any)[key] = deepMerge(tv, sv as any);
+    } else {
+      (result as any)[key] = sv;
+    }
+  }
+  return result;
+}
+
 export async function updateProfile(
   userId: string,
   updates: Partial<MemoryProfile>,
 ): Promise<void> {
   const current = await getOrCreateProfile(userId);
-  const merged = { ...current, ...updates, updatedAt: new Date().toISOString() };
+  const merged = deepMerge(current, { ...updates, updatedAt: new Date().toISOString() });
 
   await db
     .update(schema.memoryProfiles)
@@ -86,14 +115,25 @@ export async function storeExtractedFacts(
   facts: ExtractedFact[],
   sourceConversationId: string | null,
 ): Promise<void> {
-  if (facts.length === 0) return;
+  if (facts.length === 0) {
+    console.log(`[storeExtractedFacts] No facts provided, skipping`);
+    return;
+  }
 
   const validFacts = facts.filter((f) => f.confidence >= 0.7);
-  if (validFacts.length === 0) return;
+  if (validFacts.length === 0) {
+    console.log(
+      `[storeExtractedFacts] All ${facts.length} facts filtered out by confidence threshold (need >= 0.7). ` +
+      `Confidences: ${facts.map((f) => f.confidence).join(", ")}`,
+    );
+    return;
+  }
 
+  console.log(`[storeExtractedFacts] Generating embeddings for ${validFacts.length} facts...`);
   const embeddings = await generateEmbeddings(
     validFacts.map((f) => f.content),
   );
+  console.log(`[storeExtractedFacts] Embeddings generated (dimensions: ${embeddings[0]?.length ?? 0})`);
 
   const rows = validFacts.map((fact, i) => ({
     userId,
@@ -110,6 +150,7 @@ export async function storeExtractedFacts(
   }));
 
   await db.insert(schema.memoryFacts).values(rows);
+  console.log(`[storeExtractedFacts] Inserted ${rows.length} facts into DB for user ${userId}`);
 }
 
 export async function addFollowups(

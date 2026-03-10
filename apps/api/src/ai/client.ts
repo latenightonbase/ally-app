@@ -105,11 +105,15 @@ export async function callClaudeStructured<T>(options: {
   try {
     const jsonMatch = result.text.match(/```json\s*([\s\S]*?)\s*```/);
     const jsonStr = jsonMatch ? jsonMatch[1] : result.text;
+    console.log(`[callClaudeStructured] Raw response (first 500 chars): ${result.text.slice(0, 500)}`);
     return {
       data: JSON.parse(jsonStr.trim()) as T,
       tokensUsed: result.tokensUsed,
     };
-  } catch {
+  } catch (parseErr) {
+    console.error(
+      `[callClaudeStructured] JSON parse failed. Raw response:\n${result.text}`,
+    );
     throw new AIError(
       "Failed to parse structured AI response",
       500,

@@ -29,7 +29,7 @@ export async function generateReply(input: ConversationInput): Promise<{
   const result = await callClaude({
     system: systemPrompt,
     messages,
-    maxTokens: 1024,
+    maxTokens: 512,
   });
 
   return { response: result.text, tokensUsed: result.tokensUsed };
@@ -45,7 +45,7 @@ export async function generateReplyStreaming(
   const result = await callClaudeStreaming({
     system: systemPrompt,
     messages,
-    maxTokens: 1024,
+    maxTokens: 512,
     onToken,
   });
 
