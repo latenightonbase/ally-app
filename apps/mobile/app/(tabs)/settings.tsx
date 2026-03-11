@@ -44,7 +44,9 @@ export default function SettingsScreen() {
           onPress: async () => {
             try {
               await deleteMemoryProfile();
-            } catch {}
+            } catch {
+              // Profile deletion failure shouldn't block local reset
+            }
             resetOnboarding();
             router.replace("/");
           },
@@ -65,7 +67,9 @@ export default function SettingsScreen() {
           onPress: async () => {
             try {
               await deleteMemoryProfile();
-            } catch {}
+            } catch {
+              Alert.alert("Error", "Could not clear memories. Please try again.");
+            }
           },
         },
       ],

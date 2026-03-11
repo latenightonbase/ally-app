@@ -1,7 +1,7 @@
 {
   "expo": {
     "name": "ally-app",
-    "slug": "ally-app",
+    "slug": "ally",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -13,7 +13,10 @@
     },
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.anonymous.ally-app"
+      "bundleIdentifier": "com.anonymous.ally-app",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -32,6 +35,13 @@
     "plugins": [
       "expo-router",
       "expo-font"
-    ]
+    ],
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "9229a73d-8380-4a22-adee-816b69b6ff75"
+      }
+    },
+    "owner": "ally-ai"
   }
 }

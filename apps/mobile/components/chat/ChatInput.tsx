@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import { View, TextInput, Pressable } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-
+import { useTheme } from "../../context/ThemeContext";
 
 interface ChatInputProps {
   onSend: (text: string) => void;
@@ -10,6 +10,7 @@ interface ChatInputProps {
 
 export function ChatInput({ onSend, disabled = false }: ChatInputProps) {
   const [text, setText] = useState("");
+  const { theme } = useTheme();
 
   const handleSend = () => {
     if (text.trim().length === 0 || disabled) return;
@@ -26,10 +27,14 @@ export function ChatInput({ onSend, disabled = false }: ChatInputProps) {
           value={text}
           onChangeText={setText}
           placeholder="Type a message..."
-          placeholderTextColor="#9C9589"
+          placeholderTextColor={theme.colors["--color-muted"]}
           multiline
           maxLength={500}
-          style={{ maxHeight: 100, color: "#2D2A26", fontSize: 16 }}
+          style={{
+            maxHeight: 100,
+            color: theme.colors["--color-foreground"],
+            fontSize: 16,
+          }}
           className="flex-1 font-sans text-base"
           onSubmitEditing={handleSend}
           blurOnSubmit={false}
@@ -45,7 +50,7 @@ export function ChatInput({ onSend, disabled = false }: ChatInputProps) {
         <Ionicons
           name="send"
           size={18}
-          color={canSend ? "white" : "#9C9589"}
+          color={canSend ? "white" : theme.colors["--color-muted"]}
         />
       </Pressable>
     </View>

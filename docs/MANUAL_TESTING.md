@@ -224,3 +224,50 @@ A typical manual testing session:
 7. Check memory profile and facts to see what was stored
 8. List conversations to verify history
 9. Continue an existing conversation to test context retention
+
+---
+
+## Mobile Testing Checklist
+
+Start the Expo dev server: `cd apps/mobile && bun run dev`
+
+### Auth Flow
+- [ ] **Sign up** — create a new account with email/password; verify redirect to onboarding
+- [ ] **Sign in** — sign in with existing credentials; verify redirect to chat tab
+- [ ] **Invalid credentials** — wrong password shows an alert (not a crash)
+- [ ] **Sign out** — settings → Sign Out → confirm; lands on sign-in screen, Zustand state cleared
+
+### Onboarding Flow
+- [ ] **Fixed questions** — name and ally name inputs accept text and advance correctly
+- [ ] **Seed question** — multiline input works, "Continue" advances to AI followup phase
+- [ ] **Dynamic followup questions** — Claude-generated questions render (text, chips, choice types all display)
+- [ ] **AI followup failure** — kill the API mid-onboarding; screen should gracefully fall through to time picker
+- [ ] **Time picker** — chip selection sets daily ping time
+- [ ] **Completion** — tapping final "Continue" calls `/api/v1/onboarding/complete`, then navigates to chat
+
+### Chat Screen
+- [ ] **Send a message** — message appears in the list, TypingIndicator shows, then ally response streams in token by token
+- [ ] **SSE streaming** — response text accumulates in the ally bubble (not a new bubble per token)
+- [ ] **Error handling** — kill the API mid-stream; error message appears inline as an ally bubble (not a crash)
+- [ ] **Suggestion chips** — visible on first open (only 1 message); disappear after first message sent
+- [ ] **Input max length** — can't type beyond 500 characters
+- [ ] **Disabled state** — send button disabled while streaming
+
+### Memory Vault
+- [ ] **Load memories** — switching to Memory tab fetches and groups facts by category
+- [ ] **Empty state** — categories with no facts show the empty state component
+- [ ] **Delete** — tap trash icon → fact removed from list; verify deleted on server via `GET /api/v1/memory/facts`
+- [ ] **Edit** — tap pencil icon → inline text input; change text → tap checkmark → fact updated; verify via `GET /api/v1/memory/facts`
+- [ ] **Edit cancel** — tap X after editing → text reverts to original, no API call made
+- [ ] **Edit error** — simulate a 500 from the patch endpoint; alert shown, local state unchanged
+
+### Settings
+- [ ] **Theme picker** — switching themes changes colors across all screens immediately
+- [ ] **Theme persistence** — close and reopen app; theme is retained
+- [ ] **Clear All Memories** — confirm dialog → calls `DELETE /api/v1/memory/profile`; memory tab shows empty
+- [ ] **Reset Ally** — confirm dialog → clears profile and redirects to onboarding
+- [ ] **Network error on Clear** — simulate failure; alert shown with error message (not silent)
+
+### Theme / Visual
+- [ ] **Dark theme** — switch to any dark theme; all text, icons, and inputs use correct colors (no white-on-white or black-on-black)
+- [ ] **ChatInput placeholder** — placeholder and typed text both match the active theme foreground/muted colors

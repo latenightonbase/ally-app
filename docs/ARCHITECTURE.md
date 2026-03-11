@@ -39,9 +39,9 @@ Ally is a personal AI companion that remembers everything users share, sends per
 | Backend      | Elysia (Bun-native), TypeScript                  |
 | Database     | PostgreSQL + pgvector (Neon)                     |
 | ORM          | Drizzle ORM                                      |
-| AI           | Claude claude-sonnet-4-6 via @anthropic-ai/sdk  |
-| Embeddings   | Voyage AI voyage-4-lite (1024 dimensions)        |
-| Auth         | JWT verification (tokens issued by mobile team)  |
+| AI           | Claude Haiku 4.5 (fast) + Sonnet 4.6 (quality) via @anthropic-ai/sdk, with server-side web search and custom tools |
+| Embeddings   | Voyage AI voyage-4-lite (1024 dims) with contextual prefixes |
+| Auth         | Better Auth (cookie-based sessions)               |
 
 All AI logic is implemented in TypeScript. No Python.
 
@@ -55,7 +55,8 @@ All AI logic is implemented in TypeScript. No Python.
 |-----------------|-------------------|----------------------------------------------------------|
 | Backend API     | Elysia (Bun)      | REST endpoints for chat, onboarding, memory, briefings   |
 | AI Layer        | TypeScript + Claude | Conversation handling, memory extraction, briefing gen  |
-| Background Jobs | TypeScript        | Nightly extraction, daily briefings, weekly insights, re-engagement |
+| Background Jobs | TypeScript        | Daily ping, weekly insights, proactive scans, memory queue flush |
+| Proactive System| TypeScript        | Event-driven briefings, re-engagement, signal detection         |
 | Frontend        | Expo / React Native | Mobile app (iOS + Android)                              |
 | Documentation   | Markdown          | Architecture, API docs, memory system, personality guide |
 
@@ -81,9 +82,9 @@ ally-app/
 │           ├── index.ts         # Entry point
 │           ├── routes/          # chat, onboarding, briefing, memory, conversations, insights, webhooks, health
 │           ├── middleware/     # auth (JWT), tierCheck
-│           ├── ai/              # client, conversation, extraction, briefing, followup, onboarding, prompts
-│           ├── services/        # memory, embedding, retrieval (hybrid search)
-│           ├── jobs/            # scheduler, nightlyExtraction, dailyBriefings, weeklyInsights, reengagement
+│           ├── ai/              # client, conversation, tools, extraction, briefing, followup, onboarding, prompts
+│           ├── services/        # memory, memoryQueue, embedding, retrieval, session, events, proactive
+│           ├── jobs/            # scheduler, dailyPing, weeklyInsights
 │           └── db/              # schema (Drizzle + pgvector), migrations
 ├── packages/
 │   ├── shared/          # Types, Zod schemas, constants (tiers, errors)
@@ -113,9 +114,9 @@ The central REST API that the mobile app communicates with. Handles request vali
 apps/api/src/
   index.ts              # Elysia app entry point
   routes/
-    chat.ts             # POST /chat
+    chat.ts             # POST /chat, POST /chat/feedback
     onboarding.ts       # POST /onboarding
-    briefing.ts         # GET /briefing
+    briefing.ts         # GET /briefing (on-demand generation)
     memory.ts           # GET /memory/profile
     conversations.ts    # Conversation list, history
     insights.ts         # Weekly insights (Premium)
@@ -124,54 +125,75 @@ apps/api/src/
   middleware/
     auth.ts             # JWT verification
     tierCheck.ts        # Feature gating by subscription tier
+    rateLimit.ts        # Per-user rate limiting
+    logger.ts           # Request logging
   ai/
-    client.ts           # Anthropic SDK wrapper
-    conversation.ts     # Chat turn handling
+    client.ts           # Anthropic SDK wrapper (dual model, tool loops, prompt caching)
+    conversation.ts     # Chat turn handling (model routing, tool use)
+    tools.ts            # Web search + custom tool definitions and execution
     extraction.ts       # Memory extraction
     briefing.ts         # Briefing generation
     followup.ts         # Follow-up detection
     onboarding.ts       # Onboarding processing
-    prompts/            # System, briefing, extraction prompts
+    prompts.ts          # System, briefing, extraction prompts (with few-shot examples)
   services/
-    memory.ts           # Memory profile CRUD
-    embedding.ts        # Voyage AI embeddings
-    retrieval.ts        # Hybrid search (semantic + FTS + recency)
+    memory.ts           # Memory profile CRUD + fact storage
+    memoryQueue.ts      # Async batched memory extraction queue
+    embedding.ts        # Voyage AI embeddings (contextual prefixes, asymmetric search)
+    retrieval.ts        # Hybrid search (query expansion, semantic + FTS + recency)
+    session.ts          # Session detection, summarization, context assembly
+    events.ts           # Typed in-process event emitter
+    proactive.ts        # Event-driven proactive handlers (briefings, re-engagement)
   jobs/
     scheduler.ts        # In-process job scheduler
-    nightlyExtraction.ts
-    dailyBriefings.ts
-    weeklyInsights.ts
-    reengagement.ts
+    dailyPing.ts        # Per-user timezone daily nudge
+    weeklyInsights.ts   # Premium weekly emotional insights
   db/
-    schema.ts           # Drizzle schema + pgvector
+    schema.ts           # Drizzle schema + pgvector + sessions_v2
     migrations/         # SQL migrations
 ```
 
 ### 2. AI Layer (TypeScript + Claude)
 
-All AI logic lives in TypeScript modules using the `@anthropic-ai/sdk`. Every AI call uses `claude-sonnet-4-6`.
+All AI logic lives in TypeScript modules using the `@anthropic-ai/sdk`. Uses dual models: **Haiku 4.5** (fast, casual) and **Sonnet 4.6** (quality, complex/emotional).
 
 **Key responsibilities:**
-- Process chat messages with full memory context (hot + warm + cold)
-- Extract facts from conversations (nightly batch job)
-- Generate personalized morning briefings
+- Process chat messages with full memory context (hot + warm + cold) and tool use
+- Use web search for up-to-date information (Claude's server-side `web_search_20250305`)
+- Use custom tools: `remember_fact`, `recall_memory`, `set_reminder`
+- Extract facts from conversations (real-time via memory queue, not nightly)
+- Generate personalized morning briefings (on-demand)
 - Process onboarding answers into initial memory profiles
 - Detect emotional patterns and flag follow-up opportunities
 
+**Model routing:** Messages are classified by `classifyMessageComplexity()` — short/casual goes to Haiku, long/emotional/complex goes to Sonnet.
+
+**Prompt caching:** System prompts are wrapped with `cache_control: { type: "ephemeral" }` to reduce token costs on repeated calls.
+
 **Directory:** `apps/api/src/ai/`
 
-### 3. Background Jobs
+### 3. Background Jobs & Proactive System
 
-Scheduled tasks that run in-process (Phase 1) or via Trigger.dev (Phase 2+).
+The system uses a hybrid approach — event-driven for reactive behaviors, cron-based for periodic scans.
 
-| Job                    | Schedule       | Module                      | Purpose                                         |
-|------------------------|----------------|-----------------------------|-------------------------------------------------|
-| Nightly Extraction     | 11:00 PM daily | `jobs/nightlyExtraction.ts` | Extract facts from today's conversations        |
-| Daily Briefings        | 5:00 AM daily  | `jobs/dailyBriefings.ts`    | Generate personalized briefing per user (Pro+)  |
-| Weekly Insights        | Sunday 8:00 PM | `jobs/weeklyInsights.ts`    | Emotional week summary (Premium)                |
-| Re-engagement          | 6:00 PM daily  | `jobs/reengagement.ts`      | Check-in with inactive users (3+ days)         |
+**Event-driven (via `services/events.ts` + `services/proactive.ts`):**
 
-**Directory:** `apps/api/src/jobs/`
+| Trigger              | Handler                | What it does                                         |
+|----------------------|------------------------|------------------------------------------------------|
+| `user:app_opened`    | `handleAppOpened()`    | Generate today's briefing if not yet created         |
+| `user:inactive`      | `handleInactivity()`   | Send re-engagement push notification                 |
+| Chat message sent    | `enqueueExtraction()`  | Queue message for async memory extraction            |
+
+**Cron-based (via `jobs/scheduler.ts`):**
+
+| Job                  | Schedule        | Module                    | Purpose                                        |
+|----------------------|-----------------|---------------------------|-------------------------------------------------|
+| Daily Ping           | Every minute    | `jobs/dailyPing.ts`       | Per-user timezone nudge                         |
+| Weekly Insights      | Sunday 20:00    | `jobs/weeklyInsights.ts`  | Emotional week summary (Premium)                |
+| Proactive Scan       | Every 30 min    | (inline)                  | Emit `system:daily_scan`, detect inactive users |
+| Memory Queue Flush   | Every 5 min     | (inline)                  | Flush pending memory extraction batches         |
+
+**Directories:** `apps/api/src/jobs/` and `apps/api/src/services/proactive.ts`
 
 ### 4. Database (Neon PostgreSQL + pgvector)
 
@@ -199,9 +221,21 @@ conversations
 messages
   id              UUID PRIMARY KEY
   conversation_id UUID REFERENCES conversations(id)
+  session_id      UUID REFERENCES sessions_v2(id)
   role            ENUM('user', 'ally')
   content         TEXT
+  feedback        INTEGER (-1, 0, 1)
   created_at      TIMESTAMP
+
+sessions_v2
+  id              UUID PRIMARY KEY
+  conversation_id UUID REFERENCES conversations(id)
+  user_id         UUID REFERENCES users(id)
+  summary         TEXT
+  message_count   INTEGER
+  token_estimate  INTEGER
+  started_at      TIMESTAMP
+  ended_at        TIMESTAMP
 
 memory_profiles
   user_id         UUID PRIMARY KEY REFERENCES users(id)
@@ -276,44 +310,52 @@ Embeddings are 1024-dimensional (Voyage AI voyage-4-lite). The `memory_facts` ta
 
 ```
 1. User sends message via mobile app
-2. Mobile app sends POST /chat with JWT + message
+2. Mobile app sends POST /chat with JWT + message (or SSE stream request)
 3. Backend validates JWT, checks rate limit for user's tier
-4. Backend loads context:
+4. Backend resolves session (resolveSession — creates new session if 30min gap)
+5. Backend loads context in parallel:
    a. Hot memory: user's memory profile from memory_profiles
-   b. Warm memory: recent conversation history from messages
-   c. Cold memory: hybrid search on memory_facts (embedding + FTS + recency)
-5. AI layer (conversation.ts):
-   a. Builds full context (system prompt + hot + warm + cold + new message)
-   b. Calls Claude claude-sonnet-4-6 via @anthropic-ai/sdk
-   c. Returns Ally's response
-6. Backend stores both messages in DB
-7. Backend returns Ally's response to mobile app
+   b. Warm memory: session summaries (last 5) + active session messages (up to 30)
+   c. Cold memory: query expansion + parallel hybrid searches on memory_facts
+6. AI layer (conversation.ts):
+   a. Classifies message complexity → selects Haiku (fast) or Sonnet (quality)
+   b. Builds cached system prompt (profile + cold facts + session summaries)
+   c. Assembles tools (web search + custom tools based on context)
+   d. Calls Claude via tool-use agentic loop (up to 5 tool iterations)
+   e. Streams response back via SSE
+7. Backend stores both messages in DB (with sessionId)
+8. Backend enqueues messages for async memory extraction (memoryQueue)
+9. Response streams to mobile app token-by-token
 ```
 
-### Morning Briefing Flow
+### Morning Briefing Flow (On-Demand)
 
 ```
-1. Job fires at 5:00 AM (dailyBriefings)
-2. For each user with briefings enabled (Pro + Premium):
+1. User opens the app → mobile sends GET /briefing
+2. Backend emits 'user:app_opened' event
+3. If no briefing exists for today:
    a. Load user's memory profile (hot)
    b. Load recent facts and any pending follow-ups (cold)
-   c. Call Claude claude-sonnet-4-6 with briefing prompt + context
+   c. Call Claude Sonnet with briefing prompt + context
    d. Store generated briefing in briefings table
-   e. Mobile team triggers push notification
+4. Mark briefing as delivered, return to mobile app
 ```
 
-### Nightly Memory Extraction Flow
+### Real-Time Memory Extraction Flow
 
 ```
-1. Job fires at 11:00 PM (nightlyExtraction)
-2. For each user with conversations today:
-   a. Load all messages from the day
-   b. Load existing memory profile
-   c. Call Claude claude-sonnet-4-6 with extraction prompt + messages
-   d. Claude returns structured facts
-   e. Generate embeddings for each fact via Voyage AI
-   f. Insert new rows into memory_facts
-   g. Merge high-level updates into memory_profiles.profile
+1. After each chat exchange, messages are enqueued in memoryQueue.ts
+2. shouldExtract() filters trivial messages (greetings, one-word replies, etc.)
+3. Queue accumulates until batch threshold (4 messages) or time window (15s)
+4. processBatch() fires:
+   a. Calls Claude (extraction prompt) with the batched messages
+   b. For each extracted fact:
+      - Adds contextual prefix based on category
+      - Generates embedding via Voyage AI
+      - Inserts into memory_facts
+   c. Merges profile updates into memory_profiles
+5. Failed batches are retried up to 2 times with exponential backoff
+6. A cron (every 5min) calls flushAllBatches() as a safety net
 ```
 
 ### Onboarding Flow
@@ -357,6 +399,71 @@ Tier is checked at the middleware level before any AI processing occurs. The mob
 
 ---
 
+## Mobile Architecture
+
+The Expo/React Native frontend lives in `apps/mobile/`. It communicates exclusively with the Elysia API over HTTP/SSE.
+
+### Navigation (expo-router)
+
+File-based routing with three top-level stacks:
+
+```
+app/
+  index.tsx          ← auth + onboarding guard (redirects to correct stack)
+  _layout.tsx        ← root: GestureHandler > ErrorBoundary > ThemeProvider > Stack
+  (auth)/            ← sign-in, sign-up (unauthenticated only)
+  (onboarding)/      ← dynamic multi-phase onboarding flow
+  (tabs)/            ← main app: Chat, Memory Vault, Settings
+```
+
+The root guard in `app/index.tsx` checks `useSession()` (better-auth) and `isOnboarded` (Zustand) to decide which stack to enter. There is no server-side session fetch in the guard — onboarding state comes from AsyncStorage-persisted Zustand.
+
+### State Management
+
+A single Zustand store (`store/useAppStore.ts`) persisted to AsyncStorage under `"ally-app-storage"`:
+
+| Field | Purpose |
+|---|---|
+| `isOnboarded` | Guards onboarding route |
+| `user` | Name, allyName, job, briefingTime, timezone — set on onboarding completion |
+| `activeConversationId` | Backend conversation ID for the ongoing session |
+| `messages` | Full in-memory + persisted chat log (local source of truth) |
+
+Chat messages live only in local Zustand storage. There is no server-side message hydration — `getConversations` / `getConversationMessages` exist in `lib/api.ts` for a future chat history screen.
+
+### SSE Streaming
+
+`sendMessageStreaming()` in `lib/api.ts` opens a `POST /api/v1/chat` with `stream: true`. It manually reads the `ReadableStream`, splits on `"\n\n"`, and dispatches `onToken` / `onDone` / `onError` callbacks. The chat screen uses these callbacks to:
+
+1. Show `TypingIndicator` before the first token
+2. Call `addMessage("", false)` on first token to create the reply bubble
+3. Call `updateLastMessage(token)` for each subsequent token (appends to the last message)
+
+### Theme System
+
+Eight themes (4 light/dark pairs: Sand & Sage, Terracotta, Lavender, Honey & Forest) defined in `constants/themes.ts`. Each theme is a map of 9 CSS custom property tokens (`--color-primary`, `--color-background`, etc.).
+
+The `ThemeProvider` (`context/ThemeContext.tsx`) injects these as NativeWind CSS variables via `vars(theme.colors)` on the root `View`. All component colors use NativeWind utility classes (e.g., `bg-primary`, `text-foreground`) that reference these variables. Hardcoded hex colors are avoided — icon colors and imperative styles use `theme.colors["--color-*"]` tokens directly.
+
+### Auth
+
+`lib/auth.ts` uses `better-auth` with the `@better-auth/expo` client plugin. Session tokens are stored in `expo-secure-store`. React Native doesn't manage cookies automatically, so `lib/api.ts` reads `authClient.getCookie()` and injects it as a `Cookie` header on every request.
+
+### API Client (`lib/api.ts`)
+
+All types are imported from `@ally/shared` (no local duplicates). The `MemoryFactItem` interface is the only locally defined type — it's a `Pick<MemoryFact, ...>` representing the subset returned by the list endpoint.
+
+`ApiError` (custom class with `status: number`) is thrown for any non-2xx response. Error messages are extracted from `body?.error?.message ?? body?.message` to match the Elysia error response shape.
+
+### Error Handling
+
+- Root `ErrorBoundary` (`components/ui/ErrorBoundary.tsx`) catches unhandled render errors and shows a "Try Again" fallback screen.
+- Chat errors appear inline as ally messages (not alerts) to maintain conversation flow.
+- Memory edit/delete errors surface as `Alert.alert`.
+- Settings destructive actions (clear memories, reset) surface as `Alert.alert` on failure.
+
+---
+
 ## Environment Variables
 
 | Variable             | Purpose                                    | Example                          |
@@ -373,21 +480,26 @@ Tier is checked at the middleware level before any AI processing occurs. The mob
 
 ## Scaling Phases
 
-**Phase 1 (MVP, <1K users):**
+**Phase 1 (MVP, <1K users) — Current:**
 - Single Bun process
 - Neon free tier
-- In-process cron (scheduler.ts)
-- pgvector for embeddings
+- In-process scheduler + event system
+- pgvector for embeddings with contextual prefixes
+- In-process memory queue for async extraction
+- Dual model routing (Haiku 4.5 / Sonnet 4.6)
+- Session windowing with rolling summaries
 - All AI logic in TypeScript
 
 **Phase 2 (1K–10K users):**
-- Redis for rate limiting and caching
+- Redis for rate limiting, profile caching, session caching, memory queue persistence
+- Graph-based memory retrieval (supplement or replace vector search)
 - Trigger.dev for background jobs
 - Tune HNSW indexes for pgvector
 - Consider connection pooling
+- A/B testing framework for prompt quality
 
 **Phase 3 (10K+ users):**
 - Dedicated vector DB (e.g., Qdrant) if pgvector becomes a bottleneck
 - Horizontal scaling behind load balancer
 - Job sharding across workers
-- Python AI service only if TypeScript throughput limits are hit
+- Fine-tuned model for conversation quality (if off-the-shelf hits ceiling)

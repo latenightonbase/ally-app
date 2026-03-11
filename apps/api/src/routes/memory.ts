@@ -1,7 +1,7 @@
 import { Elysia, t } from "elysia";
 import { authMiddleware } from "../middleware/auth";
 import { loadMemoryProfile } from "../services/retrieval";
-import { deleteProfile, deleteFact, listFacts } from "../services/memory";
+import { deleteProfile, deleteFact, updateFact, listFacts } from "../services/memory";
 import type { MemoryCategory } from "@ally/shared";
 
 const VALID_CATEGORIES = [
@@ -61,6 +61,23 @@ export const memoryRoutes = new Elysia({ prefix: "/api/v1/memory" })
         category: t.Optional(t.String()),
         limit: t.Optional(t.String()),
         offset: t.Optional(t.String()),
+      }),
+    },
+  )
+  .patch(
+    "/facts/:factId",
+    async ({ params, user, body, set }) => {
+      const updated = await updateFact(user.id, params.factId, body.content);
+      if (!updated) {
+        set.status = 404;
+        return { error: { message: "Memory fact not found" } };
+      }
+      return { updated: true, factId: params.factId };
+    },
+    {
+      params: t.Object({ factId: t.String() }),
+      body: t.Object({
+        content: t.String({ minLength: 1, maxLength: 1000 }),
       }),
     },
   )

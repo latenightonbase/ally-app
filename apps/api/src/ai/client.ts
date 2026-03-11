@@ -4,7 +4,14 @@ const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
 });
 
-export const MODEL = "claude-haiku-4-5-20251001" as const;
+export const MODEL_FAST = "claude-haiku-4-5-20251001" as const;
+export const MODEL_QUALITY = "claude-sonnet-4-6" as const;
+
+export type ModelTier = "fast" | "quality";
+
+export function selectModel(tier: ModelTier = "fast"): string {
+  return tier === "quality" ? MODEL_QUALITY : MODEL_FAST;
+}
 
 export class AIError extends Error {
   constructor(
@@ -18,17 +25,20 @@ export class AIError extends Error {
 }
 
 export async function callClaude(options: {
-  system: string;
+  system: string | Anthropic.Messages.TextBlockParam[];
   messages: Anthropic.MessageParam[];
   maxTokens?: number;
+  tools?: Anthropic.Messages.Tool[];
+  modelTier?: ModelTier;
 }): Promise<{ text: string; tokensUsed: number }> {
   try {
     const response = await anthropic.messages.create({
-      model: MODEL,
+      model: selectModel(options.modelTier),
       max_tokens: options.maxTokens ?? 1024,
       system: options.system,
       messages: options.messages,
-    });
+      ...(options.tools?.length && { tools: options.tools }),
+    } as Anthropic.Messages.MessageCreateParamsNonStreaming);
 
     const text = response.content
       .filter((block): block is Anthropic.TextBlock => block.type === "text")
@@ -54,19 +64,155 @@ export async function callClaude(options: {
   }
 }
 
+export async function callClaudeWithTools(options: {
+  system: string | Anthropic.Messages.TextBlockParam[];
+  messages: Anthropic.MessageParam[];
+  tools: Anthropic.Messages.Tool[];
+  maxTokens?: number;
+  modelTier?: ModelTier;
+  onToolCall?: (name: string, input: Record<string, unknown>) => Promise<string>;
+}): Promise<{ text: string; tokensUsed: number }> {
+  let messages = [...options.messages];
+  let totalTokens = 0;
+  const maxLoops = 5;
+
+  for (let i = 0; i < maxLoops; i++) {
+    try {
+      const response = await anthropic.messages.create({
+        model: selectModel(options.modelTier),
+        max_tokens: options.maxTokens ?? 1024,
+        system: options.system,
+        messages,
+        tools: options.tools,
+      } as Anthropic.Messages.MessageCreateParamsNonStreaming);
+
+      totalTokens += (response.usage.input_tokens ?? 0) + (response.usage.output_tokens ?? 0);
+
+      if (response.stop_reason === "tool_use" && options.onToolCall) {
+        messages = [...messages, { role: "assistant", content: response.content }];
+
+        const toolResults: Anthropic.Messages.ToolResultBlockParam[] = [];
+
+        for (const block of response.content) {
+          if (block.type === "tool_use") {
+            const result = await options.onToolCall(block.name, block.input as Record<string, unknown>);
+            toolResults.push({
+              type: "tool_result",
+              tool_use_id: block.id,
+              content: result,
+            });
+          }
+        }
+
+        messages = [...messages, { role: "user", content: toolResults }];
+        continue;
+      }
+
+      const text = response.content
+        .filter((block): block is Anthropic.TextBlock => block.type === "text")
+        .map((block) => block.text)
+        .join("");
+
+      return { text, tokensUsed: totalTokens };
+    } catch (e: unknown) {
+      if (e instanceof Anthropic.APIError) {
+        const retryable = e.status === 429 || e.status >= 500;
+        throw new AIError(
+          `Claude API error: ${e.message}`,
+          e.status === 429 ? 429 : 503,
+          retryable,
+        );
+      }
+      throw new AIError("Claude API unavailable", 503, true);
+    }
+  }
+
+  throw new AIError("Tool call loop exceeded maximum iterations", 500, false);
+}
+
+export async function callClaudeStreamingWithTools(options: {
+  system: string | Anthropic.Messages.TextBlockParam[];
+  messages: Anthropic.MessageParam[];
+  tools: Anthropic.Messages.Tool[];
+  maxTokens?: number;
+  modelTier?: ModelTier;
+  onToken: (token: string) => void;
+  onToolCall?: (name: string, input: Record<string, unknown>) => Promise<string>;
+}): Promise<{ fullText: string; tokensUsed: number }> {
+  let messages = [...options.messages];
+  let totalTokens = 0;
+  const maxLoops = 5;
+
+  for (let i = 0; i < maxLoops; i++) {
+    try {
+      const stream = anthropic.messages.stream({
+        model: selectModel(options.modelTier),
+        max_tokens: options.maxTokens ?? 1024,
+        system: options.system,
+        messages,
+        tools: options.tools,
+      } as Anthropic.Messages.MessageStreamParams);
+
+      let fullText = "";
+
+      stream.on("text", (text) => {
+        fullText += text;
+        options.onToken(text);
+      });
+
+      const finalMessage = await stream.finalMessage();
+      totalTokens += (finalMessage.usage.input_tokens ?? 0) + (finalMessage.usage.output_tokens ?? 0);
+
+      if (finalMessage.stop_reason === "tool_use" && options.onToolCall) {
+        messages = [...messages, { role: "assistant", content: finalMessage.content }];
+
+        const toolResults: Anthropic.Messages.ToolResultBlockParam[] = [];
+
+        for (const block of finalMessage.content) {
+          if (block.type === "tool_use") {
+            const result = await options.onToolCall(block.name, block.input as Record<string, unknown>);
+            toolResults.push({
+              type: "tool_result",
+              tool_use_id: block.id,
+              content: result,
+            });
+          }
+        }
+
+        messages = [...messages, { role: "user", content: toolResults }];
+        continue;
+      }
+
+      return { fullText, tokensUsed: totalTokens };
+    } catch (e: unknown) {
+      if (e instanceof Anthropic.APIError) {
+        throw new AIError(
+          `Claude streaming error: ${e.message}`,
+          e.status === 429 ? 429 : 503,
+          true,
+        );
+      }
+      throw new AIError("Claude API unavailable", 503, true);
+    }
+  }
+
+  throw new AIError("Streaming tool call loop exceeded maximum iterations", 500, false);
+}
+
 export async function callClaudeStreaming(options: {
-  system: string;
+  system: string | Anthropic.Messages.TextBlockParam[];
   messages: Anthropic.MessageParam[];
   maxTokens?: number;
   onToken: (token: string) => void;
+  modelTier?: ModelTier;
 }): Promise<{ fullText: string; tokensUsed: number }> {
   try {
     const stream = anthropic.messages.stream({
-      model: MODEL,
+      model: selectModel(options.modelTier),
       max_tokens: options.maxTokens ?? 1024,
       system: options.system,
       messages: options.messages,
-    });
+    } as Anthropic.Messages.MessageStreamParams);
 
     let fullText = "";
 
@@ -99,18 +245,18 @@ export async function callClaudeStructured<T>(options: {
   system: string;
   messages: Anthropic.MessageParam[];
   maxTokens?: number;
+  modelTier?: ModelTier;
 }): Promise<{ data: T; tokensUsed: number }> {
   const result = await callClaude(options);
 
   try {
     const jsonMatch = result.text.match(/```json\s*([\s\S]*?)\s*```/);
     const jsonStr = jsonMatch ? jsonMatch[1] : result.text;
-    console.log(`[callClaudeStructured] Raw response (first 500 chars): ${result.text.slice(0, 500)}`);
     return {
       data: JSON.parse(jsonStr.trim()) as T,
       tokensUsed: result.tokensUsed,
     };
-  } catch (parseErr) {
+  } catch {
     console.error(
       `[callClaudeStructured] JSON parse failed. Raw response:\n${result.text}`,
     );
@@ -125,7 +271,7 @@ export async function callClaudeStructured<T>(options: {
 export async function isClaudeReachable(): Promise<boolean> {
   try {
     await anthropic.messages.create({
-      model: MODEL,
+      model: MODEL_FAST,
       max_tokens: 1,
       messages: [{ role: "user", content: "hi" }],
     });

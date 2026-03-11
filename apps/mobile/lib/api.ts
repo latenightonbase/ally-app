@@ -1,4 +1,30 @@
+import type {
+  ChatResponse,
+  OnboardingAnswers,
+  OnboardingResponse,
+  OnboardingQA,
+  DynamicOnboardingQuestion,
+  OnboardingFollowupResponse,
+  MemoryProfile,
+  MemoryFact,
+  Briefing,
+  Conversation,
+  Message,
+} from "@ally/shared";
 import { authClient } from "./auth";
+
+export type {
+  ChatResponse,
+  OnboardingAnswers,
+  OnboardingResponse,
+  OnboardingQA,
+  DynamicOnboardingQuestion,
+  OnboardingFollowupResponse,
+  MemoryProfile,
+  MemoryFact,
+  Conversation,
+  Message,
+};
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL ?? "http://localhost:3000";
 
@@ -49,10 +75,14 @@ export class ApiError extends Error {
 
 // --- Chat ---
 
-export interface ChatResponse {
-  response: string;
-  conversationId: string;
-  messageId: string;
+export interface StreamCallbacks {
+  onToken: (token: string) => void;
+  onDone: (data: {
+    conversationId: string;
+    messageId: string;
+    fullResponse: string;
+  }) => void;
+  onError: (message: string) => void;
 }
 
 export async function sendMessage(
@@ -65,86 +95,87 @@ export async function sendMessage(
   });
 }
 
-export interface StreamCallbacks {
-  onToken: (token: string) => void;
-  onDone: (data: {
-    conversationId: string;
-    messageId: string;
-    fullResponse: string;
-  }) => void;
-  onError: (message: string) => void;
-}
-
 export async function sendMessageStreaming(
   message: string,
   callbacks: StreamCallbacks,
   conversationId?: string,
 ): Promise<void> {
   const headers = await getAuthHeaders();
-  const res = await fetch(`${API_URL}/api/v1/chat`, {
-    method: "POST",
-    headers,
-    body: JSON.stringify({ message, conversationId, stream: true }),
-    credentials: "omit",
-  });
 
-  if (!res.ok) {
-    const body = await res.json().catch(() => ({}));
-    callbacks.onError(body?.error?.message ?? "Chat request failed");
-    return;
-  }
+  return new Promise<void>((resolve) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", `${API_URL}/api/v1/chat`);
 
-  const reader = res.body?.getReader();
-  if (!reader) {
-    callbacks.onError("No response stream available");
-    return;
-  }
+    Object.entries(headers).forEach(([key, val]) =>
+      xhr.setRequestHeader(key, val),
+    );
 
-  const decoder = new TextDecoder();
-  let buffer = "";
+    let buffer = "";
+    let lastIndex = 0;
 
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
+    function processBuffer() {
+      const newText = xhr.responseText.slice(lastIndex);
+      lastIndex = xhr.responseText.length;
 
-    buffer += decoder.decode(value, { stream: true });
-    const lines = buffer.split("\n\n");
-    buffer = lines.pop() ?? "";
+      buffer += newText;
+      const parts = buffer.split("\n\n");
+      buffer = parts.pop() ?? "";
 
-    for (const line of lines) {
-      if (!line.startsWith("data: ")) continue;
-      try {
-        const data = JSON.parse(line.slice(6));
-        if (data.type === "token") {
-          callbacks.onToken(data.content);
-        } else if (data.type === "done") {
-          callbacks.onDone({
-            conversationId: data.conversationId,
-            messageId: data.messageId,
-            fullResponse: data.fullResponse,
-          });
-        } else if (data.type === "error") {
-          callbacks.onError(data.message);
-        }
-      } catch {}
+      for (const part of parts) {
+        if (!part.startsWith("data: ")) continue;
+        try {
+          const data = JSON.parse(part.slice(6));
+          if (data.type === "token") {
+            callbacks.onToken(data.content);
+          } else if (data.type === "done") {
+            callbacks.onDone({
+              conversationId: data.conversationId,
+              messageId: data.messageId,
+              fullResponse: data.fullResponse,
+            });
+          } else if (data.type === "error") {
+            callbacks.onError(data.message);
+          }
+        } catch {}
+      }
     }
-  }
+
+    xhr.onprogress = () => {
+      processBuffer();
+    };
+
+    xhr.onload = () => {
+      processBuffer();
+      if (xhr.status < 200 || xhr.status >= 300) {
+        try {
+          const body = JSON.parse(xhr.responseText);
+          callbacks.onError(
+            body?.error?.message ?? `Chat request failed (${xhr.status})`,
+          );
+        } catch {
+          callbacks.onError(`Chat request failed (${xhr.status})`);
+        }
+      }
+      resolve();
+    };
+
+    xhr.onerror = () => {
+      callbacks.onError("Network error — could not reach the server");
+      resolve();
+    };
+
+    xhr.ontimeout = () => {
+      callbacks.onError("Request timed out");
+      resolve();
+    };
+
+    xhr.timeout = 120_000;
+
+    xhr.send(JSON.stringify({ message, conversationId, stream: true }));
+  });
 }
 
 // --- Onboarding ---
-
-export interface OnboardingAnswers {
-  nameAndGreeting: string;
-  lifeContext: string;
-  currentFocus: string;
-  stressAndSupport: string;
-  allyExpectations: string;
-}
-
-export interface OnboardingResponse {
-  greeting: string;
-  memoryProfileCreated: boolean;
-}
 
 export async function submitOnboarding(
   answers: OnboardingAnswers,
@@ -153,27 +184,6 @@ export async function submitOnboarding(
     method: "POST",
     body: JSON.stringify({ answers }),
   });
-}
-
-// --- Dynamic Onboarding ---
-
-export interface OnboardingQA {
-  question: string;
-  answer: string;
-}
-
-export interface DynamicOnboardingQuestion {
-  title: string;
-  subtitle?: string;
-  type: "text" | "multiline" | "chips" | "choice";
-  options?: string[];
-  choices?: { label: string; value: string }[];
-  placeholder?: string;
-}
-
-export interface OnboardingFollowupResponse {
-  questions: DynamicOnboardingQuestion[];
-  summary: string;
 }
 
 export async function getOnboardingFollowups(input: {
@@ -201,7 +211,7 @@ export async function completeOnboardingDynamic(input: {
   });
 }
 
-// --- Push Token ---
+// --- Push Token (used by future notification setup) ---
 
 export async function registerPushToken(token: string): Promise<void> {
   await apiRequest("/api/v1/users/push-token", {
@@ -210,27 +220,12 @@ export async function registerPushToken(token: string): Promise<void> {
   });
 }
 
-// --- Conversations ---
-
-export interface ConversationSummary {
-  id: string;
-  preview: string | null;
-  messageCount: number;
-  createdAt: string;
-  lastMessageAt: string;
-}
-
-export interface ConversationMessage {
-  id: string;
-  role: "user" | "ally";
-  content: string;
-  createdAt: string;
-}
+// --- Conversations (used by future chat history screen) ---
 
 export async function getConversations(
   limit = 10,
   offset = 0,
-): Promise<{ conversations: ConversationSummary[]; total: number }> {
+): Promise<{ conversations: Conversation[]; total: number }> {
   return apiRequest(`/api/v1/conversations?limit=${limit}&offset=${offset}`);
 }
 
@@ -240,7 +235,7 @@ export async function getConversationMessages(
   before?: string,
 ): Promise<{
   conversationId: string;
-  messages: ConversationMessage[];
+  messages: Message[];
   hasMore: boolean;
 }> {
   const params = new URLSearchParams({ limit: String(limit) });
@@ -250,53 +245,10 @@ export async function getConversationMessages(
 
 // --- Memory ---
 
-export interface MemoryProfile {
-  userId: string;
-  version: number;
-  personalInfo: {
-    preferredName: string | null;
-    fullName: string | null;
-    age: number | null;
-    birthday: string | null;
-    location: string | null;
-    livingSituation: string | null;
-  };
-  relationships: Array<{
-    name: string;
-    relation: string;
-    notes: string;
-  }>;
-  work: {
-    role: string | null;
-    company: string | null;
-  };
-  interests: Array<{
-    topic: string;
-    detail: string | null;
-  }>;
-  goals: Array<{
-    description: string;
-    category: string;
-    status: string;
-  }>;
-  emotionalPatterns: {
-    primaryStressors: string[];
-    copingMechanisms: string[];
-  };
-  pendingFollowups: Array<{
-    topic: string;
-    context: string;
-    resolved: boolean;
-  }>;
-  updatedAt: string;
-}
-
-export interface MemoryFactItem {
-  id: string;
-  category: string;
-  content: string;
+/** Subset of MemoryFact returned by the list endpoint (no embedding or userId). */
+export interface MemoryFactItem
+  extends Pick<MemoryFact, "id" | "category" | "content" | "confidence"> {
   sourceDate?: string;
-  confidence: number;
 }
 
 export async function getMemoryProfile(): Promise<{
@@ -318,6 +270,16 @@ export async function getMemoryFacts(
   return apiRequest(`/api/v1/memory/facts?${params}`);
 }
 
+export async function updateMemoryFact(
+  factId: string,
+  content: string,
+): Promise<{ updated: boolean; factId: string }> {
+  return apiRequest(`/api/v1/memory/facts/${factId}`, {
+    method: "PATCH",
+    body: JSON.stringify({ content }),
+  });
+}
+
 export async function deleteMemoryFact(
   factId: string,
 ): Promise<{ deleted: boolean }> {
@@ -328,18 +290,10 @@ export async function deleteMemoryProfile(): Promise<{ deleted: boolean }> {
   return apiRequest("/api/v1/memory/profile", { method: "DELETE" });
 }
 
-// --- Briefing ---
-
-export interface BriefingData {
-  id: string;
-  date: string;
-  content: string;
-  delivered: boolean;
-  createdAt: string;
-}
+// --- Briefing (used by future briefing screen) ---
 
 export async function getTodayBriefing(): Promise<{
-  briefing: BriefingData | null;
+  briefing: Briefing | null;
 }> {
   return apiRequest("/api/v1/briefing");
 }

@@ -1,4 +1,4 @@
-import React, { useRef, useState, useCallback } from "react";
+import React, { useRef, useState, useCallback, useEffect } from "react";
 import {
   View,
   FlatList,
@@ -6,14 +6,20 @@ import {
   Platform,
   Text,
   Pressable,
+  ActivityIndicator,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { ChatHeader } from "../../components/chat/ChatHeader";
 import { MessageBubble } from "../../components/chat/MessageBubble";
 import { ChatInput } from "../../components/chat/ChatInput";
 import { TypingIndicator } from "../../components/chat/TypingIndicator";
-import { useAppStore } from "../../store/useAppStore";
-import { sendMessage } from "../../lib/api";
+import { useAppStore, type ChatMessage } from "../../store/useAppStore";
+import {
+  sendMessageStreaming,
+  getConversations,
+  getConversationMessages,
+  type Message,
+} from "../../lib/api";
 
 const CHAT_SUGGESTIONS = [
   "How are you feeling today?",
@@ -24,16 +30,56 @@ const CHAT_SUGGESTIONS = [
   "I'm feeling stressed",
 ];
 
+function toLocalMessage(m: Message): ChatMessage {
+  return {
+    id: m.id,
+    text: m.content,
+    isUser: m.role === "user",
+    timestamp: new Date(m.createdAt),
+  };
+}
+
 export default function ChatScreen() {
   const messages = useAppStore((s) => s.messages);
   const addMessage = useAppStore((s) => s.addMessage);
+  const updateLastMessage = useAppStore((s) => s.updateLastMessage);
+  const setMessages = useAppStore((s) => s.setMessages);
   const activeConversationId = useAppStore((s) => s.activeConversationId);
   const setActiveConversationId = useAppStore((s) => s.setActiveConversationId);
+
   const [isTyping, setIsTyping] = useState(false);
+  const [isStreaming, setIsStreaming] = useState(false);
+  const [isHydrating, setIsHydrating] = useState(true);
   const flatListRef = useRef<FlatList>(null);
+  const hasHydrated = useRef(false);
   const insets = useSafeAreaInsets();
 
-  const tabBarHeight = 64 + Math.max(insets.bottom, Platform.OS === "ios" ? 16 : 12) + 16;
+  const tabBarHeight =
+    64 + Math.max(insets.bottom, Platform.OS === "ios" ? 16 : 12) + 16;
+
+  useEffect(() => {
+    if (hasHydrated.current) return;
+    hasHydrated.current = true;
+
+    (async () => {
+      try {
+        const { conversations } = await getConversations(1, 0);
+        if (conversations.length === 0) return;
+
+        const conv = conversations[0];
+        const { messages: serverMessages } = await getConversationMessages(
+          conv.id,
+          50,
+        );
+        setMessages(serverMessages.map(toLocalMessage));
+        setActiveConversationId(conv.id);
+      } catch {
+        // Keep local state on network failure — hydration is best-effort
+      } finally {
+        setIsHydrating(false);
+      }
+    })();
+  }, []);
 
   const handleSend = useCallback(
     async (text: string) => {
@@ -46,28 +92,54 @@ export default function ChatScreen() {
       setIsTyping(true);
 
       try {
-        const result = await sendMessage(
+        let streamStarted = false;
+
+        await sendMessageStreaming(
           text,
+          {
+            onToken: (token) => {
+              if (!streamStarted) {
+                streamStarted = true;
+                setIsTyping(false);
+                setIsStreaming(true);
+                addMessage(token, false);
+              } else {
+                updateLastMessage(token);
+              }
+              flatListRef.current?.scrollToEnd({ animated: false });
+            },
+            onDone: (data) => {
+              if (!activeConversationId) {
+                setActiveConversationId(data.conversationId);
+              }
+              setIsStreaming(false);
+            },
+            onError: (errMsg) => {
+              if (!streamStarted) {
+                addMessage(
+                  `Sorry, I couldn't respond right now. ${errMsg}`,
+                  false,
+                );
+              }
+              setIsStreaming(false);
+              setIsTyping(false);
+            },
+          },
           activeConversationId ?? undefined,
         );
-
-        if (!activeConversationId) {
-          setActiveConversationId(result.conversationId);
-        }
-
-        addMessage(result.response, false);
       } catch (e) {
         const errMsg =
           e instanceof Error ? e.message : "Something went wrong";
         addMessage(`Sorry, I couldn't respond right now. ${errMsg}`, false);
       } finally {
         setIsTyping(false);
+        setIsStreaming(false);
         setTimeout(() => {
           flatListRef.current?.scrollToEnd({ animated: true });
         }, 100);
       }
     },
-    [addMessage, activeConversationId, setActiveConversationId],
+    [addMessage, updateLastMessage, activeConversationId, setActiveConversationId],
   );
 
   const handleSuggestionPress = useCallback(
@@ -78,6 +150,17 @@ export default function ChatScreen() {
   );
 
   const showSuggestions = messages.length <= 1;
+
+  if (isHydrating) {
+    return (
+      <View className="flex-1 bg-background">
+        <ChatHeader />
+        <View className="flex-1 items-center justify-center">
+          <ActivityIndicator size="large" className="text-primary" />
+        </View>
+      </View>
+    );
+  }
 
   return (
     <View className="flex-1 bg-background">
@@ -135,7 +218,7 @@ export default function ChatScreen() {
         />
 
         <View style={{ paddingBottom: tabBarHeight }}>
-          <ChatInput onSend={handleSend} disabled={isTyping} />
+          <ChatInput onSend={handleSend} disabled={isTyping || isStreaming} />
         </View>
       </KeyboardAvoidingView>
     </View>

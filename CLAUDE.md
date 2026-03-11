@@ -12,8 +12,8 @@ Ally is a personal AI companion mobile app. This monorepo contains the Expo/Reac
 - **Monorepo:** Turborepo with Bun workspaces
 - **Backend:** Elysia (Bun-native web framework), TypeScript
 - **Database:** PostgreSQL + pgvector via Drizzle ORM (hosted on Neon)
-- **AI:** Claude claude-sonnet-4-6 via `@anthropic-ai/sdk` (TypeScript, NOT Python)
-- **Embeddings:** Voyage AI `voyage-4-lite` (1024 dimensions)
+- **AI:** Claude Haiku 4.5 (fast) + Sonnet 4.6 (quality) via `@anthropic-ai/sdk` (TypeScript, NOT Python), with server-side web search tool
+- **Embeddings:** Voyage AI `voyage-4-lite` (1024 dimensions) with contextual prefixes
 - **Frontend:** Expo 55, React Native 0.83, NativeWind, Zustand, expo-router
 - **Validation:** TypeBox (Elysia built-in) for routes, Zod in `packages/shared` for shared schemas
 
@@ -57,18 +57,45 @@ _legacy/           → Old Node/Express + Python code (DO NOT modify or referenc
 
 Ally's memory uses a **tiered architecture**:
 1. **Hot memory** — JSONB profile in `memory_profiles` table. Always loaded for every AI call.
-2. **Warm memory** — Recent conversation messages. Loaded per conversation.
-3. **Cold memory** — `memory_facts` table with pgvector embeddings. Retrieved via **hybrid search** combining semantic similarity, full-text matching, recency decay, and importance scoring. See `apps/api/src/services/retrieval.ts`.
+2. **Warm memory** — Current session messages + rolling summaries of past sessions. Loaded per conversation via `services/session.ts`.
+3. **Cold memory** — `memory_facts` table with pgvector embeddings. Retrieved via **hybrid search** with query expansion, combining semantic similarity, full-text matching, recency decay, and importance scoring. See `apps/api/src/services/retrieval.ts`.
 
-### Hybrid Retrieval Weights
+**Memory capture** is real-time via an async batching queue (`services/memoryQueue.ts`), not a nightly cron. The queue batches 3-5 message pairs, filters trivial messages, and runs extraction with retry logic.
 
-The retrieval query in `retrieval.ts` uses these weights:
+### Session Windowing
+
+Conversations are silently split into sessions (30min inactivity gap = new session). When a session ends, it's summarized by Claude and the summary is stored in the `sessions_v2` table. Context for AI calls is assembled from: recent session summaries (last 5) + full messages from the active session. The user sees a single continuous conversation.
+
+### Hybrid Retrieval
+
+The retrieval query in `retrieval.ts` uses these default weights:
 - Semantic similarity (cosine distance): 40%
 - Full-text match (tsvector): 20%
-- Recency (exponential decay): 25%
+- Recency (exponential decay, rate=0.02): 25%
 - Importance score: 15%
 
+Retrieval also uses:
+- **Query expansion** — user's query is expanded into 2-3 variants for broader recall
+- **Contextual embeddings** — facts are embedded with category prefixes for better match quality
+- **Importance feedback** — accessed facts get a small importance bump (0.02)
+
 Do not change these weights without understanding the impact on retrieval quality.
+
+### Tool Use
+
+The AI has access to tools via `ai/tools.ts`:
+- **`web_search`** — Claude's server-side web search (`web_search_20250305`). Used automatically when the user asks about current events, facts, or anything beyond Claude's training data.
+- **`remember_fact`** — Explicitly save important facts to long-term memory.
+- **`recall_memory`** — Search the memory store for previously shared facts.
+- **`set_reminder`** — Create follow-up reminders for upcoming events or unresolved topics.
+
+Tool calls are handled via an agentic loop in `callClaudeWithTools()` / `callClaudeStreamingWithTools()` (max 5 iterations).
+
+### Model Routing
+
+Chat uses automatic model selection based on message complexity (`ai/conversation.ts`):
+- **Claude Haiku 4.5** (`MODEL_FAST`) — default for casual/short messages
+- **Claude Sonnet 4.6** (`MODEL_QUALITY`) — for emotional, complex, or long messages (>200 chars or emotional keywords detected)
 
 ### Middleware Stack
 
@@ -81,18 +108,21 @@ All requests pass through these middleware layers (in order):
 
 ### AI Service Layer
 
-All 5 AI functions live in `apps/api/src/ai/`:
-- `conversation.ts` — Chat responses with memory context (supports both sync and SSE streaming)
+All AI functions live in `apps/api/src/ai/`:
+- `client.ts` — Anthropic SDK wrapper with dual-model support (Haiku 4.5 / Sonnet 4.6), tool-use agentic loops, prompt caching, streaming
+- `conversation.ts` — Chat responses with memory context, tool use, model routing, prompt caching (supports both sync and SSE streaming)
+- `tools.ts` — Web search tool definition, custom tool definitions (remember_fact, recall_memory, set_reminder), tool execution handlers
+- `extraction.ts` — Extract facts from conversations (called by memory queue)
 - `onboarding.ts` — Process onboarding answers into memory profile
-- `extraction.ts` — Extract facts from conversations (nightly job)
 - `briefing.ts` — Generate morning briefings
 - `followup.ts` — Detect unresolved emotional moments
-
-All use `claude-sonnet-4-6` via the shared client in `client.ts`. Prompts are centralized in `prompts.ts`.
+- `prompts.ts` — All system prompts, with few-shot examples and anti-patterns
 
 The AI client (`client.ts`) includes:
 - `AIError` class with status codes and retryable flags
-- `callClaudeStreaming()` for SSE-based streaming responses
+- `callClaudeWithTools()` / `callClaudeStreamingWithTools()` — agentic tool-use loops (max 5 iterations)
+- `callClaudeStreaming()` for basic SSE streaming (no tools)
+- Prompt caching via `cache_control: { type: "ephemeral" }` on system prompt blocks
 - `isClaudeReachable()` for health checks
 
 ### Error Handling
@@ -102,13 +132,22 @@ The AI client (`client.ts`) includes:
 - The global error handler in `index.ts` maps error codes: 429 → `RATE_LIMIT_EXCEEDED`, 503 → `AI_UNAVAILABLE`.
 - Chat streaming sends `{ type: "error", message }` SSE events instead of crashing the stream.
 
-### Background Jobs
+### Background Jobs & Proactive System
 
-In `apps/api/src/jobs/`. Scheduled via a persistent, interval-based scheduler. Job runs are tracked in the `job_runs` table to prevent duplicate runs across restarts. Runs:
-- Nightly extraction at 23:00
-- Daily briefings at 05:00
-- Weekly insights on Sunday at 20:00
-- Re-engagement at 18:00
+In `apps/api/src/jobs/` and `apps/api/src/services/proactive.ts`. The system uses a hybrid approach:
+
+**Event-driven (proactive):**
+- **Briefings** — generated on-demand when the user opens the app (lazy), not pre-generated by cron
+- **Re-engagement** — triggered when inactivity is detected (2+ days), not at a fixed time
+- **Memory extraction** — real-time via `services/memoryQueue.ts`, not a nightly cron
+
+**Scheduled (still cron-based):**
+- `daily_ping` — every minute, checks if it's time to ping each user in their timezone
+- `weekly_insights` — Sunday 20:00, emotional week summary for premium users
+- `proactive_scan` — every 30min, scans for inactive users and emits events
+- `flush_memory_queue` — every 5min, flushes any pending memory extraction batches
+
+**Event system** (`services/events.ts`): Typed event emitter for `user:app_opened`, `user:inactive`, `system:daily_scan`. Proactive handlers registered in `services/proactive.ts`.
 
 ## Common Tasks
 
@@ -133,6 +172,13 @@ In `apps/api/src/jobs/`. Scheduled via a persistent, interval-based scheduler. J
 2. Update `ExtractedFact` type in `packages/shared/src/types/memory.ts` if schema changes
 3. Update `apps/api/src/ai/extraction.ts` for processing logic
 4. Update `apps/api/src/services/memory.ts` for storage logic
+5. The memory queue in `apps/api/src/services/memoryQueue.ts` controls batching/signal detection — update `shouldExtract()` if changing what triggers extraction
+
+### Add a new AI tool
+1. Add the tool definition in `apps/api/src/ai/tools.ts` (`getCustomTools()`)
+2. Add the handler in `executeToolCall()` in the same file
+3. Update the tool usage instructions in the system prompt in `apps/api/src/ai/prompts.ts`
+4. Update `docs/FUTURE_ITERATIONS.md` to move the tool from planned to implemented
 
 ## Testing
 
@@ -177,8 +223,8 @@ bun run test:e2e:retrieval      # Retrieval ranking only
 ### Mocking (Unit + Integration)
 
 The global preload (`__tests__/setup.ts`) automatically mocks:
-- `ai/client.ts` — `callClaude`, `callClaudeStreaming`, `callClaudeStructured` return canned responses
-- `services/embedding.ts` — `generateEmbedding` returns zero vectors (1024 dims)
+- `ai/client.ts` — `callClaude`, `callClaudeStreaming`, `callClaudeStructured`, `callClaudeWithTools`, `callClaudeStreamingWithTools` return canned responses
+- `services/embedding.ts` — `generateEmbedding`, `generateEmbeddings` return zero vectors (1024 dims)
 
 **Never** call real Claude or Voyage AI in unit/integration tests. If you need different mock responses, use `mock.module()` within the specific test file.
 
@@ -205,6 +251,41 @@ E2E tests use a separate Bun config (`bunfig.e2e.toml`) that preloads `setup.e2e
 ### Manual Testing
 
 See `docs/MANUAL_TESTING.md` for Postman setup, curl cheatsheets, and SSE streaming debugging. A Postman collection is available at `docs/postman/`.
+
+## Mobile (apps/mobile/)
+
+### Common Tasks
+
+**Add a new screen:**
+1. Create file in the correct stack folder (`app/(tabs)/`, `app/(auth)/`, etc.)
+2. If it's a tab, add a `<Tabs.Screen>` entry in `app/(tabs)/_layout.tsx`
+3. Use `SafeAreaView` with `edges={["top"]}` for screens under the tab bar
+
+**Add a new API call:**
+1. Add the function to `apps/mobile/lib/api.ts`
+2. Import the request/response types from `@ally/shared` — do not redeclare types that already exist there
+3. Use `apiRequest<T>()` for JSON endpoints; implement manual SSE parsing for streaming
+
+**Add a new theme:**
+1. Add a `ThemeDefinition` entry to the `THEMES` array in `constants/themes.ts`
+2. Add the corresponding CSS custom property class to `global.css`
+3. Update the `ThemeId` union type
+
+**Fix a color/style that doesn't respect the active theme:**
+- Never hardcode hex colors. Use NativeWind classes (`text-primary`, `bg-surface`, etc.) for layout.
+- For imperative color props (icon `color=`, `placeholderTextColor`, `style={{ color }}`), use `theme.colors["--color-*"]` from `useTheme()`.
+
+### Type-checking
+
+```bash
+cd apps/mobile && bun run typecheck
+```
+
+Always run before considering mobile work complete.
+
+### Manual Testing
+
+See `docs/MANUAL_TESTING.md` → **Mobile Testing Checklist** section.
 
 ## Environment Variables
 

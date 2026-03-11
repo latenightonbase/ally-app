@@ -9,6 +9,7 @@ import { MemoryEmptyState } from "../../components/memory/MemoryEmptyState";
 import {
   getMemoryFacts,
   deleteMemoryFact,
+  updateMemoryFact,
   type MemoryFactItem,
 } from "../../lib/api";
 
@@ -52,17 +53,25 @@ export default function MemoryScreen() {
     loadFacts();
   }, [loadFacts]);
 
-  const handleDelete = useCallback(
-    async (id: string) => {
-      try {
-        await deleteMemoryFact(id);
-        setFacts((prev) => prev.filter((f) => f.id !== id));
-      } catch {
-        Alert.alert("Error", "Could not delete memory.");
-      }
-    },
-    [],
-  );
+  const handleEdit = useCallback(async (id: string, content: string) => {
+    try {
+      await updateMemoryFact(id, content);
+      setFacts((prev) =>
+        prev.map((f) => (f.id === id ? { ...f, content } : f)),
+      );
+    } catch {
+      Alert.alert("Error", "Could not save changes. Please try again.");
+    }
+  }, []);
+
+  const handleDelete = useCallback(async (id: string) => {
+    try {
+      await deleteMemoryFact(id);
+      setFacts((prev) => prev.filter((f) => f.id !== id));
+    } catch {
+      Alert.alert("Error", "Could not delete memory.");
+    }
+  }, []);
 
   const groupedMemories = (
     Object.keys(MEMORY_CATEGORIES) as CategoryKey[]
@@ -134,7 +143,7 @@ export default function MemoryScreen() {
                       key={memory.id}
                       memory={memory}
                       index={index}
-                      onEdit={() => {}}
+                      onEdit={handleEdit}
                       onDelete={handleDelete}
                     />
                   ))

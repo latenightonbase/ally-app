@@ -30,6 +30,7 @@ interface AppState {
   resetOnboarding: () => void;
 
   addMessage: (text: string, isUser: boolean) => void;
+  updateLastMessage: (appendText: string) => void;
   setMessages: (messages: ChatMessage[]) => void;
   setActiveConversationId: (id: string | null) => void;
 }
@@ -87,6 +88,16 @@ export const useAppStore = create<AppState>()(
         set((state) => ({
           messages: [...state.messages, message],
         }));
+      },
+
+      updateLastMessage: (appendText) => {
+        set((state) => {
+          const msgs = [...state.messages];
+          if (msgs.length === 0) return state;
+          const last = msgs[msgs.length - 1];
+          msgs[msgs.length - 1] = { ...last, text: last.text + appendText };
+          return { messages: msgs };
+        });
       },
 
       setMessages: (messages) => {

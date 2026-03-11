@@ -1,6 +1,7 @@
 import React from "react";
 import { View, Text, Pressable, Switch } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
+import { useTheme } from "../../context/ThemeContext";
 
 type IoniconsName = React.ComponentProps<typeof Ionicons>["name"];
 
@@ -28,6 +29,13 @@ export function SettingsRow({
   danger = false,
 }: SettingsRowProps) {
   const Container = onPress ? Pressable : View;
+  const { theme } = useTheme();
+
+  const iconColor = danger
+    ? theme.colors["--color-danger"]
+    : theme.colors["--color-primary"];
+  const muteColor = theme.colors["--color-muted"];
+  const primaryColor = theme.colors["--color-primary"];
 
   return (
     <Container
@@ -39,11 +47,7 @@ export function SettingsRow({
           danger ? "bg-danger/15" : "bg-primary-soft"
         }`}
       >
-        <Ionicons
-          name={icon}
-          size={18}
-          color={danger ? "#C75D5D" : "#7C9A72"}
-        />
+        <Ionicons name={icon} size={18} color={iconColor} />
       </View>
       <Text
         className={`flex-1 text-base font-sans-medium ${
@@ -59,12 +63,12 @@ export function SettingsRow({
         <Switch
           value={toggleValue}
           onValueChange={onToggle}
-          trackColor={{ false: "#9C958930", true: "#7C9A7280" }}
-          thumbColor={toggleValue ? "#7C9A72" : "#f4f3f4"}
+          trackColor={{ false: `${muteColor}30`, true: `${primaryColor}80` }}
+          thumbColor={toggleValue ? primaryColor : "#f4f3f4"}
         />
       )}
       {showChevron && (
-        <Ionicons name="chevron-forward" size={18} color="#9C9589" />
+        <Ionicons name="chevron-forward" size={18} color={muteColor} />
       )}
     </Container>
   );

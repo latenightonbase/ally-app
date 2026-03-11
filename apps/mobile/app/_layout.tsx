@@ -7,6 +7,7 @@ import * as SplashScreen from "expo-splash-screen";
 import { vars } from "nativewind";
 import { ThemeProvider, useTheme } from "../context/ThemeContext";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
+import { ErrorBoundary } from "../components/ui/ErrorBoundary";
 
 SplashScreen.preventAutoHideAsync();
 
@@ -43,9 +44,11 @@ function RootNavigation() {
 export default function RootLayout() {
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
-      <ThemeProvider>
-        <RootNavigation />
-      </ThemeProvider>
+      <ErrorBoundary>
+        <ThemeProvider>
+          <RootNavigation />
+        </ThemeProvider>
+      </ErrorBoundary>
     </GestureHandlerRootView>
   );
 }

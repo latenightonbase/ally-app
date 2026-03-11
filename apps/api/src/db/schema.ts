@@ -58,6 +58,29 @@ export const conversations = pgTable(
   }),
 );
 
+export const sessions = pgTable(
+  "sessions_v2",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    conversationId: uuid("conversation_id")
+      .notNull()
+      .references(() => conversations.id, { onDelete: "cascade" }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    summary: text("summary"),
+    messageCount: integer("message_count").notNull().default(0),
+    tokenEstimate: integer("token_estimate").notNull().default(0),
+    startedAt: timestamp("started_at", { withTimezone: true }).defaultNow().notNull(),
+    endedAt: timestamp("ended_at", { withTimezone: true }),
+  },
+  (table) => ({
+    convIdx: index("sessions_v2_conv_idx").on(table.conversationId),
+    userIdx: index("sessions_v2_user_idx").on(table.userId),
+    userTimeIdx: index("sessions_v2_user_time_idx").on(table.userId, table.startedAt),
+  }),
+);
+
 export const messages = pgTable(
   "messages",
   {
@@ -65,8 +88,10 @@ export const messages = pgTable(
     conversationId: uuid("conversation_id")
       .notNull()
       .references(() => conversations.id, { onDelete: "cascade" }),
+    sessionId: uuid("session_id").references(() => sessions.id),
     role: messageRoleEnum("role").notNull(),
     content: text("content").notNull(),
+    feedback: integer("feedback"),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => ({
@@ -75,6 +100,7 @@ export const messages = pgTable(
       table.conversationId,
       table.createdAt,
     ),
+    sessionIdx: index("messages_session_idx").on(table.sessionId),
   }),
 );
 

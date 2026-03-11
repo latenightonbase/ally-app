@@ -1,6 +1,6 @@
 import { db, schema } from "../db";
 import { eq, and, sql, desc } from "drizzle-orm";
-import { generateEmbedding, generateEmbeddings } from "./embedding";
+import { generateEmbeddings, addContextualPrefix } from "./embedding";
 import type {
   MemoryProfile,
   ExtractedFact,
@@ -129,11 +129,8 @@ export async function storeExtractedFacts(
     return;
   }
 
-  console.log(`[storeExtractedFacts] Generating embeddings for ${validFacts.length} facts...`);
-  const embeddings = await generateEmbeddings(
-    validFacts.map((f) => f.content),
-  );
-  console.log(`[storeExtractedFacts] Embeddings generated (dimensions: ${embeddings[0]?.length ?? 0})`);
+  const textsToEmbed = validFacts.map((f) => addContextualPrefix(f.content, f.category));
+  const embeddings = await generateEmbeddings(textsToEmbed, "document");
 
   const rows = validFacts.map((fact, i) => ({
     userId,
@@ -188,6 +185,38 @@ export async function deleteFact(
 ): Promise<boolean> {
   const result = await db
     .delete(schema.memoryFacts)
+    .where(
+      and(
+        eq(schema.memoryFacts.id, factId),
+        eq(schema.memoryFacts.userId, userId),
+      ),
+    )
+    .returning({ id: schema.memoryFacts.id });
+
+  return result.length > 0;
+}
+
+export async function updateFact(
+  userId: string,
+  factId: string,
+  content: string,
+): Promise<boolean> {
+  const existing = await db.query.memoryFacts.findFirst({
+    where: and(
+      eq(schema.memoryFacts.id, factId),
+      eq(schema.memoryFacts.userId, userId),
+    ),
+    columns: { id: true, category: true },
+  });
+
+  if (!existing) return false;
+
+  const embeddingText = addContextualPrefix(content, existing.category);
+  const [embedding] = await generateEmbeddings([embeddingText], "document");
+
+  const result = await db
+    .update(schema.memoryFacts)
+    .set({ content, embedding, sourceDate: new Date() })
     .where(
       and(
         eq(schema.memoryFacts.id, factId),

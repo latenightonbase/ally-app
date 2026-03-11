@@ -1,10 +1,10 @@
 import { db, schema } from "../db";
-import { eq, and, gte, sql } from "drizzle-orm";
-import { runNightlyExtraction } from "./nightlyExtraction";
-import { runDailyBriefings } from "./dailyBriefings";
-import { runWeeklyInsights } from "./weeklyInsights";
-import { runReengagement } from "./reengagement";
+import { eq, and, gte } from "drizzle-orm";
 import { runDailyPing } from "./dailyPing";
+import { runWeeklyInsights } from "./weeklyInsights";
+import { emit } from "../services/events";
+import { registerProactiveHandlers } from "../services/proactive";
+import { flushAllBatches } from "../services/memoryQueue";
 
 interface ScheduledJob {
   name: string;
@@ -15,17 +15,12 @@ interface ScheduledJob {
 }
 
 const jobs: ScheduledJob[] = [
-  // {
-  //   name: "nightly_extraction",
-  //   cronExpression: "0 23 * * *",
-  //   handler: runNightlyExtraction,
-  //   enabled: true,
-  // },
   {
-    name: "daily_briefings",
-    cronExpression: "0 5 * * *",
-    handler: runDailyBriefings,
+    name: "daily_ping",
+    cronExpression: "* * * * *",
+    handler: runDailyPing,
     enabled: true,
+    skipDedup: true,
   },
   {
     name: "weekly_insights",
@@ -34,31 +29,53 @@ const jobs: ScheduledJob[] = [
     enabled: true,
   },
   {
-    name: "reengagement",
-    cronExpression: "0 18 * * *",
-    handler: runReengagement,
+    name: "proactive_scan",
+    cronExpression: "0,30 * * * *",
+    handler: async () => {
+      emit("system:daily_scan", {});
+    },
     enabled: true,
+    skipDedup: true,
   },
   {
-    name: "daily_ping",
-    cronExpression: "* * * * *",
-    handler: runDailyPing,
+    name: "flush_memory_queue",
+    cronExpression: "*/5 * * * *",
+    handler: async () => {
+      flushAllBatches();
+    },
     enabled: true,
     skipDedup: true,
   },
 ];
 
 function parseCron(expression: string): {
-  hour: number;
-  minute: number;
+  minutes: number[];
+  hours: number[];
   dayOfWeek?: number;
 } {
-  const [minute, hour, , , dayOfWeek] = expression.split(" ");
+  const [minuteStr, hourStr, , , dayOfWeek] = expression.split(" ");
+
+  const parseField = (field: string): number[] => {
+    if (field === "*") return [];
+    if (field.startsWith("*/")) {
+      const interval = Number(field.slice(2));
+      return Array.from({ length: Math.floor(60 / interval) }, (_, i) => i * interval);
+    }
+    return field.split(",").map(Number);
+  };
+
   return {
-    minute: Number(minute),
-    hour: Number(hour),
+    minutes: parseField(minuteStr),
+    hours: parseField(hourStr),
     dayOfWeek: dayOfWeek !== "*" ? Number(dayOfWeek) : undefined,
   };
+}
+
+function cronMatches(schedule: ReturnType<typeof parseCron>, now: Date): boolean {
+  const minuteMatch = schedule.minutes.length === 0 || schedule.minutes.includes(now.getMinutes());
+  const hourMatch = schedule.hours.length === 0 || schedule.hours.includes(now.getHours());
+  const dowMatch = schedule.dayOfWeek === undefined || now.getDay() === schedule.dayOfWeek;
+  return minuteMatch && hourMatch && dowMatch;
 }
 
 async function hasRunToday(jobName: string): Promise<boolean> {
@@ -98,14 +115,9 @@ async function recordJobEnd(
 async function executeJob(job: ScheduledJob) {
   if (!job.skipDedup) {
     const alreadyRan = await hasRunToday(job.name).catch(() => false);
-    if (alreadyRan) {
-      console.log(`[scheduler] ${job.name} already ran today, skipping`);
-      return;
-    }
+    if (alreadyRan) return;
   }
 
-  // For skipDedup jobs (like daily_ping), just run the handler directly
-  // since they manage their own per-user deduplication
   if (job.skipDedup) {
     try {
       await job.handler();
@@ -116,12 +128,10 @@ async function executeJob(job: ScheduledJob) {
   }
 
   const runId = await recordJobStart(job.name);
-  console.log(`[scheduler] Running ${job.name} (run: ${runId})`);
 
   try {
     await job.handler();
     await recordJobEnd(runId, "completed");
-    console.log(`[scheduler] ${job.name} completed`);
   } catch (err) {
     console.error(`[scheduler] ${job.name} failed:`, err);
     await recordJobEnd(runId, "failed", {
@@ -131,7 +141,7 @@ async function executeJob(job: ScheduledJob) {
 }
 
 export function startScheduler() {
-  console.log("[scheduler] Starting job scheduler");
+  registerProactiveHandlers();
 
   const checkInterval = 60_000;
 
@@ -140,21 +150,14 @@ export function startScheduler() {
 
     for (const job of jobs) {
       if (!job.enabled) continue;
-
       const schedule = parseCron(job.cronExpression);
-      const matches =
-        now.getHours() === schedule.hour &&
-        now.getMinutes() === schedule.minute &&
-        (schedule.dayOfWeek === undefined ||
-          now.getDay() === schedule.dayOfWeek);
-
-      if (matches) {
+      if (cronMatches(schedule, now)) {
         executeJob(job).catch(() => {});
       }
     }
   }, checkInterval);
 
   console.log(
-    `[scheduler] Registered ${jobs.filter((j) => j.enabled).length} jobs`,
+    `[scheduler] Started with ${jobs.filter((j) => j.enabled).length} jobs + proactive handlers`,
   );
 }

@@ -6,8 +6,8 @@ You are working on Ally, a personal AI companion app.
 - Elysia backend (apps/api/) — Bun-native, TypeScript only
 - Expo 55 / React Native (apps/mobile/) — NativeWind, Zustand, expo-router
 - PostgreSQL + pgvector via Drizzle ORM
-- Claude claude-sonnet-4-6 via @anthropic-ai/sdk
-- Voyage AI voyage-4-lite for embeddings
+- Claude Haiku 4.5 (fast) + Sonnet 4.6 (quality) via @anthropic-ai/sdk — with server-side web search and custom tools
+- Voyage AI voyage-4-lite for contextual embeddings (1024 dims)
 
 ## Code Style
 - TypeScript strict mode everywhere
@@ -19,9 +19,14 @@ You are working on Ally, a personal AI companion app.
 - Shared types go in packages/shared, not duplicated
 
 ## Architecture
-- Memory system has 3 tiers: hot (JSONB profile), warm (recent messages), cold (pgvector facts with hybrid retrieval)
+- Memory system has 3 tiers: hot (JSONB profile), warm (session messages + summaries), cold (pgvector facts with hybrid retrieval + query expansion)
+- Memory extraction is real-time via async batching queue (services/memoryQueue.ts), not cron
+- Session windowing: conversations are silently split into sessions (30min gap), each summarized
+- AI has tools: web search, remember_fact, recall_memory, set_reminder (apps/api/src/ai/tools.ts)
+- Model routing: Haiku for casual, Sonnet for complex/emotional messages
 - AI prompts are centralized in apps/api/src/ai/prompts.ts
-- All AI calls go through apps/api/src/ai/client.ts
+- All AI calls go through apps/api/src/ai/client.ts (with tool-use agentic loops)
+- Event-driven proactive system (services/events.ts + services/proactive.ts)
 - Database schema is in apps/api/src/db/schema.ts (Drizzle)
 - Never modify _legacy/ — it's reference only
 
