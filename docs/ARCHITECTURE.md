@@ -8,40 +8,39 @@ Ally is a personal AI companion that remembers everything users share, sends per
                           +--------------------+
                           |   Mobile App       |
                           |  (Expo / RN 0.83)  |
-                          |  [Mobile Team]     |
                           +--------+-----------+
                                    |
-                                   | HTTPS / JWT
+                                   | HTTPS / SSE
                                    |
                           +--------v-----------+
                           |   Backend API      |
                           |  (Elysia / Bun)    |
-                          |  [This Repo]       |
                           +--------+-----------+
                                    |
-                    +--------------+--------------+
-                    |              |               |
-           +-------v---+  +------v------+  +-----v-------+
-           | AI Layer   |  | Background |  | Database    |
-           | (TypeScript|  | Jobs       |  | (PostgreSQL |
-           | + Claude)  |  | (in-process|  | + pgvector) |
-           | [This Repo]|  | [This Repo]|  | [Neon]      |
-           +------------+  +-------------+  +-------------+
+         +----------+----------+--+------+----------+
+         |          |          |         |          |
+    +----v---+ +----v---+ +----v---+ +---v----+ +--v-----+
+    | Neon   | | Qdrant | | Falkor | | Claude | | Voyage |
+    | Postgres| | Cloud  | |  DB    | | (AI)   |  | AI     |
+    | (source | | (vector| | (graph | |Haiku+  | |(embed.)|
+    |  truth) | | search)| |+queue) | |Sonnet) | |        |
+    +--------+ +--------+ +--------+ +--------+ +--------+
 ```
 
 ## Stack
 
-| Layer        | Technology                                      |
-|--------------|--------------------------------------------------|
-| Runtime      | Bun                                              |
-| Monorepo     | Turborepo with Bun workspaces                    |
-| Frontend     | Expo 55 / React Native 0.83, NativeWind, Zustand, expo-router |
-| Backend      | Elysia (Bun-native), TypeScript                  |
-| Database     | PostgreSQL + pgvector (Neon)                     |
-| ORM          | Drizzle ORM                                      |
-| AI           | Claude Haiku 4.5 (fast) + Sonnet 4.6 (quality) via @anthropic-ai/sdk, with server-side web search and custom tools |
-| Embeddings   | Voyage AI voyage-4-lite (1024 dims) with contextual prefixes |
-| Auth         | Better Auth (cookie-based sessions)               |
+| Layer         | Technology                                                                                               |
+|---------------|----------------------------------------------------------------------------------------------------------|
+| Runtime       | Bun                                                                                                      |
+| Monorepo      | Turborepo with Bun workspaces                                                                            |
+| Frontend      | Expo 55 / React Native 0.83, NativeWind, Zustand, expo-router                                           |
+| Backend       | Elysia (Bun-native), TypeScript                                                                          |
+| Relational DB | PostgreSQL (Neon) + Drizzle ORM — source of truth for users, conversations, sessions, fact metadata      |
+| Vector DB     | Qdrant Cloud — dense embeddings for `memory_facts` and `memory_episodes` (cosine search)                |
+| Graph DB      | FalkorDB Cloud — entity relationship graph (Cypher) + BullMQ queue backend (Redis protocol)             |
+| AI            | Claude Haiku 4.5 (fast) + Sonnet 4.6 (quality) via `@anthropic-ai/sdk`, with server-side web search    |
+| Embeddings    | Voyage AI `voyage-4-lite` (1024 dims) with contextual prefixes (asymmetric document/query search)       |
+| Auth          | Better Auth (cookie-based sessions)                                                                      |
 
 All AI logic is implemented in TypeScript. No Python.
 
@@ -115,11 +114,12 @@ apps/api/src/
   index.ts              # Elysia app entry point
   routes/
     chat.ts             # POST /chat, POST /chat/feedback
-    onboarding.ts       # POST /onboarding
+    onboarding.ts       # POST /onboarding/followup, POST /onboarding/complete
     briefing.ts         # GET /briefing (on-demand generation)
-    memory.ts           # GET /memory/profile
+    memory.ts           # GET /memory/profile, GET/PATCH/DELETE /memory/facts
     conversations.ts    # Conversation list, history
-    insights.ts         # Weekly insights (Premium)
+    insights.ts         # GET /insights/weekly (Premium)
+    profile.ts          # GET /profile/you ("You" screen aggregated data)
     webhooks.ts         # Stripe, push callbacks
     health.ts           # Health check
   middleware/
@@ -137,19 +137,25 @@ apps/api/src/
     onboarding.ts       # Onboarding processing
     prompts.ts          # System, briefing, extraction prompts (with few-shot examples)
   services/
-    memory.ts           # Memory profile CRUD + fact storage
-    memoryQueue.ts      # Async batched memory extraction queue
+    memory.ts           # Memory profile CRUD + fact/episode/event/entity storage
+    memoryQueue.ts      # BullMQ async extraction queue (FalkorDB Redis backend)
     embedding.ts        # Voyage AI embeddings (contextual prefixes, asymmetric search)
-    retrieval.ts        # Hybrid search (query expansion, semantic + FTS + recency)
+    retrieval.ts        # Three-stage hybrid retrieval (Qdrant vector + keyword + FalkorDB entity)
+    vectorStore.ts      # Qdrant Cloud client wrapper
+    graphStore.ts       # FalkorDB client wrapper (entity graph, Cypher)
     session.ts          # Session detection, summarization, context assembly
     events.ts           # Typed in-process event emitter
-    proactive.ts        # Event-driven proactive handlers (briefings, re-engagement)
+    notifications.ts    # Expo Push API helper
+    proactive.ts        # Event-driven handlers (briefings, re-engagement)
   jobs/
     scheduler.ts        # In-process job scheduler
     dailyPing.ts        # Per-user timezone daily nudge
     weeklyInsights.ts   # Premium weekly emotional insights
+    consolidation.ts    # Weekly episode → semantic fact reflection (Generative Agents pattern)
+    maintenance.ts      # Daily: expire episodes, promote past events, importance decay
   db/
-    schema.ts           # Drizzle schema + pgvector + sessions_v2
+    schema.ts           # Drizzle schema (Postgres tables, enums)
+    auth-schema.ts      # better-auth schema + app extensions (tier, allyName, push token)
     migrations/         # SQL migrations
 ```
 
@@ -195,112 +201,193 @@ The system uses a hybrid approach — event-driven for reactive behaviors, cron-
 
 **Directories:** `apps/api/src/jobs/` and `apps/api/src/services/proactive.ts`
 
-### 4. Database (Neon PostgreSQL + pgvector)
+### 4. Database (Neon PostgreSQL)
 
-The database is hosted on Neon. This repo defines the schema via Drizzle and runs migrations.
+The database is hosted on Neon. Schema is defined in `apps/api/src/db/schema.ts` (app tables) and `apps/api/src/db/auth-schema.ts` (better-auth + app extensions) via Drizzle ORM.
 
-**Schema:**
+**Note:** Embeddings are NOT stored in Postgres. They live in Qdrant Cloud. The `embedding vector(1024)` column that appeared in the old schema was removed in Phase 2.
+
+**Schema (from `auth-schema.ts` — better-auth tables + app extensions):**
 
 ```
-users
-  id              UUID PRIMARY KEY
-  email           TEXT UNIQUE
-  name            TEXT
-  tier            ENUM('free_trial', 'basic', 'pro', 'premium')
-  trial_ends_at   TIMESTAMP
-  created_at      TIMESTAMP
+user                           ← better-auth managed, extended with app fields
+  id                TEXT PRIMARY KEY
+  name              TEXT
+  email             TEXT UNIQUE
+  email_verified    BOOLEAN
+  ally_name         TEXT DEFAULT 'Ally'
+  notification_preferences  JSONB  -- { dailyPingTime, timezone }
+  expo_push_token   TEXT
+  tier              TEXT DEFAULT 'free_trial'
+  created_at        TIMESTAMP
+  updated_at        TIMESTAMP
 
+session                        ← better-auth managed
+  id, token, user_id, expires_at, ip_address, user_agent, ...
+
+account                        ← better-auth managed (OAuth providers, credentials)
+  id, account_id, provider_id, user_id, password, ...
+
+verification                   ← better-auth managed (email verification)
+  id, identifier, value, expires_at, ...
+```
+
+**Schema (from `schema.ts` — app tables):**
+
+```
 conversations
-  id              UUID PRIMARY KEY
-  user_id         UUID REFERENCES users(id)
-  preview         TEXT
-  message_count   INTEGER
-  created_at      TIMESTAMP
-  last_message_at TIMESTAMP
+  id                UUID PRIMARY KEY
+  user_id           TEXT REFERENCES user(id) CASCADE
+  preview           TEXT
+  message_count     INTEGER DEFAULT 0
+  created_at        TIMESTAMP WITH TIME ZONE
+  last_message_at   TIMESTAMP WITH TIME ZONE
+  -- indexes: user_id, (user_id, last_message_at)
+
+sessions_v2                    ← conversation windowing (30min gap = new session)
+  id                UUID PRIMARY KEY
+  conversation_id   UUID REFERENCES conversations(id) CASCADE
+  user_id           TEXT REFERENCES user(id) CASCADE
+  summary           TEXT          -- Claude-generated session summary
+  message_count     INTEGER DEFAULT 0
+  token_estimate    INTEGER DEFAULT 0
+  started_at        TIMESTAMP WITH TIME ZONE
+  ended_at          TIMESTAMP WITH TIME ZONE
+  -- indexes: conversation_id, user_id, (user_id, started_at)
 
 messages
-  id              UUID PRIMARY KEY
-  conversation_id UUID REFERENCES conversations(id)
-  session_id      UUID REFERENCES sessions_v2(id)
-  role            ENUM('user', 'ally')
-  content         TEXT
-  feedback        INTEGER (-1, 0, 1)
-  created_at      TIMESTAMP
+  id                UUID PRIMARY KEY
+  conversation_id   UUID REFERENCES conversations(id) CASCADE
+  session_id        UUID REFERENCES sessions_v2(id)   -- nullable
+  role              ENUM('user', 'ally')
+  content           TEXT
+  feedback          INTEGER       -- -1 / 0 / 1
+  created_at        TIMESTAMP WITH TIME ZONE
+  -- indexes: conversation_id, (conversation_id, created_at), session_id
 
-sessions_v2
-  id              UUID PRIMARY KEY
-  conversation_id UUID REFERENCES conversations(id)
-  user_id         UUID REFERENCES users(id)
-  summary         TEXT
-  message_count   INTEGER
-  token_estimate  INTEGER
-  started_at      TIMESTAMP
-  ended_at        TIMESTAMP
+memory_profiles                ← hot memory tier
+  user_id           TEXT PRIMARY KEY REFERENCES user(id) CASCADE
+  profile           JSONB         -- MemoryProfile (includes dynamicAttributes)
+  updated_at        TIMESTAMP WITH TIME ZONE
 
-memory_profiles
-  user_id         UUID PRIMARY KEY REFERENCES users(id)
-  profile         JSONB
-  updated_at      TIMESTAMP
+memory_facts                   ← cold/semantic memory tier (metadata only; vectors in Qdrant)
+  id                UUID PRIMARY KEY
+  user_id           TEXT REFERENCES user(id) CASCADE
+  content           TEXT
+  category          ENUM('personal_info','relationships','work','health','interests','goals','emotional_patterns')
+  importance        REAL DEFAULT 0.5
+  confidence        REAL DEFAULT 0.8
+  temporal          BOOLEAN DEFAULT false
+  entities          JSONB         -- string[] of entity names
+  emotion           TEXT          -- nullable
+  source_conversation_id  UUID   -- nullable
+  source_date       TIMESTAMP WITH TIME ZONE
+  last_accessed_at  TIMESTAMP WITH TIME ZONE   -- nullable
+  superseded_by     UUID          -- nullable; set when a newer fact replaces this one
+  consolidated_from JSONB         -- UUID[] of episode IDs that produced this fact
+  source_type       ENUM('chat','calendar','notes','health') DEFAULT 'chat'
+  created_at        TIMESTAMP WITH TIME ZONE
+  -- indexes: user_id, (user_id, category)
 
-memory_facts
-  id                      UUID PRIMARY KEY
-  user_id                 UUID REFERENCES users(id)
-  content                 TEXT
-  category                TEXT
-  importance              FLOAT
-  confidence              FLOAT
-  temporal                TEXT
-  entities                JSONB
-  emotion                 TEXT
-  embedding               vector(1024)    -- pgvector
-  source_conversation_id   UUID
-  source_date             TIMESTAMP
-  last_accessed_at        TIMESTAMP
-  created_at              TIMESTAMP
-  -- HNSW vector index, GIN full-text index, B-tree on user+category
+memory_episodes                ← episodic memory tier (7–30 day TTL; vectors in Qdrant)
+  id                UUID PRIMARY KEY
+  user_id           TEXT REFERENCES user(id) CASCADE
+  content           TEXT
+  category          ENUM(same as memory_facts)
+  emotion           TEXT          -- nullable
+  entities          JSONB         -- string[]
+  importance        REAL DEFAULT 0.5
+  confidence        REAL DEFAULT 0.8
+  expires_at        TIMESTAMP WITH TIME ZONE   -- computed from importance at insert
+  consolidated_at   TIMESTAMP WITH TIME ZONE   -- set by consolidation job
+  consolidated_into_fact_id  UUID              -- nullable
+  source_conversation_id  UUID                 -- nullable
+  source_type       ENUM('chat','calendar','notes','health') DEFAULT 'chat'
+  source_date       TIMESTAMP WITH TIME ZONE
+  created_at        TIMESTAMP WITH TIME ZONE
+  -- indexes: user_id, (user_id, expires_at), (user_id, consolidated_at)
 
-briefings
-  id              UUID PRIMARY KEY
-  user_id         UUID REFERENCES users(id)
-  date            DATE
-  content         TEXT
-  delivered       BOOLEAN DEFAULT FALSE
-  created_at      TIMESTAMP
+memory_events                  ← future-dated events (proactively surfaced, no vectors)
+  id                UUID PRIMARY KEY
+  user_id           TEXT REFERENCES user(id) CASCADE
+  content           TEXT
+  event_date        TIMESTAMP WITH TIME ZONE
+  context           TEXT          -- nullable
+  notified_at       TIMESTAMP WITH TIME ZONE   -- nullable
+  completed_at      TIMESTAMP WITH TIME ZONE   -- nullable
+  source_conversation_id  UUID                 -- nullable
+  source_type       ENUM DEFAULT 'chat'
+  created_at        TIMESTAMP WITH TIME ZONE
+  -- indexes: user_id, (user_id, event_date, completed_at)
 
-job_runs
-  id              UUID PRIMARY KEY
-  job_name        TEXT
-  user_id         UUID
-  status          TEXT
-  metadata        JSONB
-  started_at      TIMESTAMP
-  completed_at    TIMESTAMP
+briefings                      ← morning briefings (one per user per day)
+  id                UUID PRIMARY KEY
+  user_id           TEXT REFERENCES user(id) CASCADE
+  date              TEXT          -- 'YYYY-MM-DD'
+  content           TEXT
+  delivered         BOOLEAN DEFAULT false
+  created_at        TIMESTAMP WITH TIME ZONE
+  -- unique index: (user_id, date)
+
+weekly_insights                ← premium weekly emotional summaries
+  id                UUID PRIMARY KEY
+  user_id           TEXT REFERENCES user(id) CASCADE
+  week_of           TEXT          -- 'YYYY-MM-DD' (Monday of the week)
+  summary           TEXT
+  mood_trend        TEXT          -- 'improving'|'declining'|'stable'|'mixed'
+  top_themes        JSONB         -- string[]
+  follow_up_suggestions  JSONB   -- string[]
+  delivered         BOOLEAN DEFAULT false
+  created_at        TIMESTAMP WITH TIME ZONE
+  -- unique index: (user_id, week_of), index: (user_id, created_at)
+
+job_runs                       ← background job audit log
+  id                UUID PRIMARY KEY
+  job_name          TEXT
+  user_id           TEXT          -- nullable
+  status            TEXT DEFAULT 'running'
+  metadata          JSONB         -- nullable
+  started_at        TIMESTAMP WITH TIME ZONE
+  completed_at      TIMESTAMP WITH TIME ZONE   -- nullable
+  -- index: (job_name, user_id)
 ```
+
+**Qdrant Cloud** stores the actual embedding vectors alongside payload metadata for `memory_facts` (type=`"fact"`) and `memory_episodes` (type=`"episode"`). Payload indexes on: `userId`, `category`, `importance`, `emotion`, `content` (text), `sourceType`.
+
+**FalkorDB Cloud** stores entity nodes and relationship edges (Cypher graph). Entity nodes reference fact IDs and episode IDs. Also serves as the Redis-compatible backend for BullMQ.
 
 ---
 
 ## Memory Architecture (Tiered + Hybrid Retrieval)
 
-Ally uses a three-tier memory model:
+See `docs/MEMORY_ARCHITECTURE.md` for the full living document. Summary:
 
-| Tier   | Source                    | When Loaded                    |
-|--------|---------------------------|--------------------------------|
-| **Hot**  | `memory_profiles.profile` (JSONB) | Always — name, relationships, goals, emotional patterns |
-| **Warm** | Recent conversation history | Last N messages from active conversation |
-| **Cold** | `memory_facts` with embeddings | Retrieved via hybrid search when relevant |
+Ally uses a **six-tier memory model**:
 
-### Cold Memory Retrieval (Hybrid Search)
+| Tier              | Store                              | When Loaded                                                  |
+|-------------------|------------------------------------|--------------------------------------------------------------|
+| **Hot**           | `memory_profiles.profile` (JSONB)  | Always — injected into every Claude system prompt            |
+| **Warm**          | `sessions_v2` summaries            | Last 5 session summaries per conversation                    |
+| **Upcoming**      | `memory_events`                    | Events in next 7 days injected into every context build      |
+| **Semantic**      | `memory_facts` (Postgres + Qdrant) | Retrieved via three-stage hybrid search                      |
+| **Episodic**      | `memory_episodes` (Postgres + Qdrant) | Same retrieval as facts; 7–30 day TTL                     |
+| **Entity graph**  | FalkorDB                           | Entity-triggered retrieval at chat time (2-hop traversal)    |
 
-Facts are retrieved using a weighted combination of:
+**Hot profile** now includes `dynamicAttributes` — open-ended personality traits Ally learns from patterns over time (communication style, stress response, etc.), promoted by the weekly consolidation job and real-time extraction.
 
-| Signal                 | Weight | Mechanism                                      |
-|------------------------|--------|------------------------------------------------|
-| Semantic similarity    | 40%    | pgvector cosine distance (Voyage voyage-4-lite) |
-| Full-text matching    | 20%    | PostgreSQL tsvector/tsquery                    |
-| Recency decay         | 25%    | Exponential decay by `source_date`             |
-| Importance scoring    | 15%    | Stored `importance` field                     |
+### Three-Stage Hybrid Retrieval
 
-Embeddings are 1024-dimensional (Voyage AI voyage-4-lite). The `memory_facts` table has an HNSW vector index for fast approximate nearest-neighbor search.
+| Stage          | Mechanism                                        | Merged via                    |
+|----------------|--------------------------------------------------|-------------------------------|
+| Dense vector   | Qdrant cosine similarity (voyage-4-lite 1024d)  | Reciprocal Rank Fusion (RRF)  |
+| Sparse/keyword | Qdrant text-index keyword search                 | RRF                           |
+| Entity graph   | FalkorDB 2-hop entity traversal → fact IDs       | Direct ID lookup              |
+
+Final scoring after retrieval:
+- Recency decay (exponential, rate=0.02)
+- Importance score
+- Emotional context boost (+0.08 for emotion-matched facts)
+- LLM-based emotion detection (Claude Haiku, runs concurrently)
 
 ---
 
@@ -310,9 +397,9 @@ Embeddings are 1024-dimensional (Voyage AI voyage-4-lite). The `memory_facts` ta
 
 ```
 1. User sends message via mobile app
-2. Mobile app sends POST /chat with JWT + message (or SSE stream request)
-3. Backend validates JWT, checks rate limit for user's tier
-4. Backend resolves session (resolveSession — creates new session if 30min gap)
+2. Mobile app sends POST /chat with session cookie + message (or SSE stream request)
+3. Backend validates session (better-auth), checks rate limit for user's tier
+4. Backend resolves conversation session (resolveSession — creates new session if 30min gap)
 5. Backend loads context in parallel:
    a. Hot memory: user's memory profile from memory_profiles
    b. Warm memory: session summaries (last 5) + active session messages (up to 30)
@@ -344,39 +431,44 @@ Embeddings are 1024-dimensional (Voyage AI voyage-4-lite). The `memory_facts` ta
 ### Real-Time Memory Extraction Flow
 
 ```
-1. After each chat exchange, messages are enqueued in memoryQueue.ts
+1. After each chat exchange, messages are enqueued via enqueueExtraction()
 2. shouldExtract() filters trivial messages (greetings, one-word replies, etc.)
 3. Queue accumulates until batch threshold (4 messages) or time window (15s)
-4. processBatch() fires:
-   a. Calls Claude (extraction prompt) with the batched messages
-   b. For each extracted fact:
-      - Adds contextual prefix based on category
-      - Generates embedding via Voyage AI
-      - Inserts into memory_facts
-   c. Merges profile updates into memory_profiles
-5. Failed batches are retried up to 2 times with exponential backoff
+4. BullMQ worker (processExtractionJob) fires:
+   a. Calls Claude (EXTRACTION_SYSTEM_PROMPT) with the batched messages
+   b. Routes extracted facts by memoryType:
+      - "semantic" → memory_facts (Postgres) + Qdrant vector upsert
+      - "episodic" → memory_episodes (Postgres) + Qdrant vector upsert, TTL from importance
+      - "event"    → memory_events (Postgres only, queried by date not vector)
+   c. Merges profileUpdates into memory_profiles (hot tier)
+   d. Merges dynamicAttributes into memory_profiles if any foundational traits emerged
+   e. Stores entity nodes + relationship edges in FalkorDB
+5. Failed jobs are retried up to 2 times with exponential backoff (BullMQ)
 6. A cron (every 5min) calls flushAllBatches() as a safety net
 ```
 
 ### Onboarding Flow
 
 ```
-1. User completes onboarding questions in mobile app
-2. Mobile app sends POST /onboarding with answers
-3. Backend calls ai/onboarding.ts with answers
-4. onboarding.ts:
-   a. Calls Claude claude-sonnet-4-6 to process answers into structured memory
-   b. Creates initial memory profile in memory_profiles
-   c. Generates Ally's first personalized greeting
-5. Backend stores memory profile in DB
-6. Backend returns greeting to mobile app
+1. Mobile presents seed question ("tell me about yourself")
+2. User answers → POST /api/v1/onboarding/followup
+3. Backend calls Claude (ONBOARDING_DYNAMIC_PROMPT) to generate 2-3 personalized followup questions
+4. Mobile renders AI-generated questions, user answers them
+5. User picks daily ping time (HH:MM) and timezone
+6. Mobile sends all Q&A → POST /api/v1/onboarding/complete
+7. Backend calls Claude (ONBOARDING_COMPLETE_PROMPT):
+   a. Processes full conversation into structured MemoryProfile
+   b. Extracts dynamicAttributes if clear patterns emerged
+   c. Generates personalized first greeting
+8. Profile + allyName + notification preferences stored in DB
+9. Greeting returned to mobile — appears as Ally's first message
 ```
 
 ---
 
 ## Multi-Tenant Isolation
 
-Every request is scoped to a single user via their JWT. The isolation model:
+Every request is scoped to a single user via their session (better-auth cookie, or Bearer session token on mobile). The isolation model:
 
 - **Data isolation:** All DB queries are filtered by `user_id`. There is no cross-user data access.
 - **Memory isolation:** Each user has their own memory profile and memory_facts. Memory extraction and briefing generation are per-user.
@@ -386,16 +478,23 @@ Every request is scoped to a single user via their JWT. The isolation model:
 
 ### Tier Enforcement
 
-| Feature                    | Free Trial | Basic ($9.99) | Pro ($19.99) | Premium ($49.99) |
-|----------------------------|-----------|---------------|--------------|-------------------|
-| Chat messages/day          | 20        | 50            | Unlimited    | Unlimited         |
-| Memory retention           | 14 days   | 90 days       | Unlimited    | Unlimited         |
-| Morning briefings          | No        | No            | Yes          | Yes               |
-| Proactive follow-ups       | No        | No            | No           | Yes               |
-| Weekly emotional insights  | No        | No            | No           | Yes               |
-| Conversation history       | 7 days    | 30 days       | Unlimited    | Unlimited         |
+There is no permanent free tier. Users get a **14-day free trial** on signup (full Basic access, no credit card required), then must subscribe to one of two paid tiers.
 
-Tier is checked at the middleware level before any AI processing occurs. The mobile team's auth service includes the user's current tier in the JWT payload.
+| Feature                       | Free Trial (14 days) | Basic     | Premium   |
+|-------------------------------|----------------------|-----------|-----------|
+| Chat messages/day             | Unlimited            | Unlimited | Unlimited |
+| Memory retention              | Unlimited            | Unlimited | Unlimited |
+| "You" screen (full)           | Yes                  | Yes       | Yes       |
+| Morning briefings             | Yes                  | Yes       | Yes       |
+| Weekly emotional insights     | No                   | No        | Yes       |
+| Proactive check-ins           | No                   | No        | Yes       |
+| Habit detection               | No                   | No        | Yes       |
+| AI-set goals                  | No                   | No        | Yes       |
+| Mood calendar                 | No                   | No        | Yes       |
+| Accountability threads        | No                   | No        | Yes       |
+| Conversation history          | Unlimited            | Unlimited | Unlimited |
+
+The `Tier` type is `"free_trial" | "basic" | "premium"`. Tier is enforced at the middleware level (`middleware/tierCheck.ts`) before any AI processing occurs.
 
 ---
 
@@ -482,24 +581,25 @@ All types are imported from `@ally/shared` (no local duplicates). The `MemoryFac
 
 **Phase 1 (MVP, <1K users) — Current:**
 - Single Bun process
-- Neon free tier
+- Neon PostgreSQL (relational source of truth)
+- Qdrant Cloud (vector search for facts and episodes)
+- FalkorDB Cloud (entity graph + BullMQ queue backend via Redis protocol)
 - In-process scheduler + event system
-- pgvector for embeddings with contextual prefixes
-- In-process memory queue for async extraction
 - Dual model routing (Haiku 4.5 / Sonnet 4.6)
 - Session windowing with rolling summaries
-- All AI logic in TypeScript
+- Three-stage hybrid retrieval (vector + keyword + entity graph)
+- Weekly consolidation (Generative Agents pattern)
+- Dynamic profile attributes (learned from patterns over time)
 
 **Phase 2 (1K–10K users):**
-- Redis for rate limiting, profile caching, session caching, memory queue persistence
-- Graph-based memory retrieval (supplement or replace vector search)
-- Trigger.dev for background jobs
-- Tune HNSW indexes for pgvector
-- Consider connection pooling
+- App integrations: Calendar (`sourceType: 'calendar'`), Notes, Health data
+- Behavioral intelligence features: habit detection, goal scaffolding, AI-set goals, mood calendar
+- Trigger.dev or separate worker process for heavy background jobs
+- Connection pooling (PgBouncer or Neon pooler)
 - A/B testing framework for prompt quality
 
 **Phase 3 (10K+ users):**
-- Dedicated vector DB (e.g., Qdrant) if pgvector becomes a bottleneck
 - Horizontal scaling behind load balancer
+- Separate worker process for memory extraction (decouple from API server)
 - Job sharding across workers
-- Fine-tuned model for conversation quality (if off-the-shelf hits ceiling)
+- Fine-tuned model for conversation quality

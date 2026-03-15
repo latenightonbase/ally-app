@@ -5,12 +5,12 @@ import { truncateAll, seedUsers, seedBriefing } from "../../helpers/seed";
 
 describe("Briefing Routes", () => {
   let app: ReturnType<typeof createTestApp>;
-  let proToken: string;
+  let basicToken: string;
   let freeToken: string;
 
   beforeAll(async () => {
     app = createTestApp();
-    proToken = await signTestToken({ sub: TEST_USER.id, tier: "pro" });
+    basicToken = await signTestToken({ sub: TEST_USER.id, tier: "basic" });
     freeToken = await signTestToken({ sub: TEST_FREE_USER.id, tier: "free_trial" });
   });
 
@@ -22,7 +22,7 @@ describe("Briefing Routes", () => {
   describe("GET /api/v1/briefing", () => {
     it("returns briefing for today", async () => {
       await seedBriefing(TEST_USER.id);
-      const res = await authedRequest(app, "/api/v1/briefing", proToken);
+      const res = await authedRequest(app, "/api/v1/briefing", basicToken);
 
       expect(res.status).toBe(200);
       const body = await json(res);
@@ -32,20 +32,20 @@ describe("Briefing Routes", () => {
     });
 
     it("returns null when no briefing exists", async () => {
-      const res = await authedRequest(app, "/api/v1/briefing", proToken);
+      const res = await authedRequest(app, "/api/v1/briefing", basicToken);
       expect(res.status).toBe(200);
       const body = await json(res);
       expect(body.briefing).toBeNull();
     });
 
-    it("returns 403 for free tier users", async () => {
+    it("returns 200 for free trial users (briefings are available to all tiers)", async () => {
       const res = await authedRequest(app, "/api/v1/briefing", freeToken);
-      expect(res.status).toBe(403);
+      expect(res.status).toBe(200);
     });
 
     it("accepts a date query parameter", async () => {
       await seedBriefing(TEST_USER.id, "2026-01-15");
-      const res = await authedRequest(app, "/api/v1/briefing?date=2026-01-15", proToken);
+      const res = await authedRequest(app, "/api/v1/briefing?date=2026-01-15", basicToken);
 
       expect(res.status).toBe(200);
       const body = await json(res);
@@ -56,7 +56,7 @@ describe("Briefing Routes", () => {
 
   describe("GET /api/v1/briefing/history", () => {
     it("returns empty array when no briefings exist", async () => {
-      const res = await authedRequest(app, "/api/v1/briefing/history", proToken);
+      const res = await authedRequest(app, "/api/v1/briefing/history", basicToken);
       expect(res.status).toBe(200);
       const body = await json(res);
       expect(body.briefings).toEqual([]);
@@ -67,16 +67,16 @@ describe("Briefing Routes", () => {
       await seedBriefing(TEST_USER.id, "2026-01-02");
       await seedBriefing(TEST_USER.id, "2026-01-03");
 
-      const res = await authedRequest(app, "/api/v1/briefing/history?limit=2", proToken);
+      const res = await authedRequest(app, "/api/v1/briefing/history?limit=2", basicToken);
       expect(res.status).toBe(200);
       const body = await json(res);
       expect(body.briefings.length).toBe(2);
       expect(body.limit).toBe(2);
     });
 
-    it("returns 403 for free tier users", async () => {
+    it("returns 200 for free trial users (briefing history available to all tiers)", async () => {
       const res = await authedRequest(app, "/api/v1/briefing/history", freeToken);
-      expect(res.status).toBe(403);
+      expect(res.status).toBe(200);
     });
   });
 });

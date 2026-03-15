@@ -10,7 +10,10 @@ import { conversationRoutes } from "./routes/conversations";
 import { insightRoutes } from "./routes/insights";
 import { webhookRoutes } from "./routes/webhooks";
 import { userRoutes } from "./routes/users";
+import { profileRoutes } from "./routes/profile";
 import { startScheduler } from "./jobs/scheduler";
+import { startMemoryWorker } from "./services/memoryQueue";
+import { ensureCollection } from "./services/vectorStore";
 import { auth } from "./lib/auth";
 
 const app = new Elysia()
@@ -66,10 +69,15 @@ const app = new Elysia()
   .use(insightRoutes)
   .use(webhookRoutes)
   .use(userRoutes)
+  .use(profileRoutes)
   .listen(process.env.PORT ?? 3000);
 
 if (process.env.NODE_ENV !== "test") {
   startScheduler();
+  startMemoryWorker();
+  ensureCollection()
+    .then(() => console.log("[qdrant] Collection ready"))
+    .catch((err) => console.error("[qdrant] Collection bootstrap failed:", err.message));
 }
 
 console.log(`Ally API running at ${app.server?.hostname}:${app.server?.port}`);

@@ -18,7 +18,7 @@ export async function signTestToken(
 ): Promise<string> {
   const jwt = new SignJWT({
     email: payload.email ?? "test@example.com",
-    tier: payload.tier ?? "pro",
+    tier: payload.tier ?? "basic",
     trial_ends_at: payload.trialEndsAt ?? null,
   })
     .setProtectedHeader({ alg: "HS256" })
@@ -35,7 +35,7 @@ export async function signTestToken(
 }
 
 export async function signExpiredToken(sub = "test-user-id"): Promise<string> {
-  return new SignJWT({ email: "test@example.com", tier: "pro" })
+  return new SignJWT({ email: "test@example.com", tier: "basic" })
     .setProtectedHeader({ alg: "HS256" })
     .setSubject(sub)
     .setIssuedAt(Math.floor(Date.now() / 1000) - 7200)
@@ -47,7 +47,7 @@ export const TEST_USER = {
   id: "00000000-0000-0000-0000-000000000001",
   email: "test@example.com",
   name: "Test User",
-  tier: "pro" as Tier,
+  tier: "basic" as Tier,
 };
 
 export const TEST_FREE_USER = {

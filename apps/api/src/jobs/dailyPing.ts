@@ -1,18 +1,18 @@
 import { db, schema } from "../db";
-import { isNotNull, sql } from "drizzle-orm";
+import { eq, isNotNull, sql, gte, lte, isNull, desc } from "drizzle-orm";
 import { loadMemoryProfile } from "../services/retrieval";
 import { callClaude } from "../ai/client";
+import { sendPushNotification } from "../services/notifications";
 import type { NotificationPreferences } from "../db/auth-schema";
 
 /**
  * Runs every minute. Checks which users have a dailyPingTime matching
- * the current time (in their timezone) and sends them a conversational
- * message via their active conversation + an Expo push notification.
+ * the current time (in their timezone) and sends them a contextual
+ * check-in message via their active conversation + an Expo push notification.
  */
 export async function runDailyPing() {
   const now = new Date();
 
-  // Fetch all users who have notification preferences set
   const usersWithPrefs = await db
     .select({
       id: schema.user.id,
@@ -29,10 +29,8 @@ export async function runDailyPing() {
       const prefs = userRow.notificationPreferences as NotificationPreferences | null;
       if (!prefs?.dailyPingTime || !prefs?.timezone) continue;
 
-      // Check if the current time matches the user's preferred ping time
       if (!isTimeToNotify(now, prefs.dailyPingTime, prefs.timezone)) continue;
 
-      // Check if we already pinged this user today
       const todayStr = now.toISOString().split("T")[0];
       const alreadyPinged = await db.query.jobRuns.findFirst({
         where: sql`${schema.jobRuns.jobName} = 'daily_ping' AND ${schema.jobRuns.userId} = ${userRow.id} AND ${schema.jobRuns.startedAt}::date = ${todayStr}::date`,
@@ -43,21 +41,71 @@ export async function runDailyPing() {
       const displayName = profile?.personalInfo.preferredName ?? userRow.name ?? "there";
       const allyName = userRow.allyName ?? "Ally";
 
-      // Generate a short conversational ping
+      // Build prioritized context: followups → upcoming events → recent session → goals
+      const contextParts: string[] = [];
+
+      const pendingFollowups = (profile?.pendingFollowups ?? []).filter((f) => !f.resolved);
+      if (pendingFollowups.length > 0) {
+        contextParts.push(
+          `Unresolved follow-ups (highest priority — pick the most important one):\n${pendingFollowups
+            .slice(0, 3)
+            .map((f) => `- [${f.priority}] ${f.topic}: ${f.context}`)
+            .join("\n")}`,
+        );
+      }
+
+      const sevenDaysOut = new Date(now);
+      sevenDaysOut.setDate(sevenDaysOut.getDate() + 7);
+      const upcomingEvents = await db.query.memoryEvents.findMany({
+        where: (t, { and, eq: deq }) =>
+          and(
+            deq(t.userId, userRow.id),
+            gte(t.eventDate, now),
+            lte(t.eventDate, sevenDaysOut),
+            isNull(t.completedAt),
+          ),
+        columns: { content: true, eventDate: true },
+        orderBy: schema.memoryEvents.eventDate,
+        limit: 3,
+      });
+      if (upcomingEvents.length > 0) {
+        contextParts.push(
+          `Upcoming events:\n${upcomingEvents
+            .map((e) => `- ${e.content} (${e.eventDate.toISOString().split("T")[0]})`)
+            .join("\n")}`,
+        );
+      }
+
+      const lastSession = await db.query.sessions.findFirst({
+        where: eq(schema.sessions.userId, userRow.id),
+        orderBy: [desc(schema.sessions.startedAt)],
+        columns: { summary: true },
+      });
+      if (lastSession?.summary) {
+        contextParts.push(`What we last talked about:\n${lastSession.summary}`);
+      }
+
+      const activeGoals = (profile?.goals ?? []).filter((g) => g.status === "active");
+      if (activeGoals.length > 0) {
+        contextParts.push(
+          `Active goals:\n${activeGoals
+            .slice(0, 3)
+            .map((g) => `- ${g.description} (${g.category})`)
+            .join("\n")}`,
+        );
+      }
+
+      const contextBlock =
+        contextParts.length > 0
+          ? `\n\nContext to draw from (pick the most relevant thread — do NOT mention all of these):\n${contextParts.join("\n\n")}`
+          : "";
+
       const { text } = await callClaude({
-        system: `You are ${allyName}, a personal AI companion. Write a brief, warm daily check-in message (1-2 sentences) for ${displayName}. Sound like a caring friend sending a casual text. Reference something from their memory profile if possible — a goal, interest, or recent topic. Don't be generic. Don't use emojis excessively. Vary your style — sometimes ask a question, sometimes share a thought, sometimes just say hi in a creative way.`,
-        messages: [
-          {
-            role: "user",
-            content: profile
-              ? `Memory profile:\n${JSON.stringify(profile, null, 2)}`
-              : `User name: ${displayName}. No memory profile yet.`,
-          },
-        ],
-        maxTokens: 256,
+        system: `You are ${allyName}, a personal AI companion for ${displayName}. Write a single brief, warm check-in message (1-2 sentences). Sound like a caring friend sending a casual text — not a notification or reminder app. Pick ONE thread from the context and check in on it naturally. If there's a pending follow-up or upcoming event, that takes priority. Don't be generic. Don't list things. Don't use emojis excessively.${contextBlock}`,
+        messages: [{ role: "user", content: "Generate the daily check-in message." }],
+        maxTokens: 200,
       });
 
-      // Insert message into user's most recent conversation (or create one)
       let conversationId: string;
       const recentConv = await db.query.conversations.findFirst({
         where: sql`${schema.conversations.userId} = ${userRow.id}`,
@@ -81,18 +129,17 @@ export async function runDailyPing() {
         content: text,
       });
 
-      // Send push notification if token exists
       if (userRow.expoPushToken) {
-        await sendExpoPushNotification(
+        await sendPushNotification(
           userRow.expoPushToken,
           allyName,
           text,
+          { type: "daily_ping" },
         ).catch((err) => {
           console.warn(`[daily_ping] Push notification failed for ${userRow.id}:`, err);
         });
       }
 
-      // Record the run
       await db.insert(schema.jobRuns).values({
         jobName: "daily_ping",
         userId: userRow.id,
@@ -114,7 +161,6 @@ export async function runDailyPing() {
  */
 function isTimeToNotify(now: Date, dailyPingTime: string, timezone: string): boolean {
   try {
-    // Get the current time in the user's timezone
     const formatter = new Intl.DateTimeFormat("en-US", {
       timeZone: timezone,
       hour: "numeric",
@@ -122,37 +168,9 @@ function isTimeToNotify(now: Date, dailyPingTime: string, timezone: string): boo
       hour12: true,
     });
     const userLocalTime = formatter.format(now);
-
-    // Normalize both times for comparison
-    const normalize = (t: string) =>
-      t.replace(/\s+/g, " ").trim().toUpperCase();
-
+    const normalize = (t: string) => t.replace(/\s+/g, " ").trim().toUpperCase();
     return normalize(userLocalTime) === normalize(dailyPingTime);
   } catch {
     return false;
   }
-}
-
-/**
- * Send a push notification via the Expo Push API.
- */
-async function sendExpoPushNotification(
-  token: string,
-  title: string,
-  body: string,
-): Promise<void> {
-  await fetch("https://exp.host/--/api/v2/push/send", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Accept: "application/json",
-    },
-    body: JSON.stringify({
-      to: token,
-      title,
-      body,
-      sound: "default",
-      data: { type: "daily_ping" },
-    }),
-  });
 }

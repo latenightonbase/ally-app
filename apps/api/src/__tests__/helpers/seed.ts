@@ -4,11 +4,38 @@ import type { MemoryProfile } from "@ally/shared";
 import { TEST_USER, TEST_FREE_USER, TEST_PREMIUM_USER } from "./jwt";
 
 export async function truncateAll() {
-  await db.execute(sql`
-    TRUNCATE TABLE job_runs, briefings, memory_facts, memory_profiles,
-                   messages, conversations, "user", session, account, verification
-    CASCADE
-  `);
+  // Build the truncate list dynamically from what actually exists in the DB,
+  // so this works across schema versions and test branches.
+  const wanted = new Set([
+    "job_runs",
+    "weekly_insights",
+    "briefings",
+    "memory_events",
+    "memory_episodes",
+    "memory_facts",
+    "memory_profiles",
+    "messages",
+    "conversations",
+    "user",
+    "users",
+    "session",
+    "account",
+    "verification",
+  ]);
+
+  const existing = await db.execute<{ tablename: string }>(
+    sql.raw(
+      `SELECT tablename FROM pg_tables WHERE schemaname = 'public' AND tablename IN (${[...wanted].map((t) => `'${t}'`).join(",")})`,
+    ),
+  );
+
+  if (existing.length === 0) return;
+
+  const tableList = existing
+    .map((r) => `"${r.tablename}"`)
+    .join(", ");
+
+  await db.execute(sql.raw(`TRUNCATE TABLE ${tableList} CASCADE`));
 }
 
 export async function seedUsers() {
@@ -113,6 +140,7 @@ export async function seedMemoryFact(userId: string, overrides: Partial<{
   category: "personal_info" | "relationships" | "work" | "health" | "interests" | "goals" | "emotional_patterns";
   importance: number;
   confidence: number;
+  supersededBy: string | null;
 }> = {}) {
   const [fact] = await db
     .insert(schema.memoryFacts)
@@ -122,11 +150,60 @@ export async function seedMemoryFact(userId: string, overrides: Partial<{
       category: overrides.category ?? "work",
       importance: overrides.importance ?? 0.7,
       confidence: overrides.confidence ?? 0.9,
-      embedding: new Array(1024).fill(0),
+      supersededBy: overrides.supersededBy ?? null,
     })
     .returning();
 
   return fact;
+}
+
+export async function seedMemoryEpisode(userId: string, overrides: Partial<{
+  content: string;
+  category: "personal_info" | "relationships" | "work" | "health" | "interests" | "goals" | "emotional_patterns";
+  importance: number;
+  daysUntilExpiry: number;
+}> = {}) {
+  const expiresAt = new Date();
+  expiresAt.setDate(expiresAt.getDate() + (overrides.daysUntilExpiry ?? 14));
+
+  const [episode] = await db
+    .insert(schema.memoryEpisodes)
+    .values({
+      userId,
+      content: overrides.content ?? "Test episodic memory",
+      category: overrides.category ?? "work",
+      importance: overrides.importance ?? 0.6,
+      confidence: 0.9,
+      expiresAt,
+      sourceDate: new Date(),
+      sourceType: "chat",
+    })
+    .returning();
+
+  return episode;
+}
+
+export async function seedMemoryEvent(userId: string, overrides: Partial<{
+  content: string;
+  eventDate: Date;
+}> = {}) {
+  const eventDate = overrides.eventDate ?? (() => {
+    const d = new Date();
+    d.setDate(d.getDate() + 3);
+    return d;
+  })();
+
+  const [event] = await db
+    .insert(schema.memoryEvents)
+    .values({
+      userId,
+      content: overrides.content ?? "Test upcoming event",
+      eventDate,
+      sourceType: "chat",
+    })
+    .returning();
+
+  return event;
 }
 
 export async function seedBriefing(userId: string, date?: string) {
@@ -141,4 +218,29 @@ export async function seedBriefing(userId: string, date?: string) {
     .returning();
 
   return briefing;
+}
+
+export async function seedWeeklyInsight(
+  userId: string,
+  weekOf?: string,
+  overrides?: Partial<{
+    summary: string;
+    moodTrend: string;
+    topThemes: string[];
+    followUpSuggestions: string[];
+  }>,
+) {
+  const [insight] = await db
+    .insert(schema.weeklyInsights)
+    .values({
+      userId,
+      weekOf: weekOf ?? new Date().toISOString().split("T")[0],
+      summary: overrides?.summary ?? "It was a steady week. You stayed focused on your goals.",
+      moodTrend: overrides?.moodTrend ?? "stable",
+      topThemes: overrides?.topThemes ?? ["work", "fitness"],
+      followUpSuggestions: overrides?.followUpSuggestions ?? ["Check in on the project deadline"],
+    })
+    .returning();
+
+  return insight;
 }

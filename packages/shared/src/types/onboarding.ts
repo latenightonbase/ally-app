@@ -25,6 +25,8 @@ export interface DynamicOnboardingQuestion {
   options?: string[];
   choices?: { label: string; value: string }[];
   placeholder?: string;
+  /** When true, the user can skip this question without answering */
+  optional?: boolean;
 }
 
 export interface OnboardingFollowupRequest {

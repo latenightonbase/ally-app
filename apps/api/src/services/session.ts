@@ -1,5 +1,5 @@
 import { db, schema } from "../db";
-import { eq, and, desc, isNull, sql } from "drizzle-orm";
+import { eq, and, desc, isNull, sql, gte, lte, count } from "drizzle-orm";
 import { callClaude } from "../ai/client";
 import type { MemoryProfile, MemoryFact } from "@ally/shared";
 
@@ -96,8 +96,37 @@ async function closeSession(sessionId: string): Promise<void> {
 }
 
 /**
- * Build context from session summaries + active session messages.
- * Replaces the old "load last 20 messages" approach.
+ * Fetch upcoming events within the next N days for proactive context injection.
+ */
+async function getUpcomingEvents(userId: string, daysAhead: number): Promise<string> {
+  const now = new Date();
+  const cutoff = new Date();
+  cutoff.setDate(now.getDate() + daysAhead);
+
+  const events = await db.query.memoryEvents.findMany({
+    where: and(
+      eq(schema.memoryEvents.userId, userId),
+      isNull(schema.memoryEvents.completedAt),
+      gte(schema.memoryEvents.eventDate, now),
+      lte(schema.memoryEvents.eventDate, cutoff),
+    ),
+    orderBy: [schema.memoryEvents.eventDate],
+    limit: 5,
+    columns: { content: true, eventDate: true },
+  });
+
+  if (events.length === 0) return "";
+
+  return events
+    .map((e) => {
+      const label = getRelativeTime(e.eventDate);
+      return `[${label}] ${e.content}`;
+    })
+    .join("\n");
+}
+
+/**
+ * Build context from session summaries + active session messages + upcoming events.
  */
 export async function buildSessionContext(
   userId: string,
@@ -106,8 +135,9 @@ export async function buildSessionContext(
 ): Promise<{
   history: { role: string; content: string }[];
   sessionSummaries: string;
+  sessionCount: number;
 }> {
-  const [recentSessions, activeMessages] = await Promise.all([
+  const [recentSessions, activeMessages, upcomingEventsText, sessionCountResult] = await Promise.all([
     db.query.sessions.findMany({
       where: and(
         eq(schema.sessions.userId, userId),
@@ -125,11 +155,20 @@ export async function buildSessionContext(
       limit: MAX_ACTIVE_SESSION_MESSAGES,
       columns: { role: true, content: true },
     }),
+
+    getUpcomingEvents(userId, 7),
+
+    db.select({ value: count() }).from(schema.sessions).where(eq(schema.sessions.userId, userId)),
   ]);
 
   let sessionSummaries = "";
+
+  if (upcomingEventsText) {
+    sessionSummaries += `**Upcoming events:**\n${upcomingEventsText}\n\n`;
+  }
+
   if (recentSessions.length > 0) {
-    sessionSummaries = recentSessions
+    sessionSummaries += recentSessions
       .reverse()
       .map((s) => {
         const timeAgo = getRelativeTime(s.startedAt);
@@ -143,7 +182,9 @@ export async function buildSessionContext(
     content: m.content,
   }));
 
-  return { history, sessionSummaries };
+  const sessionCount = Number(sessionCountResult[0]?.value ?? 0);
+
+  return { history, sessionSummaries, sessionCount };
 }
 
 function getRelativeTime(date: Date): string {

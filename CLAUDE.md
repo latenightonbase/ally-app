@@ -11,7 +11,7 @@ Ally is a personal AI companion mobile app. This monorepo contains the Expo/Reac
 - **Runtime:** Bun (not Node.js) — use `bun` for all commands, not `npm`/`yarn`/`npx`
 - **Monorepo:** Turborepo with Bun workspaces
 - **Backend:** Elysia (Bun-native web framework), TypeScript
-- **Database:** PostgreSQL + pgvector via Drizzle ORM (hosted on Neon)
+- **Database:** Neon PostgreSQL via Drizzle ORM (relational source of truth) + Qdrant Cloud (vector store) + FalkorDB Cloud (entity graph + BullMQ queue backend)
 - **AI:** Claude Haiku 4.5 (fast) + Sonnet 4.6 (quality) via `@anthropic-ai/sdk` (TypeScript, NOT Python), with server-side web search tool
 - **Embeddings:** Voyage AI `voyage-4-lite` (1024 dimensions) with contextual prefixes
 - **Frontend:** Expo 55, React Native 0.83, NativeWind, Zustand, expo-router
@@ -46,7 +46,7 @@ _legacy/           → Old Node/Express + Python code (DO NOT modify or referenc
 
 - Run `tsc --noEmit` in `apps/api/` before considering backend work complete.
 - Use types from `@ally/shared` for any type that's used across packages.
-- Use Drizzle ORM for all database operations. Never write raw SQL unless it involves pgvector operations not supported by the ORM.
+- Use Drizzle ORM for all database operations. Never write raw SQL. Vector operations go through the Qdrant client; graph operations go through the FalkorDB client.
 - Use the Anthropic TypeScript SDK for all AI calls. Prompts live in `apps/api/src/ai/prompts.ts`.
 - Keep route handlers thin — business logic belongs in `services/` or `ai/`.
 - Use `workspace:*` for internal package dependencies.
@@ -55,12 +55,28 @@ _legacy/           → Old Node/Express + Python code (DO NOT modify or referenc
 
 ### Memory System (Most Important)
 
-Ally's memory uses a **tiered architecture**:
-1. **Hot memory** — JSONB profile in `memory_profiles` table. Always loaded for every AI call.
-2. **Warm memory** — Current session messages + rolling summaries of past sessions. Loaded per conversation via `services/session.ts`.
-3. **Cold memory** — `memory_facts` table with pgvector embeddings. Retrieved via **hybrid search** with query expansion, combining semantic similarity, full-text matching, recency decay, and importance scoring. See `apps/api/src/services/retrieval.ts`.
+Ally's memory uses a **multi-tier architecture**. See `docs/MEMORY_ARCHITECTURE.md` for the full living doc.
 
-**Memory capture** is real-time via an async batching queue (`services/memoryQueue.ts`), not a nightly cron. The queue batches 3-5 message pairs, filters trivial messages, and runs extraction with retry logic.
+Infrastructure:
+- **Neon Postgres** — relational source of truth (users, conversations, fact metadata, events)
+- **Qdrant Cloud** — vector store for `memory_facts` and `memory_episodes` (dense cosine search)
+- **FalkorDB Cloud** — entity relationship graph (Cypher) + BullMQ queue backend (Redis protocol)
+
+Memory tiers:
+1. **Hot** — JSONB profile in `memory_profiles`. Always loaded into every Claude system prompt.
+2. **Warm** — Session summaries in `sessions_v2`. Last 5 summaries loaded per conversation.
+3. **Upcoming events** — `memory_events` rows in next 7 days injected into every context build.
+4. **Semantic (cold)** — `memory_facts`: durable patterns. Stored in Postgres + Qdrant. Retrieved via vector search + reranking.
+5. **Episodic** — `memory_episodes`: short-lived events (7–30 days TTL). Same retrieval as facts.
+6. **Entity graph** — FalkorDB: entity nodes linked to fact/episode IDs. Used for entity-triggered retrieval at chat time.
+
+**Memory type classification** happens at extraction: Claude classifies every fact as `semantic | episodic | event`. Each routes to the appropriate store in `services/memory.ts`.
+
+**Memory capture** is real-time via BullMQ workers (queue backed by FalkorDB Redis endpoint). The queue batches message pairs, filters trivial messages, and runs extraction with retry logic.
+
+**Consolidation** runs weekly (Sunday 3am): clusters related episodes → Claude reflection → new semantic facts. Based on Generative Agents (Park et al., 2023) pattern.
+
+**Maintenance** runs daily (2am): promotes past events to episodes, purges expired unconsolidated episodes, applies importance decay monthly.
 
 ### Session Windowing
 
@@ -68,18 +84,38 @@ Conversations are silently split into sessions (30min inactivity gap = new sessi
 
 ### Hybrid Retrieval
 
-The retrieval query in `retrieval.ts` uses these default weights:
-- Semantic similarity (cosine distance): 40%
-- Full-text match (tsvector): 20%
-- Recency (exponential decay, rate=0.02): 25%
-- Importance score: 15%
+`retrieval.ts` uses a **three-stage approach**, merged via Reciprocal Rank Fusion (RRF):
 
-Retrieval also uses:
-- **Query expansion** — user's query is expanded into 2-3 variants for broader recall
-- **Contextual embeddings** — facts are embedded with category prefixes for better match quality
-- **Importance feedback** — accessed facts get a small importance bump (0.02)
+**Stage 1: Qdrant dense vector search**
+- Query is embedded with `addContextualPrefix()` (voyage-4-lite, 1024 dims)
+- Qdrant returns top-20 candidates by cosine similarity
 
-Do not change these weights without understanding the impact on retrieval quality.
+**Stage 2: Qdrant keyword/sparse search**
+- Qdrant text-index keyword search on `content` payload field
+- Merged with dense results via RRF for broader recall
+
+**Stage 3: FalkorDB entity lookup**
+- Named entities extracted from query via LLM
+- FalkorDB 2-hop Cypher traversal returns linked factIds/episodeIds
+- Entity-matched facts merged directly (no RRF — they're fetched by ID)
+
+**Post-retrieval scoring:**
+- Recency decay (exponential, rate=0.02)
+- Importance score
+- Emotional context boost: +0.08 for emotion-matched facts
+- LLM-based emotion detection (Claude Haiku) runs concurrently via `detectEmotionFromQuery()`
+
+Do not change scoring weights without understanding the impact on retrieval quality. See `docs/MEMORY_ARCHITECTURE.md`.
+
+### Dynamic Profile Attributes
+
+`MemoryProfile` now includes `dynamicAttributes?: Record<string, DynamicAttribute>`. These are open-ended personality/behavioral traits learned from patterns — not stored in fixed category fields. They are:
+- Extracted in real-time from chat (when foundational patterns clearly emerge)
+- Extracted during onboarding (from how the user writes and what they share)
+- Promoted weekly during consolidation from high-importance semantic facts
+- Injected into every Claude system prompt via `buildAllySystemPrompt`
+
+See `packages/shared/src/types/memory.ts` for the `DynamicAttribute` type definition.
 
 ### Tool Use
 
@@ -102,7 +138,7 @@ Chat uses automatic model selection based on message complexity (`ai/conversatio
 All requests pass through these middleware layers (in order):
 1. **CORS** — `@elysiajs/cors`, configured in `index.ts`. Allows all origins, exposes rate-limit headers.
 2. **Logger** — `middleware/logger.ts`. Logs `METHOD /path STATUS duration` for every request. Errors logged separately.
-3. **Auth** — `middleware/auth.ts`. JWT verification via `jose`. Adds `user` to context.
+3. **Auth** — `middleware/auth.ts`. Session validation via `better-auth` (`auth.api.getSession()`). Accepts Bearer session tokens from the Expo client. Adds `user` (id, email, tier) to context.
 4. **Rate Limiting** — `middleware/rateLimit.ts`. Per-user, two-tier: per-minute burst protection + daily message quotas from `TIER_LIMITS`. Exposes `X-RateLimit-*` headers.
 5. **Tier Check** — `middleware/tierCheck.ts`. Gates premium features by user tier.
 
@@ -173,6 +209,20 @@ In `apps/api/src/jobs/` and `apps/api/src/services/proactive.ts`. The system use
 3. Update `apps/api/src/ai/extraction.ts` for processing logic
 4. Update `apps/api/src/services/memory.ts` for storage logic
 5. The memory queue in `apps/api/src/services/memoryQueue.ts` controls batching/signal detection — update `shouldExtract()` if changing what triggers extraction
+6. For `dynamicAttributes`: update `EXTRACTION_SYSTEM_PROMPT` instructions, the `ExtractionResult` type in `extraction.ts`, and `mergeDynamicAttributes()` in `memory.ts`
+
+### Modify the onboarding flow
+1. Seed question prompt is in the mobile app
+2. AI followup questions are generated by `ONBOARDING_DYNAMIC_PROMPT` in `prompts.ts`
+3. Final processing uses `ONBOARDING_COMPLETE_PROMPT` in `prompts.ts`
+4. Route logic in `apps/api/src/routes/onboarding.ts` — `buildProfile()` constructs the initial `MemoryProfile`
+5. For dynamic attributes from onboarding: update prompt and `normaliseDynamicAttributes()` in `onboarding.ts`
+
+### Work on the "You" screen
+1. Backend: `apps/api/src/routes/profile.ts` → `GET /api/v1/profile/you`
+2. Tier gating: All tiers get the full You screen — no fields are locked. Weekly insights and proactive check-ins are still Premium-only, but the profile itself is fully accessible to everyone.
+3. Frontend: replace `apps/mobile/app/(tabs)/memory.tsx` with the new You screen design
+4. Design spec: `docs/PRODUCT_VISION.md` → "The You Screen" section
 
 ### Add a new AI tool
 1. Add the tool definition in `apps/api/src/ai/tools.ts` (`getCustomTools()`)
@@ -293,7 +343,13 @@ Required for `apps/api/`:
 - `DATABASE_URL` — Neon PostgreSQL connection string
 - `ANTHROPIC_API_KEY` — Claude API key
 - `VOYAGE_API_KEY` — Voyage AI embedding API key
-- `JWT_SECRET` — Shared secret for JWT verification
 - `WEBHOOK_SECRET` — Secret for subscription webhook verification
+- `QDRANT_URL` — Qdrant Cloud cluster URL (e.g. `https://xxx.qdrant.io`)
+- `QDRANT_API_KEY` — Qdrant Cloud API key
+- `FALKORDB_URL` — FalkorDB Cloud connection string (e.g. `rediss://default:pass@host:6380`)
+- `REDIS_URL` — Optional separate Redis for BullMQ if FalkorDB Redis compatibility is insufficient
 - `PORT` — Server port (default 3000)
 - `NODE_ENV` — development / production
+
+Test-only (`.env.test` / `.env.test.live`):
+- `JWT_SECRET` — Used by `signTestToken()` in `__tests__/helpers/jwt.ts` only. Not used in production (auth is cookie-based via better-auth).

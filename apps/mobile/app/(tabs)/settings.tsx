@@ -1,7 +1,18 @@
-import React, { useState } from "react";
-import { ScrollView, View, Text, Alert } from "react-native";
+import React, { useState, useEffect, useCallback } from "react";
+import {
+  ScrollView,
+  View,
+  Text,
+  Alert,
+  Modal,
+  TextInput as RNTextInput,
+  Pressable,
+  KeyboardAvoidingView,
+  Platform,
+} from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { MotiView } from "moti";
+import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import { useTheme } from "../../context/ThemeContext";
 import { useAppStore } from "../../store/useAppStore";
@@ -9,14 +20,277 @@ import { ThemePicker } from "../../components/settings/ThemePicker";
 import { SubscriptionCard } from "../../components/settings/SubscriptionCard";
 import { SettingsRow } from "../../components/settings/SettingsRow";
 import { authClient, useSession } from "../../lib/auth";
-import { deleteMemoryProfile } from "../../lib/api";
+import {
+  deleteMemoryProfile,
+  getUserProfile,
+  updateUserProfile,
+  type UserProfileData,
+} from "../../lib/api";
+
+// --- Simple edit modal ---
+
+interface EditModalProps {
+  visible: boolean;
+  title: string;
+  value: string;
+  placeholder?: string;
+  onSave: (value: string) => void;
+  onClose: () => void;
+}
+
+function EditModal({
+  visible,
+  title,
+  value,
+  placeholder,
+  onSave,
+  onClose,
+}: EditModalProps) {
+  const [draft, setDraft] = useState(value);
+  const { theme } = useTheme();
+
+  useEffect(() => {
+    setDraft(value);
+  }, [value, visible]);
+
+  return (
+    <Modal
+      visible={visible}
+      transparent
+      animationType="fade"
+      onRequestClose={onClose}
+    >
+      <KeyboardAvoidingView
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        className="flex-1"
+      >
+        <Pressable
+          className="flex-1 bg-black/40 justify-end"
+          onPress={onClose}
+        >
+          <Pressable onPress={() => {}}>
+            <View
+              className="bg-surface rounded-t-3xl px-5 pt-5 pb-8"
+              style={{
+                backgroundColor: theme.colors["--color-surface"],
+              }}
+            >
+              <Text className="text-foreground text-lg font-sans-semibold mb-4">
+                {title}
+              </Text>
+              <View className="bg-background rounded-2xl px-4 py-3 mb-4 border border-primary-soft">
+                <RNTextInput
+                  value={draft}
+                  onChangeText={setDraft}
+                  placeholder={placeholder ?? ""}
+                  placeholderTextColor={theme.colors["--color-muted"]}
+                  className="text-foreground text-base font-sans"
+                  style={{ color: theme.colors["--color-foreground"] }}
+                  autoFocus
+                  returnKeyType="done"
+                  onSubmitEditing={() => draft.trim() && onSave(draft.trim())}
+                />
+              </View>
+              <View className="flex-row gap-3">
+                <Pressable
+                  onPress={onClose}
+                  className="flex-1 py-3.5 rounded-2xl bg-primary-soft items-center active:opacity-70"
+                >
+                  <Text className="text-primary font-sans-semibold">Cancel</Text>
+                </Pressable>
+                <Pressable
+                  onPress={() => draft.trim() && onSave(draft.trim())}
+                  className="flex-1 py-3.5 rounded-2xl bg-primary items-center active:opacity-70"
+                >
+                  <Text className="text-background font-sans-semibold">Save</Text>
+                </Pressable>
+              </View>
+            </View>
+          </Pressable>
+        </Pressable>
+      </KeyboardAvoidingView>
+    </Modal>
+  );
+}
+
+// --- Briefing time picker modal ---
+
+const TIME_OPTIONS = [
+  "06:00",
+  "09:00",
+  "12:00",
+  "15:00",
+  "18:00",
+  "21:00",
+] as const;
+
+const TIME_LABELS: Record<string, string> = {
+  "06:00": "6 AM",
+  "09:00": "9 AM",
+  "12:00": "12 PM",
+  "15:00": "3 PM",
+  "18:00": "6 PM",
+  "21:00": "9 PM",
+};
+
+interface TimePickerModalProps {
+  visible: boolean;
+  selected: string | null;
+  onSave: (time: string) => void;
+  onClose: () => void;
+}
+
+function TimePickerModal({
+  visible,
+  selected,
+  onSave,
+  onClose,
+}: TimePickerModalProps) {
+  const [draft, setDraft] = useState(selected ?? "09:00");
+  const { theme } = useTheme();
+
+  useEffect(() => {
+    if (visible) setDraft(selected ?? "09:00");
+  }, [visible, selected]);
+
+  return (
+    <Modal
+      visible={visible}
+      transparent
+      animationType="fade"
+      onRequestClose={onClose}
+    >
+      <Pressable
+        className="flex-1 bg-black/40 justify-end"
+        onPress={onClose}
+      >
+        <Pressable onPress={() => {}}>
+          <View
+            className="bg-surface rounded-t-3xl px-5 pt-5 pb-8"
+            style={{ backgroundColor: theme.colors["--color-surface"] }}
+          >
+            <Text className="text-foreground text-lg font-sans-semibold mb-4">
+              Daily Briefing Time
+            </Text>
+            <View className="flex-row flex-wrap gap-2 mb-5">
+              {TIME_OPTIONS.map((t) => (
+                <Pressable
+                  key={t}
+                  onPress={() => setDraft(t)}
+                  className={`px-5 py-3 rounded-2xl active:opacity-70 ${
+                    draft === t ? "bg-primary" : "bg-primary-soft"
+                  }`}
+                >
+                  <Text
+                    className={`text-sm font-sans-semibold ${
+                      draft === t ? "text-background" : "text-primary"
+                    }`}
+                  >
+                    {TIME_LABELS[t] ?? t}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+            <View className="flex-row gap-3">
+              <Pressable
+                onPress={onClose}
+                className="flex-1 py-3.5 rounded-2xl bg-primary-soft items-center active:opacity-70"
+              >
+                <Text className="text-primary font-sans-semibold">Cancel</Text>
+              </Pressable>
+              <Pressable
+                onPress={() => onSave(draft)}
+                className="flex-1 py-3.5 rounded-2xl bg-primary items-center active:opacity-70"
+              >
+                <Text className="text-background font-sans-semibold">Save</Text>
+              </Pressable>
+            </View>
+          </View>
+        </Pressable>
+      </Pressable>
+    </Modal>
+  );
+}
+
+// --- Main Settings screen ---
 
 export default function SettingsScreen() {
   const { themeId, setTheme } = useTheme();
   const user = useAppStore((s) => s.user);
+  const tier = useAppStore((s) => s.tier);
   const resetOnboarding = useAppStore((s) => s.resetOnboarding);
+  const setUser = useAppStore((s) => s.setUser);
+  const setTier = useAppStore((s) => s.setTier);
   const { data: session } = useSession();
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
+
+  const [serverProfile, setServerProfile] = useState<UserProfileData | null>(null);
+  const [profileLoading, setProfileLoading] = useState(true);
+
+  // Edit modal state
+  const [editField, setEditField] = useState<
+    "name" | "allyName" | "occupation" | null
+  >(null);
+  const [timePickerVisible, setTimePickerVisible] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const profile = await getUserProfile();
+        setServerProfile(profile);
+        setTier(profile.tier);
+      } catch {
+        // Best-effort
+      } finally {
+        setProfileLoading(false);
+      }
+    })();
+  }, []);
+
+  const handleEdit = useCallback(
+    async (field: "name" | "allyName" | "occupation", value: string) => {
+      setEditField(null);
+      // Optimistic update — show change immediately
+      const previous = serverProfile;
+      setServerProfile((prev) => (prev ? { ...prev, [field]: value } : prev));
+      if (field === "name" || field === "allyName") {
+        setUser({ [field]: value });
+      }
+      setSaving(true);
+      try {
+        const updated = await updateUserProfile({ [field]: value });
+        setServerProfile(updated);
+      } catch {
+        setServerProfile(previous); // revert optimistic update
+        if (field === "name" || field === "allyName") {
+          setUser({ [field]: previous?.[field] ?? "" });
+        }
+        Alert.alert("Error", "Could not save changes. Please try again.");
+      } finally {
+        setSaving(false);
+      }
+    },
+    [serverProfile, setUser],
+  );
+
+  const handleTimeChange = useCallback(
+    async (time: string) => {
+      setTimePickerVisible(false);
+      setSaving(true);
+      try {
+        const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+        const updated = await updateUserProfile({ dailyPingTime: time, timezone });
+        setServerProfile(updated);
+        setUser({ dailyPingTime: time, timezone });
+      } catch {
+        Alert.alert("Error", "Could not update briefing time. Please try again.");
+      } finally {
+        setSaving(false);
+      }
+    },
+    [setUser],
+  );
 
   const handleSignOut = () => {
     Alert.alert("Sign Out", "Are you sure you want to sign out?", [
@@ -33,8 +307,9 @@ export default function SettingsScreen() {
   };
 
   const handleResetOnboarding = () => {
+    const allyNameLabel = user.allyName || "Ally";
     Alert.alert(
-      `Reset ${user.allyName || "Ally"}`,
+      `Reset ${allyNameLabel}`,
       "This will erase all memories and take you back to the beginning. Are you sure?",
       [
         { text: "Cancel", style: "cancel" },
@@ -56,9 +331,10 @@ export default function SettingsScreen() {
   };
 
   const handleResetMemories = () => {
+    const allyNameLabel = user.allyName || "Ally";
     Alert.alert(
       "Clear Memories",
-      `This will erase all of ${user.allyName || "Ally"}'s memories about you. Your chat history will remain. Are you sure?`,
+      `This will erase all of ${allyNameLabel}'s memories about you. Your chat history will remain. Are you sure?`,
       [
         { text: "Cancel", style: "cancel" },
         {
@@ -75,6 +351,15 @@ export default function SettingsScreen() {
       ],
     );
   };
+
+  const displayName =
+    serverProfile?.name ?? session?.user?.name ?? user.name ?? "";
+  const displayAllyName = serverProfile?.allyName ?? user.allyName ?? "Ally";
+  const displayOccupation = serverProfile?.occupation ?? "";
+  const displayPingTime =
+    serverProfile?.dailyPingTime
+      ? TIME_LABELS[serverProfile.dailyPingTime] ?? serverProfile.dailyPingTime
+      : "";
 
   return (
     <View className="flex-1 bg-background">
@@ -95,7 +380,9 @@ export default function SettingsScreen() {
               Settings
             </Text>
             <Text className="text-muted text-sm font-sans">
-              Hi {user.name}, manage your {user.allyName || "Ally"} experience here.
+              {displayName
+                ? `Hi ${displayName}, manage your ${displayAllyName} experience here.`
+                : `Manage your ${displayAllyName} experience here.`}
             </Text>
           </MotiView>
 
@@ -116,16 +403,19 @@ export default function SettingsScreen() {
           <SettingsRow
             icon="time-outline"
             label="Briefing Time"
-            value={user.briefingTime}
+            value={displayPingTime || undefined}
             showChevron
-            onPress={() => {}}
+            onPress={() => setTimePickerVisible(true)}
           />
 
           {/* Subscription */}
           <Text className="text-foreground text-base font-sans-semibold mb-3 mt-6 px-1">
             Subscription
           </Text>
-          <SubscriptionCard />
+          <SubscriptionCard
+            tier={tier ?? serverProfile?.tier}
+            allyName={displayAllyName}
+          />
 
           {/* Account Section */}
           <Text className="text-foreground text-base font-sans-semibold mb-3 mt-6 px-1">
@@ -134,22 +424,28 @@ export default function SettingsScreen() {
           <SettingsRow
             icon="person-outline"
             label="Name"
-            value={session?.user?.name ?? user.name}
+            value={displayName || undefined}
             showChevron
-            onPress={() => {}}
+            onPress={() => setEditField("name")}
           />
           <SettingsRow
             icon="mail-outline"
             label="Email"
-            value={session?.user?.email ?? ""}
-            onPress={() => {}}
+            value={serverProfile?.email ?? session?.user?.email ?? ""}
+          />
+          <SettingsRow
+            icon="sparkles-outline"
+            label="Ally's Name"
+            value={displayAllyName}
+            showChevron
+            onPress={() => setEditField("allyName")}
           />
           <SettingsRow
             icon="briefcase-outline"
             label="Occupation"
-            value={user.job}
+            value={displayOccupation || undefined}
             showChevron
-            onPress={() => {}}
+            onPress={() => setEditField("occupation")}
           />
           <SettingsRow
             icon="trash-outline"
@@ -159,7 +455,7 @@ export default function SettingsScreen() {
           />
           <SettingsRow
             icon="refresh-outline"
-            label={`Reset ${user.allyName || "Ally"}`}
+            label={`Reset ${displayAllyName}`}
             onPress={handleResetOnboarding}
             danger
           />
@@ -173,7 +469,7 @@ export default function SettingsScreen() {
           {/* App Info */}
           <View className="items-center mt-8 mb-4">
             <Text className="text-muted text-xs font-sans">
-              {user.allyName || "Ally"} v1.0.0
+              {displayAllyName} v1.0.0
             </Text>
             <Text className="text-muted/50 text-xs font-sans mt-1">
               The friend who never forgets
@@ -181,6 +477,38 @@ export default function SettingsScreen() {
           </View>
         </ScrollView>
       </SafeAreaView>
+
+      {/* Edit modals */}
+      <EditModal
+        visible={editField === "name"}
+        title="Your Name"
+        value={displayName}
+        placeholder="What should Ally call you?"
+        onSave={(v) => handleEdit("name", v)}
+        onClose={() => setEditField(null)}
+      />
+      <EditModal
+        visible={editField === "allyName"}
+        title="Ally's Name"
+        value={displayAllyName}
+        placeholder="e.g. Ally, Atlas, Nova…"
+        onSave={(v) => handleEdit("allyName", v)}
+        onClose={() => setEditField(null)}
+      />
+      <EditModal
+        visible={editField === "occupation"}
+        title="Occupation"
+        value={displayOccupation}
+        placeholder="What do you do?"
+        onSave={(v) => handleEdit("occupation", v)}
+        onClose={() => setEditField(null)}
+      />
+      <TimePickerModal
+        visible={timePickerVisible}
+        selected={serverProfile?.dailyPingTime ?? null}
+        onSave={handleTimeChange}
+        onClose={() => setTimePickerVisible(false)}
+      />
     </View>
   );
 }

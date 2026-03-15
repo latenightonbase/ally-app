@@ -1,9 +1,10 @@
 import { on } from "./events";
 import { db, schema } from "../db";
-import { eq, and, desc, gte, sql } from "drizzle-orm";
-import { generateBriefing } from "../ai/briefing";
+import { eq, and, sql } from "drizzle-orm";
+import { ensureBriefingForUser } from "../ai/briefing";
 import { loadMemoryProfile } from "./retrieval";
 import { callClaude } from "../ai/client";
+import { sendPushNotification } from "./notifications";
 
 export function registerProactiveHandlers() {
   on("user:app_opened", handleAppOpened);
@@ -14,66 +15,10 @@ export function registerProactiveHandlers() {
 
 async function handleAppOpened({ userId }: { userId: string }) {
   try {
-    await ensureTodayBriefing(userId);
+    await ensureBriefingForUser(userId);
   } catch (err) {
     console.error(`[proactive] Briefing generation failed for ${userId}:`, err);
   }
-}
-
-async function ensureTodayBriefing(userId: string): Promise<void> {
-  const today = new Date().toISOString().split("T")[0];
-
-  const existing = await db.query.briefings.findFirst({
-    where: and(
-      eq(schema.briefings.userId, userId),
-      eq(schema.briefings.date, today),
-    ),
-    columns: { id: true },
-  });
-
-  if (existing) return;
-
-  const user = await db.query.user.findFirst({
-    where: eq(schema.user.id, userId),
-    columns: { tier: true },
-  });
-
-  if (!user || (user.tier !== "pro" && user.tier !== "premium")) return;
-
-  const profile = await loadMemoryProfile(userId);
-  if (!profile) return;
-
-  const sevenDaysAgo = new Date();
-  sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
-
-  const recentFacts = await db.query.memoryFacts.findMany({
-    where: and(
-      eq(schema.memoryFacts.userId, userId),
-      gte(schema.memoryFacts.createdAt, sevenDaysAgo),
-    ),
-    orderBy: [desc(schema.memoryFacts.createdAt)],
-    limit: 20,
-    columns: { content: true, category: true, createdAt: true },
-  });
-
-  const pendingFollowups = profile.pendingFollowups.filter((f) => !f.resolved);
-
-  const { data } = await generateBriefing({
-    profile,
-    recentFacts: recentFacts.map((f) => ({
-      content: f.content,
-      category: f.category,
-      createdAt: f.createdAt.toISOString(),
-    })),
-    pendingFollowups,
-    date: today,
-  });
-
-  await db.insert(schema.briefings).values({
-    userId,
-    date: today,
-    content: data.content,
-  }).onConflictDoNothing();
 }
 
 async function handleInactivity({
@@ -120,10 +65,11 @@ async function handleInactivity({
   });
 
   if (user?.expoPushToken) {
-    await sendExpoPush(
+    await sendPushNotification(
       user.expoPushToken,
       user.allyName ?? "Ally",
       text,
+      { type: "reengagement" },
     ).catch(() => {});
   }
 
@@ -161,26 +107,12 @@ async function runDailyScan() {
   const { emit } = await import("./events");
   for (const row of inactiveUsers) {
     const daysSince = row.last_activity
-      ? Math.floor((Date.now() - new Date(row.last_activity).getTime()) / (1000 * 60 * 60 * 24))
+      ? Math.floor(
+          (Date.now() - new Date(row.last_activity).getTime()) /
+            (1000 * 60 * 60 * 24),
+        )
       : 999;
 
     emit("user:inactive", { userId: row.user_id, inactiveDays: daysSince });
   }
-}
-
-async function sendExpoPush(token: string, title: string, body: string): Promise<void> {
-  await fetch("https://exp.host/--/api/v2/push/send", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Accept: "application/json",
-    },
-    body: JSON.stringify({
-      to: token,
-      title,
-      body,
-      sound: "default",
-      data: { type: "reengagement" },
-    }),
-  });
 }

@@ -26,15 +26,15 @@ This document is the definitive reference for the frontend team to connect the E
 ┌──────────────────────┐      HTTPS/WSS        ┌──────────────────────┐
 │   apps/mobile        │ ───────────────────▶   │   apps/api           │
 │   (Expo / RN)        │   Authorization:       │   (Elysia / Bun)     │
-│                      │   Bearer <JWT>         │                      │
-│   Zustand Store      │                        │   PostgreSQL + pgvec │
-│   + AsyncStorage     │  ◀─── JSON / SSE ───── │   Claude AI          │
+│                      │   Bearer <session>     │                      │
+│   Zustand Store      │                        │   Neon + Qdrant      │
+│   + SecureStore      │  ◀─── JSON / SSE ───── │   Claude AI          │
 └──────────────────────┘                        └──────────────────────┘
 ```
 
 **Current state:** The mobile app uses local mock data (`constants/mockData.ts`) and Zustand persistence with AsyncStorage. All responses are fake `setTimeout` delays.
 
-**Target state:** Every data operation goes through the API. Zustand becomes a client-side cache with optimistic updates. AsyncStorage stores the JWT token and minimal offline state.
+**Target state:** Every data operation goes through the API. Zustand becomes a client-side cache with optimistic updates. `expo-secure-store` stores the session token and minimal offline state.
 
 ---
 
@@ -44,10 +44,11 @@ This document is the definitive reference for the frontend team to connect the E
 
 ```bash
 cd apps/mobile
-bun add expo-secure-store
+bun add expo-secure-store better-auth
 ```
 
-- `expo-secure-store` — Secure storage for the JWT token (do NOT use AsyncStorage for tokens)
+- `expo-secure-store` — Secure storage for the session token (do NOT use AsyncStorage for tokens)
+- `better-auth` — Auth client for sign-in/sign-up and session management
 - No HTTP library needed — use the global `fetch` API (React Native ships it)
 - No SSE library needed — we'll use `ReadableStream` / `EventSource` polyfill (see [SSE section](#sse-streaming-chat))
 
@@ -85,8 +86,7 @@ Create a typed API client at `apps/mobile/lib/api.ts`:
 import * as SecureStore from "expo-secure-store";
 import { config } from "./config";
 
-const TOKEN_KEY = "ally_jwt_token";
-const REFRESH_TOKEN_KEY = "ally_refresh_token";
+const SESSION_KEY = "ally_session_token";
 
 export class ApiError extends Error {
   constructor(
@@ -100,16 +100,16 @@ export class ApiError extends Error {
   }
 }
 
-async function getToken(): Promise<string | null> {
-  return SecureStore.getItemAsync(TOKEN_KEY);
+async function getSessionToken(): Promise<string | null> {
+  return SecureStore.getItemAsync(SESSION_KEY);
 }
 
-export async function setToken(token: string): Promise<void> {
-  await SecureStore.setItemAsync(TOKEN_KEY, token);
+export async function setSessionToken(token: string): Promise<void> {
+  await SecureStore.setItemAsync(SESSION_KEY, token);
 }
 
-export async function clearToken(): Promise<void> {
-  await SecureStore.deleteItemAsync(TOKEN_KEY);
+export async function clearSessionToken(): Promise<void> {
+  await SecureStore.deleteItemAsync(SESSION_KEY);
 }
 
 interface RequestOptions {
@@ -133,7 +133,7 @@ export async function api<T>(
   };
 
   if (!skipAuth) {
-    const token = await getToken();
+    const token = await getSessionToken();
     if (!token) {
       throw new ApiError("UNAUTHORIZED", "Not logged in", 401);
     }
@@ -213,26 +213,28 @@ export async function sendMessage(
 
 // ─── Onboarding ───────────────────────────────────────────
 
-export interface OnboardingAnswers {
-  nameAndGreeting: string;
-  lifeContext: string;
-  currentFocus: string;
-  stressAndSupport: string;
-  allyExpectations: string;
+export interface OnboardingQA {
+  question: string;
+  answer: string;
 }
 
-export interface OnboardingResponse {
-  greeting: string;
-  memoryProfileCreated: boolean;
+export async function getOnboardingFollowups(opts: {
+  userName: string;
+  allyName: string;
+  conversation: OnboardingQA[];
+  dynamicRound: number;
+}): Promise<{ questions: string[]; summary: string }> {
+  return api("/onboarding/followup", { method: "POST", body: opts });
 }
 
-export async function submitOnboarding(
-  answers: OnboardingAnswers,
-): Promise<OnboardingResponse> {
-  return api<OnboardingResponse>("/onboarding", {
-    method: "POST",
-    body: { answers },
-  });
+export async function completeOnboarding(opts: {
+  userName: string;
+  allyName: string;
+  conversation: OnboardingQA[];
+  dailyPingTime: string;
+  timezone: string;
+}): Promise<{ greeting: string; memoryProfileCreated: boolean }> {
+  return api("/onboarding/complete", { method: "POST", body: opts });
 }
 
 // ─── Briefing ─────────────────────────────────────────────
@@ -351,57 +353,100 @@ export async function getWeeklyInsight() {
     message?: string;
   }>("/insights/weekly");
 }
+
+// ─── You Screen ───────────────────────────────────────────
+
+export interface YouScreenBase {
+  personalInfo: MemoryProfile["personalInfo"];
+  relationships: MemoryProfile["relationships"];
+  goals: MemoryProfile["goals"];
+  upcomingEvents: { id: string; content: string; eventDate: string; context: string | null }[];
+  tier: string;
+}
+
+export interface YouScreenResponse extends YouScreenBase {
+  emotionalPatterns: MemoryProfile["emotionalPatterns"];
+  dynamicAttributes: Record<string, { value: string; confidence: number; learnedAt: string }>;
+  recentEpisodes: { id: string; content: string; emotion: string | null; category: string; date: string }[];
+  completenessSignal: Record<string, "clear" | "emerging" | "fuzzy">;
+}
+
+export async function getYouScreen(): Promise<YouScreenResponse> {
+  return api("/profile/you");
+}
 ```
 
 ---
 
 ## Authentication Flow
 
-The backend does **not** issue JWT tokens. Your existing auth service (Clerk, Supabase, custom) issues them. The Ally backend only verifies the signature using the shared `JWT_SECRET`.
+Ally uses **better-auth** for session management. The backend owns auth entirely — there is no external JWT service. The mobile app interacts with better-auth's `/api/auth/*` endpoints to sign up, sign in, and refresh sessions.
 
-### JWT Payload Structure
+### Session Token Lifecycle
 
-The backend expects this payload:
+```
+1. User signs up / logs in via better-auth → backend returns a session token
+2. Store token: await setSessionToken(token)
+3. Every API call reads token from SecureStore via api() helper (sent as Bearer token)
+4. On 401 response → Clear token, redirect to login
+5. Session refresh handled by better-auth client automatically
+```
 
-```json
-{
-  "sub": "user-uuid",
-  "email": "user@example.com",
-  "tier": "pro",
-  "trial_ends_at": "2026-04-01T00:00:00Z",
-  "iat": 1709500000,
-  "exp": 1709586400
+### Setting Up the better-auth Client
+
+```typescript
+// apps/mobile/lib/auth-client.ts
+import { createAuthClient } from "better-auth/client";
+import * as SecureStore from "expo-secure-store";
+import { config } from "./config";
+import { setSessionToken, clearSessionToken } from "./api";
+
+export const authClient = createAuthClient({
+  baseURL: config.API_BASE_URL.replace("/api/v1", ""),
+  // Store session token in expo-secure-store
+  storage: {
+    getItem: (key) => SecureStore.getItemAsync(key),
+    setItem: (key, value) => SecureStore.setItemAsync(key, value),
+    removeItem: (key) => SecureStore.deleteItemAsync(key),
+  },
+});
+
+export async function signIn(email: string, password: string) {
+  const result = await authClient.signIn.email({ email, password });
+  if (result.data?.token) {
+    await setSessionToken(result.data.token);
+  }
+  return result;
+}
+
+export async function signUp(email: string, password: string, name: string) {
+  const result = await authClient.signUp.email({ email, password, name });
+  if (result.data?.token) {
+    await setSessionToken(result.data.token);
+  }
+  return result;
+}
+
+export async function signOut() {
+  await authClient.signOut();
+  await clearSessionToken();
 }
 ```
 
-**Required claims:**
-- `sub` — User UUID (becomes `user.id` on the server)
-- `email` — User email
-- `tier` — One of: `free_trial`, `basic`, `pro`, `premium`
-
-### Token Lifecycle
-
-```
-1. User signs up / logs in → Auth service returns JWT
-2. Store token: await setToken(jwt)
-3. Every API call reads token from SecureStore via api() helper
-4. On 401 response → Clear token, redirect to login
-5. On token near-expiry → Refresh with your auth service
-```
+> **Tier:** The user's tier (`free_trial`, `pro`, `premium`) is stored on the user record in the database and resolved server-side. It is **not** embedded in the session token. Use `GET /api/v1/user/tier` (coming soon) or read it from the `GET /api/v1/profile/you` response field.
 
 ### Auto-Redirect on 401
 
 Add this to your root layout or a provider:
 
 ```typescript
-// In your error handling or API interceptor
 import { router } from "expo-router";
-import { clearToken } from "../lib/api";
+import { clearSessionToken } from "../lib/api";
 
 export async function handleApiError(error: unknown) {
   if (error instanceof ApiError) {
     if (error.status === 401) {
-      await clearToken();
+      await clearSessionToken();
       router.replace("/(auth)/login");
       return;
     }
@@ -425,11 +470,11 @@ Create separate stores per domain. Below is the proposed structure:
 
 ```
 store/
-  useAuthStore.ts        — JWT, user identity, login state
+  useAuthStore.ts        — Session token, user identity, login state
   useChatStore.ts        — Active conversation, messages, streaming state
-  useMemoryStore.ts      — Memory profile, facts (cached from API)
+  useYouStore.ts         — "You" screen data (profile, episodes, dynamic attributes)
   useBriefingStore.ts    — Today's briefing, history
-  useOnboardingStore.ts  — Onboarding flow state + API submission
+  useOnboardingStore.ts  — Onboarding flow state (conversation, round tracking)
 ```
 
 ### Example: `useChatStore.ts`
@@ -568,12 +613,12 @@ The existing `useAppStore` should be gradually replaced:
 | Current Store Field | New Location | Data Source |
 |---|---|---|
 | `isOnboarded` | `useAuthStore` | Derived from whether user has a memory profile |
-| `user` (name, job, etc.) | `useAuthStore` + `useMemoryStore` | JWT for identity, API for profile |
+| `user` (name, job, etc.) | `useAuthStore` + `useYouStore` | Session for identity, API `/profile/you` for profile |
 | `messages` | `useChatStore` | API via `/chat` and `/conversations/:id` |
-| `memories` | `useMemoryStore` | API via `/memory/profile` and `/memory/facts` |
-| `completeOnboarding()` | `useOnboardingStore` | `POST /onboarding` |
+| `memories` | `useYouStore` | API via `/profile/you` (replaces memory vault) |
+| `completeOnboarding()` | `useOnboardingStore` | `POST /onboarding/followup` → `POST /onboarding/complete` |
 | `addMessage()` | `useChatStore.send()` | `POST /chat` |
-| `addMemory()` / `editMemory()` / `removeMemory()` | `useMemoryStore` | API calls |
+| `addMemory()` / `editMemory()` / `removeMemory()` | removed — memory is managed server-side | `DELETE /memory/facts/:id` for explicit user deletion |
 
 ---
 
@@ -585,8 +630,8 @@ The existing `useAppStore` should be gradually replaced:
 
 **Change:**
 ```typescript
-// Check if JWT exists AND if memory profile exists
-const hasToken = await getToken();
+// Check if session exists AND if memory profile exists
+const hasToken = await getSessionToken();
 if (!hasToken) {
   router.replace("/(auth)/login");
 } else {
@@ -606,35 +651,82 @@ if (!hasToken) {
 
 ### 2. Onboarding (`app/(onboarding)/index.tsx`)
 
-**Current:** Collects user input across 8 steps, then calls `completeOnboarding()` which saves to Zustand locally.
+**Current:** Collects user input across 8 fixed steps, saves to Zustand locally.
 
-**Change:** The onboarding data needs to be mapped from the current simple fields to the backend's 5-answer format:
+**Change:** Onboarding is now a **dynamic conversation**. The backend generates follow-up questions based on prior answers. There is no fixed set of questions.
 
-```typescript
-// Map current onboarding fields → API format
-const answers: OnboardingAnswers = {
-  nameAndGreeting: `My name is ${name}, you can call me ${name}. I'd like to call you ${allyName}.`,
-  lifeContext: `I work as a ${job}. ${challenges}`,
-  currentFocus: challenges,
-  stressAndSupport: challenges,
-  allyExpectations: "I want someone to check in on me and remember what I tell them.",
-};
+**New UX flow:**
 
-try {
-  const { greeting } = await submitOnboarding(answers);
-  // greeting is Ally's personalized first message — use it instead of the template
-  // Navigate to chat
-  router.replace("/(tabs)");
-} catch (e) {
-  // Show error — likely a 503 if AI is down
-}
+```
+Step 1 (local)
+  → Collect userName + allyName (simple text inputs, no API call yet)
+
+Step 2–N (dynamic)
+  → POST /onboarding/followup  with { userName, allyName, conversation, dynamicRound }
+  → Backend returns next questions (or empty array to signal "done")
+  → User answers each question
+  → Repeat if more questions returned
+
+Final step
+  → POST /onboarding/complete with { userName, allyName, conversation, dailyPingTime, timezone }
+  → Returns { greeting, memoryProfileCreated: true }
+  → Show greeting → navigate to /(tabs)
 ```
 
-> **Important:** The onboarding screen currently has 8 steps with individual fields (name, job, interests, briefing time). The backend expects 5 open-ended text answers. You'll need to either:
-> - **(A)** Keep the current step UX but compose the 5 answers from collected fields (as shown above)
-> - **(B)** Redesign onboarding to ask the 5 questions directly (matches backend prompts better)
->
-> Option B would produce richer memory profiles since Claude processes the raw text.
+```typescript
+import { getOnboardingFollowups, completeOnboarding } from "../../lib/api-functions";
+
+// State: userName, allyName, conversation (OnboardingQA[]), currentQuestions, dynamicRound
+
+const startOnboarding = async () => {
+  // First round: call followup with empty conversation
+  const { questions } = await getOnboardingFollowups({
+    userName,
+    allyName,
+    conversation: [],
+    dynamicRound: 1,
+  });
+  setCurrentQuestions(questions);
+  setDynamicRound(1);
+};
+
+const submitRound = async (answers: string[]) => {
+  // Pair each answer with its question
+  const newQAs = currentQuestions.map((q, i) => ({ question: q, answer: answers[i] }));
+  const updatedConversation = [...conversation, ...newQAs];
+  setConversation(updatedConversation);
+
+  const nextRound = dynamicRound + 1;
+  const { questions } = await getOnboardingFollowups({
+    userName,
+    allyName,
+    conversation: updatedConversation,
+    dynamicRound: nextRound,
+  });
+
+  if (questions.length === 0) {
+    // Ready to complete — collect dailyPingTime + timezone first if not already
+    await finish(updatedConversation);
+  } else {
+    setCurrentQuestions(questions);
+    setDynamicRound(nextRound);
+  }
+};
+
+const finish = async (finalConversation: OnboardingQA[]) => {
+  const { greeting } = await completeOnboarding({
+    userName,
+    allyName,
+    conversation: finalConversation,
+    dailyPingTime: selectedTime, // "08:00"
+    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+  });
+  // Show greeting in a full-screen moment before going to tabs
+  router.replace({ pathname: "/(onboarding)/greeting", params: { greeting } });
+};
+```
+
+> The typical onboarding takes 2 dynamic rounds (4–6 questions total). The backend decides when enough context has been gathered.
 
 ### 3. Chat Screen (`app/(tabs)/index.tsx`)
 
@@ -692,38 +784,33 @@ useEffect(() => {
 }, []);
 ```
 
-### 5. Memory Screen (`app/(tabs)/memory.tsx`)
+### 5. "You" Screen (`app/(tabs)/you.tsx`)
 
-**Current:** Reads `memories` from `useAppStore` (local only).
+**Current:** `app/(tabs)/memory.tsx` shows grouped text memories (the old "Memory Vault"). This should be replaced with the "You" screen — a living user portrait.
 
-**Change:** Fetch both the profile and facts from the API:
+**Change:** Replace the memory vault entirely. Single API call, tiered response:
 
 ```typescript
-import { getMemoryProfile, getMemoryFacts, deleteMemoryFact } from "../../lib/api-functions";
+import { getYouScreen } from "../../lib/api-functions";
+import type { YouScreenTrial, YouScreenPro } from "../../lib/api-functions";
 
-export default function MemoryScreen() {
-  const [profile, setProfile] = useState<MemoryProfile | null>(null);
-  const [facts, setFacts] = useState<MemoryFact[]>([]);
+export default function YouScreen() {
+  const [data, setData] = useState<YouScreenResponse | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    Promise.all([
-      getMemoryProfile(),
-      getMemoryFacts({ limit: 50 }),
-    ]).then(([profileRes, factsRes]) => {
-      setProfile(profileRes.profile);
-      setFacts(factsRes.facts);
-    }).finally(() => setIsLoading(false));
+    getYouScreen()
+      .then(setData)
+      .finally(() => setIsLoading(false));
   }, []);
-
-  const handleDeleteFact = async (factId: string) => {
-    await deleteMemoryFact(factId);
-    setFacts((prev) => prev.filter((f) => f.id !== factId));
-  };
 }
 ```
 
-**Category mapping:** The backend uses categories like `personal_info`, `relationships`, `work`, `health`, `interests`, `goals`, `emotional_patterns`. The current mock uses `interests`, `goals`, `preferences`, `moments`. You'll need to update the category display mapping in `MEMORY_CATEGORIES`.
+**Rendering guide:**
+
+All tiers receive the full You screen — no sections are locked. Use `completenessSignal` to show nudges like "Tell Ally more about your interests →" for sections labelled `"fuzzy"`. Weekly insights and proactive features (Premium-only) are surfaced in settings/upsell flows, not on this screen.
+
+> **Design spec:** See `docs/PRODUCT_VISION.md` → "The You Screen" section for the full UX breakdown.
 
 ### 6. Settings Screen (`app/(tabs)/settings.tsx`)
 
@@ -767,7 +854,7 @@ Create `apps/mobile/lib/streaming.ts`:
 import * as SecureStore from "expo-secure-store";
 import { config } from "./config";
 
-const TOKEN_KEY = "ally_jwt_token";
+const SESSION_KEY = "ally_session_token";
 
 interface StreamCallbacks {
   onToken: (token: string) => void;
@@ -784,7 +871,7 @@ export async function sendMessageStreaming(
   conversationId: string | undefined,
   callbacks: StreamCallbacks,
 ): Promise<void> {
-  const token = await SecureStore.getItemAsync(TOKEN_KEY);
+  const token = await SecureStore.getItemAsync(SESSION_KEY);
   if (!token) {
     callbacks.onError("Not authenticated");
     return;
@@ -998,13 +1085,14 @@ All shared types live in `@ally/shared` and are available as a workspace depende
 ```typescript
 import type {
   // User & Tiers
-  Tier,                    // "free_trial" | "basic" | "pro" | "premium"
+  Tier,                    // "free_trial" | "basic" | "premium"
   TierLimits,              // { messagesPerDay, requestsPerMinute, ... }
 
   // Memory
   MemoryProfile,           // Full structured profile (JSONB)
-  MemoryFact,              // Individual extracted fact with embedding
+  MemoryFact,              // Individual extracted fact
   MemoryCategory,          // "personal_info" | "relationships" | "work" | ...
+  DynamicAttribute,        // { value, confidence, learnedAt, sourceConversationId? }
 
   // Conversation
   Message,                 // { id, conversationId, role, content, createdAt }
@@ -1015,7 +1103,7 @@ import type {
   WeeklyInsight,           // { weekOf, summary, moodTrend, topThemes, ... }
 
   // Onboarding
-  OnboardingAnswers,       // { nameAndGreeting, lifeContext, ... }
+  OnboardingQA,            // { question: string; answer: string }
 } from "@ally/shared";
 
 // Constants
@@ -1029,16 +1117,20 @@ import { TIER_LIMITS } from "@ally/shared";
 Before shipping the integration, verify each flow:
 
 ### Authentication
-- [ ] JWT stored securely in SecureStore (not AsyncStorage)
+- [ ] Session token stored securely in SecureStore (not AsyncStorage)
 - [ ] 401 response clears token and redirects to login
 - [ ] Token included in all authenticated requests
-- [ ] App handles missing/expired token gracefully
+- [ ] App handles missing/expired session gracefully
+- [ ] Sign-up and sign-in via better-auth work end-to-end
 
 ### Onboarding
-- [ ] `POST /onboarding` succeeds and returns greeting
-- [ ] Memory profile created (verify via `GET /memory/profile`)
+- [ ] Step 1: userName + allyName collected locally
+- [ ] `POST /onboarding/followup` returns dynamic questions (round 1)
+- [ ] User answers cycle through rounds until `questions: []` returned
+- [ ] `POST /onboarding/complete` creates profile and returns greeting
+- [ ] Memory profile created (verify via `GET /profile/you`)
 - [ ] 503 error shows friendly retry message (AI down)
-- [ ] Navigation to chat after successful onboarding
+- [ ] dailyPingTime and timezone sent correctly on complete
 
 ### Chat
 - [ ] Non-streaming: message sent, response received, stored in state
@@ -1048,16 +1140,18 @@ Before shipping the integration, verify each flow:
 - [ ] Rate limit hit shows banner with reset time
 - [ ] 503 shows "Ally unavailable" with retry
 
-### Memory
-- [ ] Profile loads and displays correctly
-- [ ] Facts load with category filtering
-- [ ] Fact deletion works (confirm via re-fetch)
-- [ ] Profile deletion shows confirmation and clears state
+### You Screen
+- [ ] `GET /profile/you` loads full screen for all tiers (no locked sections)
+- [ ] `completenessSignal` renders nudges for "fuzzy" sections
+- [ ] Upcoming events (next 7 days) shown correctly
+- [ ] Dynamic attributes shown when present
+- [ ] Recent episodes shown with emotion tags
+- [ ] Fact deletion works (`DELETE /memory/facts/:id`)
 
 ### Briefing
 - [ ] Today's briefing loads on home screen
 - [ ] Briefing history paginated correctly
-- [ ] 403 for non-Pro/Premium users shows upgrade prompt
+- [ ] Briefing accessible to all tiers (no 403)
 - [ ] Null briefing shows "No briefing yet" state
 
 ### Conversations
@@ -1067,7 +1161,7 @@ Before shipping the integration, verify each flow:
 
 ### Settings
 - [ ] "Clear Memories" calls `DELETE /memory/profile`
-- [ ] Subscription card reflects user's actual tier from JWT
+- [ ] Subscription card reflects user's actual tier
 - [ ] Reset onboarding calls profile deletion then navigates to onboarding
 
 ### Edge Cases

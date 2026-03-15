@@ -7,7 +7,7 @@ import { signTestToken } from "../../helpers/jwt";
 function createTierTestApp() {
   return new Elysia()
     .use(authMiddleware)
-    .use(requireTier({ requiredTiers: ["pro", "premium"], featureName: "Test Feature" }))
+    .use(requireTier({ requiredTiers: ["basic", "premium"], featureName: "Test Feature" }))
     .get("/test", () => ({ ok: true }));
 }
 
@@ -18,8 +18,8 @@ describe("Tier Check Middleware", () => {
     app = createTierTestApp();
   });
 
-  it("passes for an allowed tier (pro)", async () => {
-    const token = await signTestToken({ sub: "u1", tier: "pro" });
+  it("passes for an allowed tier (basic)", async () => {
+    const token = await signTestToken({ sub: "u1", tier: "basic" });
     const res = await app.handle(
       new Request("http://localhost/test", {
         headers: { Authorization: `Bearer ${token}` },
@@ -48,9 +48,13 @@ describe("Tier Check Middleware", () => {
     expect(res.status).toBe(403);
   });
 
-  it("returns 403 for a disallowed tier (basic)", async () => {
-    const token = await signTestToken({ sub: "u1", tier: "basic" });
-    const res = await app.handle(
+  it("returns 403 for a disallowed tier (free_trial when gate requires basic+)", async () => {
+    const token = await signTestToken({ sub: "u1", tier: "free_trial" });
+    const app403 = new Elysia()
+      .use(authMiddleware)
+      .use(requireTier({ requiredTiers: ["basic", "premium"], featureName: "Test Feature" }))
+      .get("/test", () => ({ ok: true }));
+    const res = await app403.handle(
       new Request("http://localhost/test", {
         headers: { Authorization: `Bearer ${token}` },
       }),

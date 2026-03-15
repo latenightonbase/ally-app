@@ -1,170 +1,36 @@
 import { db, schema } from "../db";
-import { sql, eq, and, desc } from "drizzle-orm";
-import { generateEmbedding, generateEmbeddings, addContextualPrefix } from "./embedding";
+import { sql, eq, and, desc, inArray, isNull } from "drizzle-orm";
+import { generateEmbedding, addContextualPrefix } from "./embedding";
+import { searchMemory, searchMemoryByKeyword, scoreMemoryResults, updatePayload } from "./vectorStore";
+import type { VectorSearchResult } from "./vectorStore";
+import { getEntityLinkedIds, extractEntityNamesFromText } from "./graphStore";
+import { callClaude } from "../ai/client";
 import type { MemoryCategory } from "@ally/shared";
 
-interface RetrievedFact {
+export interface RetrievedFact {
   id: string;
   content: string;
   category: MemoryCategory;
   importance: number;
   score: number;
+  type: "fact" | "episode";
   createdAt: Date;
 }
 
-interface RetrievalOptions {
+export interface RetrievalOptions {
   userId: string;
   query: string;
   limit?: number;
   categoryFilter?: MemoryCategory;
-  recencyWeight?: number;
+  emotionHint?: string;
   semanticWeight?: number;
-  keywordWeight?: number;
+  recencyWeight?: number;
   importanceWeight?: number;
-}
-
-const DEFAULT_WEIGHTS = {
-  semantic: 0.4,
-  keyword: 0.2,
-  recency: 0.25,
-  importance: 0.15,
-};
-
-const RECENCY_DECAY = 0.02;
-
-function expandQuery(query: string): string[] {
-  const queries = [query];
-
-  const expansions: [RegExp, string][] = [
-    [/\b(how('s| is|'re| are) my)\b/i, query.replace(/how('s| is|'re| are) my/i, "")],
-    [/\b(what('s| is) (my|the))\b/i, query.replace(/what('s| is) (my|the)/i, "")],
-    [/\b(tell me about)\b/i, query.replace(/tell me about/i, "")],
-    [/\b(remember when|do you remember)\b/i, query.replace(/remember when|do you remember/i, "")],
-  ];
-
-  for (const [pattern, expanded] of expansions) {
-    if (pattern.test(query) && expanded.trim().length > 3) {
-      queries.push(expanded.trim());
-    }
-  }
-
-  return queries.slice(0, 3);
-}
-
-async function hybridSearch(
-  userId: string,
-  queryEmbedding: number[],
-  keywords: string,
-  limit: number,
-  weights: typeof DEFAULT_WEIGHTS,
-  categoryFilter?: MemoryCategory,
-): Promise<RetrievedFact[]> {
-  const embeddingStr = `[${queryEmbedding.join(",")}]`;
-
-  const categoryCondition = categoryFilter
-    ? sql`AND ${schema.memoryFacts.category} = ${categoryFilter}`
-    : sql``;
-
-  const results = await db.execute<{
-    id: string;
-    content: string;
-    category: MemoryCategory;
-    importance: number;
-    hybrid_score: number;
-    created_at: Date;
-  }>(sql`
-    SELECT
-      id,
-      content,
-      category,
-      importance,
-      created_at,
-      (
-        (1 - (embedding <=> ${embeddingStr}::vector)) * ${weights.semantic}
-        + COALESCE(
-            ts_rank(
-              to_tsvector('english', content),
-              to_tsquery('english', ${keywords || "''"}),
-              32
-            ),
-            0
-          ) * ${weights.keyword}
-        + EXP(-${RECENCY_DECAY} * EXTRACT(DAYS FROM NOW() - created_at)) * ${weights.recency}
-        + importance * ${weights.importance}
-      ) AS hybrid_score
-    FROM ${schema.memoryFacts}
-    WHERE user_id = ${userId}
-      AND embedding IS NOT NULL
-      ${categoryCondition}
-    ORDER BY hybrid_score DESC
-    LIMIT ${limit}
-  `);
-
-  return results.map((r) => ({
-    id: r.id,
-    content: r.content,
-    category: r.category,
-    importance: r.importance,
-    score: r.hybrid_score,
-    createdAt: r.created_at,
-  }));
-}
-
-/**
- * Hybrid retrieval with query expansion and result merging.
- * Fetches broader candidate set, then deduplicates and ranks.
- */
-export async function retrieveRelevantFacts(
-  options: RetrievalOptions,
-): Promise<RetrievedFact[]> {
-  const {
-    userId,
-    query,
-    limit = 10,
-    categoryFilter,
-    semanticWeight = DEFAULT_WEIGHTS.semantic,
-    keywordWeight = DEFAULT_WEIGHTS.keyword,
-    recencyWeight = DEFAULT_WEIGHTS.recency,
-    importanceWeight = DEFAULT_WEIGHTS.importance,
-  } = options;
-
-  const weights = { semantic: semanticWeight, keyword: keywordWeight, recency: recencyWeight, importance: importanceWeight };
-  const queries = expandQuery(query);
-
-  const contextualQuery = addContextualPrefix(query);
-  const allEmbeddings = await generateEmbeddings(
-    queries.map((q, i) => (i === 0 ? contextualQuery : addContextualPrefix(q))),
-    "query",
-  );
-
-  const candidateMap = new Map<string, RetrievedFact>();
-  const fetchLimit = Math.min(limit * 2, 20);
-
-  const searchPromises = allEmbeddings.map((embedding, i) => {
-    const keywords = queries[i]
-      .toLowerCase()
-      .replace(/[^\w\s]/g, "")
-      .split(/\s+/)
-      .filter((w) => w.length > 2)
-      .join(" & ");
-
-    return hybridSearch(userId, embedding, keywords, fetchLimit, weights, categoryFilter);
-  });
-
-  const allResults = await Promise.all(searchPromises);
-
-  for (const results of allResults) {
-    for (const fact of results) {
-      const existing = candidateMap.get(fact.id);
-      if (!existing || fact.score > existing.score) {
-        candidateMap.set(fact.id, fact);
-      }
-    }
-  }
-
-  return Array.from(candidateMap.values())
-    .sort((a, b) => b.score - a.score)
-    .slice(0, limit);
+  /**
+   * @deprecated Use semanticWeight + recencyWeight + importanceWeight instead.
+   * Accepted for backward compatibility with existing callers and e2e tests.
+   */
+  keywordWeight?: number;
 }
 
 export async function loadMemoryProfile(userId: string) {
@@ -185,18 +51,244 @@ export async function loadRecentHistory(
   });
 }
 
+const VALID_EMOTIONS = new Set(["sad", "anxious", "stressed", "happy", "frustrated", "lonely"]);
+
+const EMOTION_CLASSIFIER_PROMPT =
+  "You are an emotion classifier. " +
+  "Reply with exactly one word from this list: sad, anxious, stressed, happy, frustrated, lonely. " +
+  "If no clear emotion is present, reply: none. " +
+  "No explanation, punctuation, or other output.";
+
 /**
- * Update fact access time and bump importance slightly for accessed facts.
- * This creates a positive feedback loop — frequently relevant facts
- * stay important.
+ * LLM-based emotion classifier (Claude Haiku, maxTokens=5).
+ * Detects the dominant emotion from a user message to enable emotion-aware
+ * retrieval scoring. Handles indirect cues that keyword matching misses
+ * (e.g. "nobody texted me back" → lonely, "my chest feels tight" → anxious).
+ *
+ * Always returns undefined on failure — never blocks retrieval.
  */
-export async function touchFacts(factIds: string[]) {
+export async function detectEmotionFromQuery(query: string): Promise<string | undefined> {
+  try {
+    const { text } = await callClaude({
+      system: EMOTION_CLASSIFIER_PROMPT,
+      messages: [{ role: "user", content: query }],
+      maxTokens: 5,
+      modelTier: "fast",
+    });
+    const label = text.trim().toLowerCase();
+    return VALID_EMOTIONS.has(label) ? label : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Reciprocal Rank Fusion (k=60) over two result sets.
+ * Gives each result a score = Σ 1/(k + rank), then sorts descending.
+ * Results appearing in both sets receive a combined score boost.
+ */
+export function mergeWithRRF(
+  denseResults: VectorSearchResult[],
+  keywordResults: VectorSearchResult[],
+  limit: number,
+  k = 60,
+): VectorSearchResult[] {
+  const rrfScores = new Map<string, number>();
+  const payloadIndex = new Map<string, VectorSearchResult>();
+
+  const accumulateRank = (results: VectorSearchResult[]) => {
+    results.forEach((r, i) => {
+      rrfScores.set(r.factId, (rrfScores.get(r.factId) ?? 0) + 1 / (k + i + 1));
+      if (!payloadIndex.has(r.factId)) payloadIndex.set(r.factId, r);
+    });
+  };
+
+  accumulateRank(denseResults);
+  accumulateRank(keywordResults);
+
+  return [...rrfScores.entries()]
+    .sort(([, a], [, b]) => b - a)
+    .slice(0, limit)
+    .map(([factId, score]) => ({ ...payloadIndex.get(factId)!, score }));
+}
+
+/**
+ * Three-stage hybrid retrieval:
+ *   Stage 1A — Dense vector search: Qdrant cosine similarity on query embedding
+ *   Stage 1B — Keyword search: Qdrant text index on content field (BM25-like)
+ *              Stages 1A + 1B merged via Reciprocal Rank Fusion (RRF)
+ *   Stage 2  — Entity graph: FalkorDB 2-hop lookup for named entities in query
+ * Results are merged, enriched from Postgres, and reranked with emotion boost.
+ */
+export async function retrieveRelevantFacts(
+  options: RetrievalOptions,
+): Promise<RetrievedFact[]> {
+  const {
+    userId,
+    query,
+    limit = 10,
+    categoryFilter,
+    emotionHint,
+    semanticWeight = 0.5,
+    recencyWeight = 0.3,
+    importanceWeight = 0.2,
+  } = options;
+
+  const contextualQuery = addContextualPrefix(query);
+  const stageLimit = Math.min(limit * 2, 20);
+
+  // Run emotion detection, query embedding, and entity graph lookup in parallel.
+  // Emotion detection (Haiku) and embedding (Voyage) are fully independent.
+  const [detectedEmotion, queryEmbedding, entityIds] = await Promise.all([
+    emotionHint ? Promise.resolve(emotionHint) : detectEmotionFromQuery(query),
+    generateEmbedding(contextualQuery),
+    getEntityLinkedIds(userId, extractEntityNamesFromText(query)).catch(() => ({
+      factIds: [],
+      episodeIds: [],
+    })),
+  ]);
+
+  // Stage 1A: Dense vector search
+  const denseResults = await searchMemory({
+    userId,
+    queryEmbedding,
+    limit: stageLimit,
+    categoryFilter,
+  }).catch((err) => {
+    console.error("[retrieval] Qdrant dense search failed:", err.message);
+    return [];
+  });
+
+  // Stage 1B: Keyword text search (parallel after embedding is ready)
+  const keywordResults = await searchMemoryByKeyword(userId, query, stageLimit).catch(() => []);
+
+  // Merge Stage 1A + 1B via RRF
+  const vectorResults = mergeWithRRF(denseResults, keywordResults, stageLimit);
+
+  const allVectorFactIds = new Set(
+    vectorResults.filter((r) => r.type === "fact").map((r) => r.factId),
+  );
+  const allVectorEpisodeIds = new Set(
+    vectorResults.filter((r) => r.type === "episode").map((r) => r.factId),
+  );
+
+  const entityOnlyFactIds = entityIds.factIds.filter((id) => !allVectorFactIds.has(id));
+  const entityOnlyEpisodeIds = entityIds.episodeIds.filter((id) => !allVectorEpisodeIds.has(id));
+
+  // Fetch content from Postgres for all candidates
+  const [facts, episodes, entityFacts, entityEpisodes] = await Promise.all([
+    allVectorFactIds.size > 0
+      ? db.query.memoryFacts.findMany({
+          where: and(
+            inArray(schema.memoryFacts.id, [...allVectorFactIds]),
+            isNull(schema.memoryFacts.supersededBy),
+          ),
+          columns: { id: true, content: true, category: true, importance: true, createdAt: true },
+        })
+      : Promise.resolve([]),
+
+    allVectorEpisodeIds.size > 0
+      ? db.query.memoryEpisodes.findMany({
+          where: inArray(schema.memoryEpisodes.id, [...allVectorEpisodeIds]),
+          columns: { id: true, content: true, category: true, importance: true, createdAt: true },
+        })
+      : Promise.resolve([]),
+
+    entityOnlyFactIds.length > 0
+      ? db.query.memoryFacts.findMany({
+          where: and(
+            inArray(schema.memoryFacts.id, entityOnlyFactIds),
+            isNull(schema.memoryFacts.supersededBy),
+          ),
+          columns: { id: true, content: true, category: true, importance: true, createdAt: true },
+        })
+      : Promise.resolve([]),
+
+    entityOnlyEpisodeIds.length > 0
+      ? db.query.memoryEpisodes.findMany({
+          where: inArray(schema.memoryEpisodes.id, entityOnlyEpisodeIds),
+          columns: { id: true, content: true, category: true, importance: true, createdAt: true },
+        })
+      : Promise.resolve([]),
+  ]);
+
+  // Build score lookup from Qdrant results
+  const vectorScoreMap = new Map(vectorResults.map((r) => [r.factId, r.score]));
+
+  // Rerank vector results with recency + importance + optional emotion boost
+  const rerankedVector = scoreMemoryResults(
+    vectorResults,
+    { semantic: semanticWeight, recency: recencyWeight, importance: importanceWeight },
+    detectedEmotion,
+  );
+
+  // Build the merged candidate list
+  const candidateMap = new Map<string, RetrievedFact>();
+
+  const addToMap = (
+    rows: { id: string; content: string; category: MemoryCategory; importance: number; createdAt: Date }[],
+    type: "fact" | "episode",
+    baseScore: number,
+  ) => {
+    for (const row of rows) {
+      if (!candidateMap.has(row.id)) {
+        const vectorScore = vectorScoreMap.get(row.id) ?? baseScore;
+        candidateMap.set(row.id, {
+          id: row.id,
+          content: row.content,
+          category: row.category,
+          importance: row.importance,
+          score: vectorScore,
+          type,
+          createdAt: row.createdAt,
+        });
+      }
+    }
+  };
+
+  addToMap(facts, "fact", 0);
+  addToMap(episodes, "episode", 0);
+  addToMap(entityFacts, "fact", 0.4);
+  addToMap(entityEpisodes, "episode", 0.4);
+
+  // Apply reranked scores to vector-found items
+  for (const r of rerankedVector) {
+    const existing = candidateMap.get(r.factId);
+    if (existing) {
+      existing.score = r.finalScore;
+    }
+  }
+
+  const results = Array.from(candidateMap.values())
+    .sort((a, b) => b.score - a.score)
+    .slice(0, limit);
+
+  // Bump importance for accessed facts (positive feedback loop)
+  const accessedIds = results.map((r) => r.id);
+  touchFacts(accessedIds).catch(() => {});
+
+  return results;
+}
+
+/**
+ * Bump importance for frequently retrieved facts.
+ * Fire-and-forget — errors don't affect the response.
+ */
+async function touchFacts(factIds: string[]): Promise<void> {
   if (factIds.length === 0) return;
+
   await db.execute(sql`
     UPDATE ${schema.memoryFacts}
     SET
       last_accessed_at = NOW(),
       importance = LEAST(importance + 0.02, 1.0)
-    WHERE id IN (${sql.join(factIds.map((id) => sql`${id}`), sql`,`)})
+    WHERE id = ANY(${factIds})
+      AND superseded_by IS NULL
   `);
+
+  await Promise.all(
+    factIds.map((id) =>
+      updatePayload(id, {}).catch(() => {}),
+    ),
+  );
 }

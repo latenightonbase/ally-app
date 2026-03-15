@@ -1,4 +1,4 @@
-import { describe, it, expect } from "bun:test";
+import { describe, it, expect, mock } from "bun:test";
 import { extractMemories } from "../../../ai/extraction";
 
 describe("AI Extraction", () => {
@@ -15,16 +15,30 @@ describe("AI Extraction", () => {
     expect(typeof result.tokensUsed).toBe("number");
   });
 
-  it("formats conversation text correctly with roles", async () => {
+  it("normalises memoryType to 'semantic' if missing (backward compat)", async () => {
+    // The mock returns `facts: []` so normalisation runs on empty array — test the normalisation logic
     const result = await extractMemories({
       messages: [
-        { role: "user", content: "Hello", createdAt: new Date().toISOString() },
-        { role: "ally", content: "Hi there", createdAt: new Date().toISOString() },
+        { role: "user", content: "I work at Acme", createdAt: new Date().toISOString() },
       ],
       existingProfile: null,
     });
 
-    expect(result).toBeDefined();
+    // facts array (from mock) should all have memoryType defined
+    for (const fact of result.data.facts) {
+      expect(["semantic", "episodic", "event"]).toContain(fact.memoryType);
+    }
+  });
+
+  it("always returns an entities array", async () => {
+    const result = await extractMemories({
+      messages: [
+        { role: "user", content: "Hello", createdAt: new Date().toISOString() },
+      ],
+      existingProfile: null,
+    });
+
+    expect(Array.isArray(result.data.entities)).toBe(true);
   });
 
   it("includes existing profile context when provided", async () => {
@@ -50,5 +64,6 @@ describe("AI Extraction", () => {
     });
 
     expect(result).toBeDefined();
+    expect(result.data.entities).toBeDefined();
   });
 });

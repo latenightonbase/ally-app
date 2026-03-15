@@ -7,17 +7,22 @@ import {
   Text,
   Pressable,
   ActivityIndicator,
+  Animated,
 } from "react-native";
+import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { ChatHeader } from "../../components/chat/ChatHeader";
 import { MessageBubble } from "../../components/chat/MessageBubble";
 import { ChatInput } from "../../components/chat/ChatInput";
 import { TypingIndicator } from "../../components/chat/TypingIndicator";
 import { useAppStore, type ChatMessage } from "../../store/useAppStore";
+import { useTheme } from "../../context/ThemeContext";
 import {
   sendMessageStreaming,
+  sendMessageFeedback,
   getConversations,
   getConversationMessages,
+  ApiError,
   type Message,
 } from "../../lib/api";
 
@@ -39,10 +44,125 @@ function toLocalMessage(m: Message): ChatMessage {
   };
 }
 
+interface RateLimitBannerProps {
+  visible: boolean;
+  resetTime?: string;
+  onDismiss: () => void;
+}
+
+function RateLimitBanner({ visible, resetTime, onDismiss }: RateLimitBannerProps) {
+  const opacity = useRef(new Animated.Value(0)).current;
+  const { theme } = useTheme();
+
+  useEffect(() => {
+    Animated.timing(opacity, {
+      toValue: visible ? 1 : 0,
+      duration: 250,
+      useNativeDriver: true,
+    }).start();
+  }, [visible]);
+
+  if (!visible) return null;
+
+  const resetLabel = resetTime
+    ? (() => {
+        const ms = parseInt(resetTime, 10) * 1000 - Date.now();
+        if (ms <= 0) return null;
+        const secs = Math.ceil(ms / 1000);
+        return secs < 60 ? `${secs}s` : `${Math.ceil(secs / 60)}m`;
+      })()
+    : null;
+
+  return (
+    <Animated.View style={{ opacity }}>
+      <View
+        className="mx-4 mb-2 px-4 py-3 rounded-2xl flex-row items-center justify-between"
+        style={{ backgroundColor: theme.colors["--color-danger"] + "20" }}
+      >
+        <View className="flex-row items-center gap-2 flex-1">
+          <Ionicons
+            name="time-outline"
+            size={16}
+            color={theme.colors["--color-danger"]}
+          />
+          <Text className="text-danger text-sm font-sans flex-1" numberOfLines={1}>
+            Rate limit reached{resetLabel ? ` — resets in ${resetLabel}` : ""}
+          </Text>
+        </View>
+        <Pressable onPress={onDismiss} hitSlop={8}>
+          <Ionicons
+            name="close"
+            size={16}
+            color={theme.colors["--color-danger"]}
+          />
+        </Pressable>
+      </View>
+    </Animated.View>
+  );
+}
+
+interface FeedbackRowProps {
+  messageId: string;
+}
+
+function FeedbackRow({ messageId }: FeedbackRowProps) {
+  const { theme } = useTheme();
+  const [vote, setVote] = useState<1 | -1 | null>(null);
+
+  const handleVote = useCallback(
+    async (value: 1 | -1) => {
+      if (vote !== null) return;
+      setVote(value);
+      try {
+        await sendMessageFeedback(messageId, value);
+      } catch {
+        // Non-critical — feedback is best-effort
+      }
+    },
+    [messageId, vote],
+  );
+
+  return (
+    <View className="flex-row gap-3 px-4 pb-1">
+      <Pressable
+        onPress={() => handleVote(1)}
+        hitSlop={8}
+        className="opacity-70 active:opacity-100"
+      >
+        <Ionicons
+          name={vote === 1 ? "thumbs-up" : "thumbs-up-outline"}
+          size={15}
+          color={
+            vote === 1
+              ? theme.colors["--color-primary"]
+              : theme.colors["--color-muted"]
+          }
+        />
+      </Pressable>
+      <Pressable
+        onPress={() => handleVote(-1)}
+        hitSlop={8}
+        className="opacity-70 active:opacity-100"
+      >
+        <Ionicons
+          name={vote === -1 ? "thumbs-down" : "thumbs-down-outline"}
+          size={15}
+          color={
+            vote === -1
+              ? theme.colors["--color-danger"]
+              : theme.colors["--color-muted"]
+          }
+        />
+      </Pressable>
+    </View>
+  );
+}
+
 export default function ChatScreen() {
   const messages = useAppStore((s) => s.messages);
   const addMessage = useAppStore((s) => s.addMessage);
   const updateLastMessage = useAppStore((s) => s.updateLastMessage);
+  const replaceLastMessage = useAppStore((s) => s.replaceLastMessage);
   const setMessages = useAppStore((s) => s.setMessages);
   const activeConversationId = useAppStore((s) => s.activeConversationId);
   const setActiveConversationId = useAppStore((s) => s.setActiveConversationId);
@@ -50,6 +170,10 @@ export default function ChatScreen() {
   const [isTyping, setIsTyping] = useState(false);
   const [isStreaming, setIsStreaming] = useState(false);
   const [isHydrating, setIsHydrating] = useState(true);
+  const [rateLimitVisible, setRateLimitVisible] = useState(false);
+  const [rateLimitReset, setRateLimitReset] = useState<string | undefined>();
+  const [lastAIMessageId, setLastAIMessageId] = useState<string | null>(null);
+
   const flatListRef = useRef<FlatList>(null);
   const hasHydrated = useRef(false);
   const insets = useSafeAreaInsets();
@@ -83,6 +207,7 @@ export default function ChatScreen() {
 
   const handleSend = useCallback(
     async (text: string) => {
+      setRateLimitVisible(false);
       addMessage(text, true);
 
       setTimeout(() => {
@@ -112,10 +237,23 @@ export default function ChatScreen() {
               if (!activeConversationId) {
                 setActiveConversationId(data.conversationId);
               }
+              setLastAIMessageId(data.messageId);
+              // Authoritative final text from server — corrects any token-accumulation bugs
+              if (data.fullResponse) {
+                replaceLastMessage(data.fullResponse);
+              }
               setIsStreaming(false);
             },
-            onError: (errMsg) => {
-              if (!streamStarted) {
+            onError: (errMsg, status) => {
+              if (status === 429) {
+                setRateLimitVisible(true);
+                if (!streamStarted) {
+                  addMessage(
+                    "You've reached the rate limit. Please wait a moment and try again.",
+                    false,
+                  );
+                }
+              } else if (!streamStarted) {
                 addMessage(
                   `Sorry, I couldn't respond right now. ${errMsg}`,
                   false,
@@ -128,9 +266,18 @@ export default function ChatScreen() {
           activeConversationId ?? undefined,
         );
       } catch (e) {
-        const errMsg =
-          e instanceof Error ? e.message : "Something went wrong";
-        addMessage(`Sorry, I couldn't respond right now. ${errMsg}`, false);
+        if (e instanceof ApiError && e.status === 429) {
+          setRateLimitVisible(true);
+          setRateLimitReset(e.rateLimitReset);
+          addMessage(
+            "You've reached the rate limit. Please wait a moment and try again.",
+            false,
+          );
+        } else {
+          const errMsg =
+            e instanceof Error ? e.message : "Something went wrong";
+          addMessage(`Sorry, I couldn't respond right now. ${errMsg}`, false);
+        }
       } finally {
         setIsTyping(false);
         setIsStreaming(false);
@@ -166,6 +313,12 @@ export default function ChatScreen() {
     <View className="flex-1 bg-background">
       <ChatHeader />
 
+      <RateLimitBanner
+        visible={rateLimitVisible}
+        resetTime={rateLimitReset}
+        onDismiss={() => setRateLimitVisible(false)}
+      />
+
       <KeyboardAvoidingView
         behavior={Platform.OS === "ios" ? "padding" : "height"}
         className="flex-1"
@@ -175,12 +328,23 @@ export default function ChatScreen() {
           ref={flatListRef}
           data={messages}
           keyExtractor={(item) => item.id}
-          renderItem={({ item, index }) => (
-            <MessageBubble
-              message={item}
-              isLatest={index === messages.length - 1}
-            />
-          )}
+          renderItem={({ item, index }) => {
+            const isLatest = index === messages.length - 1;
+            const showFeedback =
+              !item.isUser &&
+              !isStreaming &&
+              lastAIMessageId !== null &&
+              isLatest;
+
+            return (
+              <>
+                <MessageBubble message={item} isLatest={isLatest} />
+                {showFeedback && lastAIMessageId && (
+                  <FeedbackRow messageId={lastAIMessageId} />
+                )}
+              </>
+            );
+          }}
           contentContainerStyle={{
             padding: 16,
             paddingBottom: 8,

@@ -1,7 +1,7 @@
 import { Elysia, t } from "elysia";
 import { authMiddleware } from "../middleware/auth";
 import { loadMemoryProfile } from "../services/retrieval";
-import { deleteProfile, deleteFact, updateFact, listFacts } from "../services/memory";
+import { deleteProfile, deleteFact, updateFact, listFacts, restoreFact } from "../services/memory";
 import type { MemoryCategory } from "@ally/shared";
 
 const VALID_CATEGORIES = [
@@ -36,11 +36,13 @@ export const memoryRoutes = new Elysia({ prefix: "/api/v1/memory" })
 
       const limit = Math.min(Number(query.limit ?? 20), 100);
       const offset = Number(query.offset ?? 0);
+      const includeSuperseeded = query.includeSuperseeded === "true";
 
       const { facts, total } = await listFacts(user.id, {
         category,
         limit,
         offset,
+        includeSuperseeded,
       });
 
       return {
@@ -50,6 +52,7 @@ export const memoryRoutes = new Elysia({ prefix: "/api/v1/memory" })
           content: f.content,
           sourceDate: f.sourceDate?.toISOString().split("T")[0],
           confidence: f.confidence,
+          superseded: f.supersededBy !== null && f.supersededBy !== undefined,
         })),
         total,
         limit,
@@ -61,6 +64,7 @@ export const memoryRoutes = new Elysia({ prefix: "/api/v1/memory" })
         category: t.Optional(t.String()),
         limit: t.Optional(t.String()),
         offset: t.Optional(t.String()),
+        includeSuperseeded: t.Optional(t.String()),
       }),
     },
   )
@@ -94,5 +98,19 @@ export const memoryRoutes = new Elysia({ prefix: "/api/v1/memory" })
       params: t.Object({
         factId: t.String(),
       }),
+    },
+  )
+  .patch(
+    "/facts/:factId/restore",
+    async ({ params, user, set }) => {
+      const restored = await restoreFact(user.id, params.factId);
+      if (!restored) {
+        set.status = 404;
+        return { error: { message: "Memory fact not found or not superseded" } };
+      }
+      return { restored: true, factId: params.factId };
+    },
+    {
+      params: t.Object({ factId: t.String() }),
     },
   );

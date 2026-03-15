@@ -8,26 +8,35 @@ All endpoints require authentication unless noted otherwise.
 
 ## Authentication
 
-The mobile team's auth service issues JWTs. Every request to the Ally backend must include the token in the `Authorization` header:
+Ally uses **better-auth** for session management. The backend issues and owns all auth — there is no external JWT service.
+
+### Sign In / Sign Up
+
+Auth flows go through the better-auth endpoints mounted at `/api/auth/*` (handled by `lib/auth.ts`). After a successful sign-in, better-auth returns a **session token** (opaque string, not a JWT).
+
+### Sending the Session Token
+
+For mobile clients, include the session token as a Bearer token on every request:
 
 ```
-Authorization: Bearer <jwt_token>
+Authorization: Bearer <session_token>
 ```
 
-**JWT Payload (expected structure):**
+The session token is stored in `expo-secure-store` on the device and included in all API calls.
 
-```json
+### Session Validation
+
+The backend resolves the session via `auth.api.getSession()` on every request. Session data (user id, email, tier) is read from the database — **tier is stored on the user record, not in the token payload**. Token refresh is handled automatically by the better-auth client.
+
+### User Object (resolved per request)
+
+```typescript
 {
-  "sub": "user-uuid-here",
-  "email": "user@example.com",
-  "tier": "pro",
-  "trialEndsAt": "2026-04-01T00:00:00Z",
-  "iat": 1709500000,
-  "exp": 1709586400
+  id: string,       // User UUID
+  email: string,
+  tier: "free_trial" | "basic" | "premium"
 }
 ```
-
-The backend verifies the JWT signature using the shared `JWT_SECRET` but does not issue tokens. Token refresh is handled entirely by the mobile team's auth service.
 
 ---
 
@@ -64,12 +73,11 @@ All errors follow a consistent format:
 
 Rate limits are enforced per user based on their subscription tier:
 
-| Tier        | Chat messages/day | Requests/minute |
-|-------------|-------------------|-----------------|
-| Free Trial  | 20                | 10              |
-| Basic       | 50                | 15              |
-| Pro         | Unlimited         | 30              |
-| Premium     | Unlimited         | 60              |
+| Tier        | Chat messages/day | Requests/minute | Briefings | You screen |
+|-------------|-------------------|-----------------|-----------|------------|
+| Free Trial  | Unlimited (14 days) | 30            | ✓         | Full       |
+| Basic       | Unlimited         | 30              | ✓         | Full       |
+| Premium     | Unlimited         | 60              | ✓         | Full       |
 
 Rate limit headers are included in every response:
 
@@ -182,37 +190,81 @@ curl -X POST http://localhost:3000/api/v1/chat \
 
 ---
 
-### POST /api/v1/onboarding
+### POST /api/v1/onboarding/followup
 
-Submit onboarding answers to create an initial memory profile and receive Ally's first personalized greeting.
+Generate the next round of dynamic onboarding questions based on the conversation so far. Called after each round of user answers to decide whether to ask more or wrap up. Optionally persists incremental memory updates as the conversation progresses.
 
 **Request:**
 
 ```json
 {
-  "answers": {
-    "nameAndGreeting": "I'm Sarah, you can call me Sar",
-    "lifeContext": "I'm a product manager at a startup. Living in Austin with my partner and our dog.",
-    "currentFocus": "Trying to get promoted this quarter and also training for a half marathon.",
-    "stressAndSupport": "Work deadlines stress me out the most. I usually vent to my best friend Maya.",
-    "allyExpectations": "I want someone to check in on me and help me stay on track with my goals."
-  }
+  "userName": "Sarah",
+  "allyName": "Ally",
+  "conversation": [
+    { "question": "What's your name and how would you like me to address you?", "answer": "I'm Sarah, you can call me Sar." },
+    { "question": "Tell me a bit about your life — where you are, what you do.", "answer": "I'm a product manager at a startup in Austin. Living with my partner and our dog." }
+  ],
+  "dynamicRound": 1
 }
 ```
 
-| Field                     | Type   | Required | Description                                    |
-|---------------------------|--------|----------|------------------------------------------------|
-| `answers.nameAndGreeting` | string | Yes      | How user wants to be addressed                 |
-| `answers.lifeContext`     | string | Yes      | Basic life situation                           |
-| `answers.currentFocus`    | string | Yes      | What they're focused on right now              |
-| `answers.stressAndSupport`| string | Yes      | Stress sources and coping mechanisms           |
-| `answers.allyExpectations`| string | Yes      | What they want from Ally                       |
+| Field           | Type            | Required | Description                                            |
+|-----------------|-----------------|----------|--------------------------------------------------------|
+| `userName`      | string          | Yes      | User's name (used for personalisation)                 |
+| `allyName`      | string          | Yes      | What the user wants to call their AI companion         |
+| `conversation`  | array           | Yes      | All Q&A pairs so far (`{ question, answer }`)          |
+| `dynamicRound`  | number          | Yes      | Round index (1 = first dynamic round, 2 = second, ...) |
+
+**Response (200):**
+
+```json
+{
+  "questions": [
+    "What are you most focused on right now — work, something personal, a goal you're chasing?",
+    "When things get stressful, who or what do you turn to?"
+  ],
+  "summary": "Sarah is a PM at a startup in Austin. Lives with partner and dog."
+}
+```
+
+If `questions` is empty, all necessary context has been gathered and the mobile app should call `/onboarding/complete`.
+
+---
+
+### POST /api/v1/onboarding/complete
+
+Finalise onboarding: Claude processes the full conversation into a structured memory profile, creates it in the database, saves notification preferences, and returns Ally's first personalised greeting.
+
+**Request:**
+
+```json
+{
+  "userName": "Sarah",
+  "allyName": "Ally",
+  "conversation": [
+    { "question": "What's your name and how would you like me to address you?", "answer": "I'm Sarah, you can call me Sar." },
+    { "question": "Tell me a bit about your life — where you are, what you do.", "answer": "I'm a product manager at a startup in Austin." },
+    { "question": "What are you most focused on right now?", "answer": "Getting promoted this quarter and training for a half marathon." },
+    { "question": "When things get stressful, who or what do you turn to?", "answer": "I usually vent to my best friend Maya." }
+  ],
+  "dailyPingTime": "08:00",
+  "timezone": "America/Chicago"
+}
+```
+
+| Field            | Type    | Required | Description                                         |
+|------------------|---------|----------|-----------------------------------------------------|
+| `userName`       | string  | Yes      | User's name                                         |
+| `allyName`       | string  | Yes      | Name the user chose for their companion             |
+| `conversation`   | array   | Yes      | Complete Q&A conversation from onboarding           |
+| `dailyPingTime`  | string  | Yes      | Preferred daily check-in time (HH:MM, 24h)          |
+| `timezone`       | string  | Yes      | IANA timezone string (e.g. `America/Chicago`)        |
 
 **Response (201):**
 
 ```json
 {
-  "greeting": "Hey Sar! I'm really glad to meet you. It sounds like you've got a lot of exciting things going on -- a promotion push AND a half marathon? That's impressive. I'll be here whenever you need to talk through the work stress or celebrate a good training run. And I'll definitely check in to make sure you're staying on track. How's the marathon training going so far?",
+  "greeting": "Hey Sar! Really glad to meet you. A promotion push AND a half marathon — you've got a lot going on. I'll be here whenever you need to think through the work stuff or celebrate a good training run. How's the marathon prep going so far?",
   "memoryProfileCreated": true
 }
 ```
@@ -220,18 +272,83 @@ Submit onboarding answers to create an initial memory profile and receive Ally's
 **Example:**
 
 ```bash
-curl -X POST http://localhost:3000/api/v1/onboarding \
+curl -X POST http://localhost:3000/api/v1/onboarding/complete \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
-    "answers": {
-      "nameAndGreeting": "I'\''m Sarah, you can call me Sar",
-      "lifeContext": "Product manager at a startup in Austin.",
-      "currentFocus": "Getting promoted and training for a half marathon.",
-      "stressAndSupport": "Work deadlines. I vent to my friend Maya.",
-      "allyExpectations": "Check in on me and help me stay on track."
-    }
+    "userName": "Sarah",
+    "allyName": "Ally",
+    "conversation": [
+      { "question": "What'\''s your name?", "answer": "I'\''m Sarah, call me Sar." },
+      { "question": "What are you focused on?", "answer": "Promotion and a half marathon." }
+    ],
+    "dailyPingTime": "08:00",
+    "timezone": "America/Chicago"
   }'
+```
+
+---
+
+### GET /api/v1/profile/you
+
+Returns the aggregated "You" screen data — a living portrait of the user as Ally understands them. Response shape is tiered.
+
+All tiers (Free Trial, Basic, Premium) receive the full You screen. No fields are locked.
+
+**Response (200):**
+
+```json
+{
+  "personalInfo": {
+    "preferredName": "Sar",
+    "fullName": "Sarah",
+    "location": "Austin, TX",
+    "livingSituation": "Lives with partner and dog"
+  },
+  "relationships": [ ... ],
+  "goals": [ ... ],
+  "upcomingEvents": [ ... ],
+  "tier": "basic",
+  "emotionalPatterns": {
+    "primaryStressors": ["Work deadlines"],
+    "copingMechanisms": ["Talking to Maya"],
+    "moodTrends": [],
+    "recurringThemes": ["career pressure", "performance anxiety"],
+    "sensitivities": []
+  },
+  "dynamicAttributes": {
+    "work_identity": {
+      "value": "Deeply tied to career progress",
+      "confidence": 0.85,
+      "learnedAt": "2026-03-02T14:30:00Z"
+    }
+  },
+  "recentEpisodes": [
+    {
+      "id": "ep-uuid-1",
+      "content": "Sarah's manager blamed her for a deadline slip in a team meeting",
+      "emotion": "frustrated",
+      "category": "work",
+      "date": "2026-03-04T14:30:00Z"
+    }
+  ],
+  "completenessSignal": {
+    "work": "clear",
+    "relationships": "emerging",
+    "health": "emerging",
+    "emotionalPatterns": "clear",
+    "interests": "fuzzy"
+  }
+}
+```
+
+`completenessSignal` hints to the UI which sections are well-understood (`"clear"`), partially filled (`"emerging"`), or still unknown (`"fuzzy"`). Use this to render nudges like "Tell Ally more about your interests →".
+
+**Example:**
+
+```bash
+curl http://localhost:3000/api/v1/profile/you \
+  -H "Authorization: Bearer $TOKEN"
 ```
 
 ---
@@ -262,7 +379,7 @@ Retrieve the user's morning briefing for a given date.
 
 Returns `{ "briefing": null }` if no briefing exists for the requested date.
 
-**Tier restriction:** Pro and Premium only. Returns 403 for Free Trial and Basic users.
+**Tier restriction:** None — available to all tiers.
 
 **Example:**
 
@@ -313,7 +430,7 @@ Retrieve past briefings.
 }
 ```
 
-**Tier restriction:** Pro and Premium only.
+**Tier restriction:** None — available to all tiers.
 
 **Example:**
 
@@ -379,6 +496,18 @@ Retrieve the user's memory profile (what Ally remembers about them).
       "primaryStressors": ["Work deadlines"],
       "copingMechanisms": ["Talking to Maya"],
       "moodTrends": []
+    },
+    "dynamicAttributes": {
+      "communication_style": {
+        "value": "Direct and results-oriented, rarely complains without a plan",
+        "confidence": 0.88,
+        "learnedAt": "2026-03-01T10:00:00Z"
+      },
+      "work_identity": {
+        "value": "Deeply tied to career progress — promotion feels personal",
+        "confidence": 0.82,
+        "learnedAt": "2026-03-02T14:30:00Z"
+      }
     },
     "updatedAt": "2026-03-04T02:15:00Z"
   }
@@ -607,9 +736,83 @@ curl http://localhost:3000/api/v1/insights/weekly \
 
 ---
 
-### GET /api/v1/user/tier
+### GET /api/v1/users/profile
 
-> **Not yet implemented.** This endpoint will return the user's current subscription tier and limits. Check back for future updates.
+Returns the current user's editable preferences. Used by the Settings screen to populate all edit fields on mount. Includes occupation from the hot-tier memory profile.
+
+**Response (200):**
+
+```json
+{
+  "name": "Alex",
+  "email": "alex@example.com",
+  "allyName": "Ally",
+  "dailyPingTime": "09:00",
+  "timezone": "America/New_York",
+  "occupation": "Software Engineer",
+  "tier": "basic"
+}
+```
+
+`dailyPingTime`, `timezone`, and `occupation` may be `null` if not yet set.
+
+**Example:**
+
+```bash
+curl http://localhost:3000/api/v1/users/profile \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+---
+
+### PATCH /api/v1/users/profile
+
+Updates the user's editable profile fields. All fields are optional — only provided fields are updated. Name changes are synced into the hot-tier memory profile (`personalInfo.preferredName`) so the AI sees the new name immediately. Occupation is stored in `memory_profiles.work.role`.
+
+**Request body (all optional):**
+
+```json
+{
+  "name": "Alex",
+  "allyName": "Atlas",
+  "dailyPingTime": "09:00",
+  "timezone": "America/Chicago",
+  "occupation": "Product Manager"
+}
+```
+
+Constraints:
+- `name`: 1–100 characters
+- `allyName`: 1–50 characters
+- `occupation`: max 100 characters
+- `dailyPingTime`: `"HH:MM"` 24-hour format (e.g. `"09:00"`)
+- `timezone`: IANA timezone string (e.g. `"America/New_York"`)
+
+When `dailyPingTime` or `timezone` is updated, the other is preserved from the existing record.
+
+**Response (200):**
+
+```json
+{
+  "updated": true,
+  "name": "Alex",
+  "email": "alex@example.com",
+  "allyName": "Atlas",
+  "dailyPingTime": "09:00",
+  "timezone": "America/Chicago",
+  "occupation": "Product Manager",
+  "tier": "basic"
+}
+```
+
+**Example:**
+
+```bash
+curl -X PATCH http://localhost:3000/api/v1/users/profile \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"name": "Alex", "occupation": "Product Manager"}'
+```
 
 ---
 

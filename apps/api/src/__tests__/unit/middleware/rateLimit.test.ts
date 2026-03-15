@@ -24,7 +24,7 @@ describe("Rate Limit Middleware", () => {
   });
 
   it("allows requests under the rate limit", async () => {
-    const token = await signTestToken({ sub: "rate-test-1", tier: "pro" });
+    const token = await signTestToken({ sub: "rate-test-1", tier: "basic" });
     const res = await app.handle(
       new Request("http://localhost/test", {
         headers: { Authorization: `Bearer ${token}` },
@@ -47,10 +47,11 @@ describe("Rate Limit Middleware", () => {
 
   it("returns 429 when minute burst limit is exceeded", async () => {
     const userId = "rate-burst-test";
-    const token = await signTestToken({ sub: userId, tier: "free_trial" });
+    // basic tier has requestsPerMinute: 30 — send 31 to breach it
+    const token = await signTestToken({ sub: userId, tier: "basic" });
 
     let lastRes: Response | null = null;
-    for (let i = 0; i < 12; i++) {
+    for (let i = 0; i < 31; i++) {
       lastRes = await app.handle(
         new Request("http://localhost/test", {
           headers: { Authorization: `Bearer ${token}` },
@@ -61,35 +62,37 @@ describe("Rate Limit Middleware", () => {
     expect(lastRes!.status).toBe(429);
   });
 
-  it("pro users have higher burst limit than free users", async () => {
-    const freeToken = await signTestToken({ sub: "rate-free-burst", tier: "free_trial" });
-    const proToken = await signTestToken({ sub: "rate-pro-burst", tier: "pro" });
+  it("premium users have higher burst limit than basic users", async () => {
+    // basic: 30 rpm, premium: 60 rpm
+    const basicToken = await signTestToken({ sub: "rate-basic-burst", tier: "basic" });
+    const premiumToken = await signTestToken({ sub: "rate-premium-burst", tier: "premium" });
 
-    for (let i = 0; i < 11; i++) {
+    // Send 31 requests — exceeds basic (30) but not premium (60)
+    for (let i = 0; i < 31; i++) {
       await app.handle(
         new Request("http://localhost/test", {
-          headers: { Authorization: `Bearer ${freeToken}` },
+          headers: { Authorization: `Bearer ${basicToken}` },
         }),
       );
       await app.handle(
         new Request("http://localhost/test", {
-          headers: { Authorization: `Bearer ${proToken}` },
+          headers: { Authorization: `Bearer ${premiumToken}` },
         }),
       );
     }
 
-    const freeRes = await app.handle(
+    const basicRes = await app.handle(
       new Request("http://localhost/test", {
-        headers: { Authorization: `Bearer ${freeToken}` },
+        headers: { Authorization: `Bearer ${basicToken}` },
       }),
     );
-    const proRes = await app.handle(
+    const premiumRes = await app.handle(
       new Request("http://localhost/test", {
-        headers: { Authorization: `Bearer ${proToken}` },
+        headers: { Authorization: `Bearer ${premiumToken}` },
       }),
     );
 
-    expect(freeRes.status).toBe(429);
-    expect(proRes.status).toBe(200);
+    expect(basicRes.status).toBe(429);
+    expect(premiumRes.status).toBe(200);
   });
 });

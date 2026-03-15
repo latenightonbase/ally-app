@@ -2,6 +2,8 @@ import { db, schema } from "../db";
 import { eq, and, gte } from "drizzle-orm";
 import { runDailyPing } from "./dailyPing";
 import { runWeeklyInsights } from "./weeklyInsights";
+import { runConsolidation } from "./consolidation";
+import { runMemoryMaintenance } from "./memoryMaintenance";
 import { emit } from "../services/events";
 import { registerProactiveHandlers } from "../services/proactive";
 import { flushAllBatches } from "../services/memoryQueue";
@@ -45,6 +47,18 @@ const jobs: ScheduledJob[] = [
     },
     enabled: true,
     skipDedup: true,
+  },
+  {
+    name: "memory_maintenance",
+    cronExpression: "0 2 * * *",
+    handler: runMemoryMaintenance,
+    enabled: true,
+  },
+  {
+    name: "memory_consolidation",
+    cronExpression: "0 3 * * 0",
+    handler: runConsolidation,
+    enabled: true,
   },
 ];
 

@@ -1,158 +1,197 @@
 import React, { useEffect, useState, useCallback } from "react";
-import { ScrollView, View, Text, ActivityIndicator, Alert } from "react-native";
+import {
+  ScrollView,
+  View,
+  Text,
+  ActivityIndicator,
+  RefreshControl,
+} from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { MotiView } from "moti";
 import { useAppStore } from "../../store/useAppStore";
-import { MemoryCategory } from "../../components/memory/MemoryCategory";
-import { MemoryCard } from "../../components/memory/MemoryCard";
-import { MemoryEmptyState } from "../../components/memory/MemoryEmptyState";
-import {
-  getMemoryFacts,
-  deleteMemoryFact,
-  updateMemoryFact,
-  type MemoryFactItem,
-} from "../../lib/api";
+import { getYouScreen, getTodayBriefing, type YouScreenData } from "../../lib/api";
+import type { Briefing } from "../../lib/api";
+import { YouHeader } from "../../components/you/YouHeader";
+import { BriefingCard } from "../../components/you/BriefingCard";
+import { YourWorldSection } from "../../components/you/YourWorldSection";
+import { WhatYoureBuildingSection } from "../../components/you/WhatYoureBuildingSection";
+import { ComingUpSection } from "../../components/you/ComingUpSection";
+import { RecentStorySection } from "../../components/you/RecentStorySection";
+import { YourPatternsSection } from "../../components/you/YourPatternsSection";
+import { WhatAllyNoticesSection } from "../../components/you/WhatAllyNoticesSection";
+import { CompletenessNudge } from "../../components/you/CompletenessNudge";
 
-const MEMORY_CATEGORIES = {
-  personal_info: { label: "Personal Info", emoji: "👤" },
-  relationships: { label: "Relationships", emoji: "❤️" },
-  work: { label: "Work", emoji: "💼" },
-  health: { label: "Health", emoji: "🏃" },
-  interests: { label: "Interests", emoji: "⭐" },
-  goals: { label: "Goals", emoji: "🎯" },
-  emotional_patterns: { label: "Emotional Patterns", emoji: "🧠" },
-} as const;
-
-type CategoryKey = keyof typeof MEMORY_CATEGORIES;
-
-interface MemoryForCard {
-  id: string;
-  category: string;
-  text: string;
-  createdAt: Date;
-}
-
-export default function MemoryScreen() {
+export default function YouScreen() {
   const user = useAppStore((s) => s.user);
-  const [facts, setFacts] = useState<MemoryFactItem[]>([]);
+  const [data, setData] = useState<YouScreenData | null>(null);
+  const [briefing, setBriefing] = useState<Briefing | null>(null);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const loadFacts = useCallback(async () => {
-    try {
+  const [episodeIds, setEpisodeIds] = useState<Set<string>>(new Set());
+
+  const load = useCallback(async (isRefresh = false) => {
+    if (isRefresh) {
+      setRefreshing(true);
+    } else {
       setLoading(true);
-      const { facts: fetchedFacts } = await getMemoryFacts(undefined, 100, 0);
-      setFacts(fetchedFacts);
+    }
+    setError(null);
+
+    try {
+      const [youData, briefingData] = await Promise.all([
+        getYouScreen(),
+        getTodayBriefing(),
+      ]);
+      setData(youData);
+      setBriefing(briefingData.briefing);
+      setEpisodeIds(new Set(youData.recentEpisodes.map((e) => e.id)));
     } catch {
-      // silently fail — show empty state
+      setError("Couldn't load your profile. Pull down to try again.");
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
   }, []);
 
   useEffect(() => {
-    loadFacts();
-  }, [loadFacts]);
+    load();
+  }, [load]);
 
-  const handleEdit = useCallback(async (id: string, content: string) => {
-    try {
-      await updateMemoryFact(id, content);
-      setFacts((prev) =>
-        prev.map((f) => (f.id === id ? { ...f, content } : f)),
-      );
-    } catch {
-      Alert.alert("Error", "Could not save changes. Please try again.");
-    }
+  const handleEpisodeDelete = useCallback((id: string) => {
+    setEpisodeIds((prev) => {
+      const next = new Set(prev);
+      next.delete(id);
+      return next;
+    });
+    setData((prev) => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        recentEpisodes: prev.recentEpisodes.filter((e) => e.id !== id),
+      };
+    });
   }, []);
 
-  const handleDelete = useCallback(async (id: string) => {
-    try {
-      await deleteMemoryFact(id);
-      setFacts((prev) => prev.filter((f) => f.id !== id));
-    } catch {
-      Alert.alert("Error", "Could not delete memory.");
-    }
-  }, []);
+  const allyName = user.allyName || "Ally";
 
-  const groupedMemories = (
-    Object.keys(MEMORY_CATEGORIES) as CategoryKey[]
-  ).map((key) => ({
-    key,
-    ...MEMORY_CATEGORIES[key],
-    items: facts
-      .filter((f) => f.category === key)
-      .map(
-        (f): MemoryForCard => ({
-          id: f.id,
-          category: f.category,
-          text: f.content,
-          createdAt: new Date(f.sourceDate ?? Date.now()),
-        }),
-      ),
-  }));
+  if (loading) {
+    return (
+      <View className="flex-1 bg-background items-center justify-center">
+        <ActivityIndicator size="large" className="text-primary" />
+      </View>
+    );
+  }
+
+  if (error || !data) {
+    return (
+      <View className="flex-1 bg-background">
+        <SafeAreaView edges={["top"]} className="flex-1">
+          <View className="flex-1 px-5 pt-4">
+            <Text className="text-foreground text-2xl font-sans-bold mb-2">
+              You
+            </Text>
+            <View className="flex-1 items-center justify-center">
+              <Text className="text-muted text-sm font-sans text-center">
+                {error ?? "Something went wrong."}
+              </Text>
+            </View>
+          </View>
+        </SafeAreaView>
+      </View>
+    );
+  }
+
+  const completeness = data.completenessSignal;
 
   return (
     <View className="flex-1 bg-background">
       <SafeAreaView edges={["top"]} className="flex-1">
         <ScrollView
           className="flex-1 px-5 pt-4"
-          contentContainerStyle={{ paddingBottom: 100 }}
+          contentContainerStyle={{ paddingBottom: 110 }}
           showsVerticalScrollIndicator={false}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={() => load(true)}
+            />
+          }
         >
           <MotiView
-            from={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
+            from={{ opacity: 0, translateY: 8 }}
+            animate={{ opacity: 1, translateY: 0 }}
             transition={{ type: "timing", duration: 300 }}
-            className="mb-4"
           >
-            <Text className="text-foreground text-2xl font-sans-bold mb-1">
-              Memory Vault
-            </Text>
-            <Text className="text-muted text-sm font-sans">
-              Everything {user.allyName || "Ally"} remembers about you. Full
-              transparency — edit or remove anything.
-            </Text>
-          </MotiView>
+            {/* Header */}
+            <YouHeader
+              name={data.personalInfo?.preferredName ?? user.name}
+              role={null}
+              location={data.personalInfo?.location ?? null}
+              allyName={allyName}
+            />
 
-          <MotiView
-            from={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ type: "timing", duration: 300, delay: 100 }}
-            className="bg-primary-soft rounded-2xl p-4 mb-4 items-center"
-          >
-            <Text className="text-primary text-3xl font-sans-bold">
-              {facts.length}
-            </Text>
-            <Text className="text-primary text-sm font-sans-medium">
-              memories stored
-            </Text>
-          </MotiView>
+            {/* Today's Briefing */}
+            {briefing && (
+              <BriefingCard
+                content={briefing.content}
+                date={new Date(briefing.date).toLocaleDateString("en-US", {
+                  weekday: "long",
+                  month: "long",
+                  day: "numeric",
+                })}
+              />
+            )}
 
-          {loading ? (
-            <ActivityIndicator size="large" className="mt-8" />
-          ) : (
-            groupedMemories.map((group) => (
-              <View key={group.key}>
-                <MemoryCategory
-                  label={group.label}
-                  emoji={group.emoji}
-                  count={group.items.length}
-                />
-                {group.items.length > 0 ? (
-                  group.items.map((memory, index) => (
-                    <MemoryCard
-                      key={memory.id}
-                      memory={memory}
-                      index={index}
-                      onEdit={handleEdit}
-                      onDelete={handleDelete}
-                    />
-                  ))
-                ) : (
-                  <MemoryEmptyState category={group.label} />
-                )}
+            {/* Your World — relationships */}
+            {(Array.isArray(data.relationships) && data.relationships.length > 0 ||
+              completeness.relationships === "fuzzy") && (
+              <YourWorldSection
+                relationships={Array.isArray(data.relationships) ? data.relationships : []}
+                completeness={completeness.relationships}
+              />
+            )}
+
+            {/* What You're Building — active goals */}
+            <WhatYoureBuildingSection
+              goals={Array.isArray(data.goals) ? data.goals : []}
+              completeness={completeness.work}
+            />
+
+            {/* Coming Up — next 7 days events */}
+            <ComingUpSection events={Array.isArray(data.upcomingEvents) ? data.upcomingEvents : []} />
+
+            {/* Recent Story — episodic timeline */}
+            <RecentStorySection
+              episodes={(Array.isArray(data.recentEpisodes) ? data.recentEpisodes : []).filter((e) =>
+                episodeIds.has(e.id),
+              )}
+              onDelete={handleEpisodeDelete}
+            />
+
+            {/* Your Patterns — emotional fingerprint */}
+            <YourPatternsSection
+              emotionalPatterns={data.emotionalPatterns}
+              completeness={completeness.emotionalPatterns}
+            />
+
+            {/* What Ally Notices — dynamic attributes */}
+            <WhatAllyNoticesSection
+              dynamicAttributes={data.dynamicAttributes}
+              allyName={allyName}
+            />
+
+            {/* Interests nudge if fuzzy */}
+            {completeness.interests === "fuzzy" && (
+              <View className="mb-4">
+                <Text className="text-muted text-xs font-sans-medium uppercase tracking-wider mb-3 px-1">
+                  Interests
+                </Text>
+                <CompletenessNudge section="interests" prompt="" />
               </View>
-            ))
-          )}
+            )}
+          </MotiView>
         </ScrollView>
       </SafeAreaView>
     </View>

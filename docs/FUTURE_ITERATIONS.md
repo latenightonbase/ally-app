@@ -1,71 +1,173 @@
-# Future Iterations
+# Future Iterations & Product Roadmap
 
-Living document tracking planned improvements and future tool additions for Ally.
+This document tracks planned features, deferred work, and known technical debt. Items move from planned → in-progress → completed as they're built.
 
-## Custom Tool Roadmap
+For the product vision and north star, see `docs/PRODUCT_VISION.md`.
+For behavioral intelligence feature specs, see `docs/BEHAVIORAL_INTELLIGENCE.md`.
+For memory system architecture, see `docs/MEMORY_ARCHITECTURE.md`.
 
-### Implemented
+---
 
-| Tool | Description | Status |
-|------|-------------|--------|
-| `web_search` | Claude server-side web search for real-time information | Done |
-| `remember_fact` | Explicitly save important facts to long-term memory | Done |
-| `recall_memory` | Search memory store for user facts | Done |
-| `set_reminder` | Create follow-up reminders for upcoming events or unresolved topics | Done |
+## Roadmap
 
-### Planned — High Priority
+### Phase A: Behavioral Intelligence (Next Sprint)
 
-| Tool | Description | Effort |
-|------|-------------|--------|
-| `check_calendar` | Read user's calendar events (Google Calendar / Apple Calendar integration) | Medium — requires OAuth flow |
-| `create_calendar_event` | Create events from natural language ("remind me about dentist Tuesday 3pm") | Medium — depends on calendar integration |
-| `get_weather` | Local weather via user's location (useful for daily briefings and small talk) | Small — simple API call |
-| `web_fetch` | Fetch and summarize a specific URL the user shares | Small — Claude has built-in `web_fetch` tool |
-| `search_contacts` | Look up info about people in the user's life from memory graph | Medium — depends on entity graph |
+These features use data that's already being collected. The memory infrastructure is in place — this is the product layer on top.
 
-### Planned — Medium Priority
+**Habit Detection** _(Premium)_
+- [ ] Scan `memory_episodes` and `memory_facts` for behavioral repetition signals
+- [ ] Detect frequency patterns across 30-day windows
+- [ ] Surface candidates to user in natural conversation for implicit confirmation
+- [ ] `habits` table migration (schema in `docs/BEHAVIORAL_INTELLIGENCE.md`)
+- [ ] Integrate with `daily_ping` job for habit check-ins on deviation
 
-| Tool | Description | Effort |
-|------|-------------|--------|
-| `mood_log` | Log the user's current mood with optional context for trend tracking | Small |
-| `goal_update` | Update progress on an active goal | Small |
-| `generate_summary` | Summarize recent conversations on demand ("what did we talk about this week?") | Medium |
-| `spotify_now_playing` | Know what the user is listening to for context-aware conversation | Medium — requires Spotify OAuth |
-| `location_aware` | Use device location for contextual suggestions (nearby restaurants, weather) | Medium — requires mobile permissions |
+**Goal Scaffolding** _(Pro + Premium)_
+- [ ] `daily_ping` job to detect goals with no recent episode mentions (>14 day silence)
+- [ ] Goal-related messages get higher-priority extraction signal
+- [ ] `goal_checkins` tracking to avoid over-pinging
 
-### Planned — Low Priority / Exploratory
+**AI-Set Goals** _(Premium)_
+- [ ] Extend `weekly_insights` job to flag recurring negative patterns
+- [ ] Claude evaluates whether pattern is actionable
+- [ ] Surface suggestion in next daily ping or natural conversation moment
+- [ ] `ai_suggestions` table migration
 
-| Tool | Description | Effort |
-|------|-------------|--------|
-| `send_message` | Send a message to someone on the user's behalf (SMS/WhatsApp integration) | Large — complex integrations |
-| `task_manager` | Create/update tasks in external task managers (Todoist, Things, Reminders) | Medium |
-| `health_data` | Read Apple Health / Google Fit data for wellness-aware conversations | Large — native module needed |
-| `journal_entry` | Create structured journal entries from conversation | Small |
-| `photo_context` | Analyze photos the user shares for richer context | Medium — multimodal API |
+**Mood Calendar** _(Premium)_
+- [ ] `GET /api/v1/profile/mood-calendar?weeks=12` endpoint
+- [ ] Aggregate episode emotions by week
+- [ ] Correlate mood dips with known events (proximity-based)
 
-## Architecture Improvements
+**Accountability Threads** _(Premium)_
+- [ ] `accountability_threads` table migration
+- [ ] Extend `set_reminder` tool to create thread records
+- [ ] Check-in logic in `daily_ping` job
+- [ ] Track outcome: completed / avoided / rescheduled
 
-### Memory System
+---
 
-- **Graph-based retrieval**: Move from flat pgvector to entity relationship graph (Neo4j or in-Postgres adjacency). Enables multi-hop queries like "What did I say about Mom's doctor?"
-- **Memory consolidation**: Periodically merge/deduplicate similar facts. Detect when newer facts supersede older ones.
-- **Memory decay**: Automatically reduce importance of facts that haven't been accessed in months.
-- **Contradiction detection**: When a new fact contradicts an existing one, flag for resolution.
+### Phase B: App Integrations
 
-### Proactivity
+These add richer signal to the memory system without requiring user effort.
 
-- **Context signals from device**: Battery level, time of day, location changes, screen time.
-- **Mood prediction**: Use conversation patterns to predict mood shifts before the user articulates them.
-- **Smart notification timing**: Learn when the user is most receptive to messages (not just a fixed daily ping time).
+**Calendar Integration**
+- [ ] Sync calendar events → `memory_events` directly (no extraction needed)
+- [ ] `sourceType: 'calendar'`
+- [ ] Surface in context injection (already handled by `getUpcomingEvents()`)
 
-### Conversation Quality
+**Notes Integration**
+- [ ] Lightweight extraction from notes content → `memory_facts`
+- [ ] `sourceType: 'notes'`
+- [ ] On-demand: only extract when note is explicitly shared with Ally
 
-- **Fine-tuning pipeline**: Collect rated conversations, train on high-rated examples.
-- **A/B testing framework**: Test prompt variations and measure user engagement.
-- **Voice mode**: Real-time voice conversations via LiveKit or similar.
+**Health Integration**
+- [ ] Daily step count / sleep / workout summary → `memory_facts` with `category: 'health'`
+- [ ] `sourceType: 'health'`
 
-### Infrastructure
+---
 
-- **Redis for memory queue**: Replace in-process queue with Redis + BullMQ when scaling to multiple instances.
-- **Event sourcing**: Store all state changes as events for replay and debugging.
-- **Analytics pipeline**: Track conversation quality metrics, memory accuracy, tool usage patterns.
+### Phase C: Polish & Trust Features
+
+**Memory corrections on "You" screen**
+- [ ] Allow users to edit or remove individual dynamic attributes from the You screen
+- [ ] Allow users to correct relationship notes and goal status
+- [ ] `PATCH /api/v1/profile/you/attribute/:key` to update a dynamic attribute
+- [ ] Trust hygiene: if the user corrects something, mark it as `userVerified: true`
+
+**Ally-generated chapter summaries** _(Premium)_
+- [ ] Monthly AI-generated narrative summary of the user's arc
+- [ ] Triggered by the consolidation job when sufficient episodic data exists
+- [ ] Delivered as a push notification + available in briefing history
+
+**Memory corrections flow**
+- [ ] Users can flag a fact as wrong from the You screen
+- [ ] Flagged facts are excluded from retrieval and marked in the DB
+
+---
+
+## Previously Implemented
+
+### Product Layer
+- [x] Dynamic profile attributes (`dynamicAttributes` in `MemoryProfile`)
+  - Real-time extraction in chat via `EXTRACTION_SYSTEM_PROMPT`
+  - Onboarding extraction via `ONBOARDING_COMPLETE_PROMPT`
+  - Weekly promotion from high-importance facts via `DYNAMIC_PROMOTION_PROMPT` in `consolidation.ts`
+  - Injected into every Claude system prompt via `buildAllySystemPrompt`
+- [x] "You" screen API endpoint (`GET /api/v1/profile/you`)
+  - Tiered response: Free (basic) vs Pro/Premium (full)
+  - Includes: personalInfo, relationships, goals, upcomingEvents, emotionalPatterns, dynamicAttributes, recentEpisodes, completenessSignal
+- [x] Weekly insights persisted to `weekly_insights` table
+- [x] `GET /api/v1/insights/weekly` endpoint (Premium)
+- [x] Contradiction detection UX: `GET /facts?includeSuperseeded=true` + `PATCH /facts/:factId/restore`
+
+### Memory System — Phase 2
+- [x] Sparse/keyword hybrid search: Qdrant text-index keyword retrieval merged with dense via RRF
+- [x] Multi-hop graph traversal: `getEntityLinkedIds` upgraded to `*0..2` Cypher traversal
+- [x] Entity coreference resolution: `upsertEntity` merges into existing node on normalized-name match
+- [x] Qdrant payload importance sync: monthly decay job syncs updated importance values
+- [x] Emotional context retrieval: LLM-based emotion detection (Claude Haiku), runs concurrently in retrieval
+- [x] Contradiction detection: `supersedes` field on `ExtractedFact`
+
+### Memory System — Phase 1
+- [x] Memory tiering: semantic facts, episodic memories, future events
+- [x] Entity extraction and graph storage (FalkorDB)
+- [x] Three-stage hybrid retrieval (Qdrant dense + keyword + FalkorDB entity graph)
+- [x] Weekly consolidation: episode reflection → semantic facts (Generative Agents pattern)
+- [x] Dynamic profile promotion: high-importance facts → `dynamicAttributes`
+- [x] Daily maintenance: event promotion, episode purge, importance decay
+- [x] BullMQ queue with FalkorDB Redis backend
+- [x] Context injection: upcoming events surfaced in every session
+- [x] Memory type classification in extraction (semantic / episodic / event)
+
+### API & Backend
+- [x] Dynamic onboarding flow (`/onboarding/followup` + `/onboarding/complete`)
+- [x] Better Auth sessions (replaced JWT)
+- [x] Notifications utility (`services/notifications.ts`)
+- [x] Weekly insights job with push notification
+- [x] Daily ping job with rich context (followups + events + session summary)
+- [x] Proactive re-engagement via event system (`services/events.ts`)
+- [x] Briefing consolidation (`ensureBriefingForUser` in `ai/briefing.ts`)
+
+---
+
+## Known Technical Debt
+
+- `apps/mobile/app/(tabs)/memory.tsx` — the Memory Vault tab still shows grouped text facts. Needs to be replaced with the "You" screen design specified in `docs/PRODUCT_VISION.md`. The API is ready; this is purely frontend work.
+- Test database schema is not fully in sync with production (missing Phase 1 tables). Some integration tests may fail against the test DB. Use `bun run test:unit` as a reliable baseline.
+- `consolidation.ts` uses `ANY(${episodeIds})` which is a raw SQL fragment — should be replaced with Drizzle's `inArray()` when migrating to a newer Drizzle version.
+- Agent personality workstream (separate chat) — not yet integrated.
+
+---
+
+## Conversation Quality Roadmap
+
+### Track 1 — Prompt Architecture (Implemented)
+
+The following have been built into `apps/api/src/ai/prompts.ts`:
+
+- [x] **Conversational modes framework** — six modes (Casual, Venting, Processing, Advice, Challenge, Crisis) with per-mode behavioral rules baked into the system prompt
+- [x] **Challenge mode (Being Honest)** — memory-gated (7+ sessions), MI-informed back-off rule. Ally names stuck patterns once, then drops it if deflected
+- [x] **Anti-HER directives (Real People Matter)** — real human amplification, the redirect move ("have you told [person] this?"), dependency-awareness at prompt level
+- [x] **Adaptive interiority (Point of View)** — session-depth gated. Light texture sessions 1-7, defined perspective sessions 8-20, full interiority sessions 20+
+- [x] **sessionCount threading** — `buildAllySystemPrompt` now receives session count from DB, passed from `buildSessionContext` → `generateReply` → prompt builder
+- [x] **Model routing extended** — sessions 20+ always use quality model (Sonnet)
+
+### Track 2 — Fine-Tuning Pipeline (Prerequisite: data collection)
+
+Fine-tuning is the right eventual path but requires rated conversation data first. Do not fine-tune without it — fine-tuning on unrated data produces consistent mediocrity, not improvement.
+
+**Step 1 — Implicit signal collection (in-progress)**
+- [x] Structured conversation signal logging in `routes/chat.ts` — logs `session_depth`, `session_count`, `response_ms` per conversation turn
+- [ ] Ship to a log aggregator (Datadog, Axiom, or similar) for querying
+- [ ] Build a weekly signal report: which sessions had high `session_depth`? What's the typical `response_ms` by session count tier?
+
+**Step 2 — Conversation rating rubric**
+- [ ] Internal tool: monthly pull of 50 conversations, rate each on rubric defined in `docs/DPO_SCHEMA.md`
+- [ ] Build rated pair dataset: `{ preferred_response, rejected_response, conversation_mode, session_count }`
+- [ ] Target: 500+ rated pairs before fine-tuning
+
+**Step 3 — Fine-tuning**
+- [ ] At 500+ rated pairs: fine-tune Haiku for casual/quick exchanges (sessions < 8)
+- [ ] Keep Sonnet for quality tier (sessions 20+, emotional, complex)
+- [ ] Validate fine-tuned model against prompt-regression E2E tests before shipping
+
+For the DPO dataset schema and rating rubric, see `docs/DPO_SCHEMA.md`.

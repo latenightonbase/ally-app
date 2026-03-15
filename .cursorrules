@@ -5,9 +5,12 @@ You are working on Ally, a personal AI companion app.
 - Turborepo monorepo with Bun workspaces
 - Elysia backend (apps/api/) — Bun-native, TypeScript only
 - Expo 55 / React Native (apps/mobile/) — NativeWind, Zustand, expo-router
-- PostgreSQL + pgvector via Drizzle ORM
+- Neon PostgreSQL via Drizzle ORM — relational source of truth (no pgvector; embeddings are in Qdrant)
+- Qdrant Cloud — vector store for memory_facts and memory_episodes
+- FalkorDB Cloud — entity graph (Cypher) + BullMQ queue backend (Redis protocol)
 - Claude Haiku 4.5 (fast) + Sonnet 4.6 (quality) via @anthropic-ai/sdk — with server-side web search and custom tools
 - Voyage AI voyage-4-lite for contextual embeddings (1024 dims)
+- Better Auth (cookie-based sessions)
 
 ## Code Style
 - TypeScript strict mode everywhere
@@ -19,15 +22,17 @@ You are working on Ally, a personal AI companion app.
 - Shared types go in packages/shared, not duplicated
 
 ## Architecture
-- Memory system has 3 tiers: hot (JSONB profile), warm (session messages + summaries), cold (pgvector facts with hybrid retrieval + query expansion)
-- Memory extraction is real-time via async batching queue (services/memoryQueue.ts), not cron
-- Session windowing: conversations are silently split into sessions (30min gap), each summarized
+- Memory system has 6 tiers: hot (JSONB profile with dynamicAttributes), warm (session summaries), upcoming events, semantic facts (Postgres + Qdrant), episodic (Postgres + Qdrant, TTL), entity graph (FalkorDB)
+- Memory extraction is real-time via BullMQ queue (FalkorDB Redis backend), not cron
+- Session windowing: conversations split into sessions (30min gap), each summarized by Claude
+- Hybrid retrieval: 3-stage (Qdrant dense + Qdrant keyword + FalkorDB entity graph), merged via RRF
+- Weekly consolidation promotes episodes → semantic facts → dynamicAttributes in hot profile
 - AI has tools: web search, remember_fact, recall_memory, set_reminder (apps/api/src/ai/tools.ts)
 - Model routing: Haiku for casual, Sonnet for complex/emotional messages
 - AI prompts are centralized in apps/api/src/ai/prompts.ts
 - All AI calls go through apps/api/src/ai/client.ts (with tool-use agentic loops)
-- Event-driven proactive system (services/events.ts + services/proactive.ts)
-- Database schema is in apps/api/src/db/schema.ts (Drizzle)
+- Tiers: free_trial (14 days, full Basic features) → basic → premium. No permanent free tier.
+- Database schema is in apps/api/src/db/schema.ts + apps/api/src/db/auth-schema.ts (Drizzle)
 - Never modify _legacy/ — it's reference only
 
 ## Do NOT

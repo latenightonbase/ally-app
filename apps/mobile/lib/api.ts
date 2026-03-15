@@ -8,6 +8,7 @@ import type {
   MemoryProfile,
   MemoryFact,
   Briefing,
+  WeeklyInsight,
   Conversation,
   Message,
 } from "@ally/shared";
@@ -22,6 +23,8 @@ export type {
   OnboardingFollowupResponse,
   MemoryProfile,
   MemoryFact,
+  Briefing,
+  WeeklyInsight,
   Conversation,
   Message,
 };
@@ -57,19 +60,23 @@ async function apiRequest<T>(
     const body = await res.json().catch(() => ({}));
     const message =
       body?.error?.message ?? body?.message ?? `Request failed (${res.status})`;
-    throw new ApiError(message, res.status);
+    throw new ApiError(message, res.status, res.headers);
   }
 
   return res.json();
 }
 
 export class ApiError extends Error {
+  public readonly rateLimitReset?: string;
+
   constructor(
     message: string,
     public status: number,
+    headers?: Headers,
   ) {
     super(message);
     this.name = "ApiError";
+    this.rateLimitReset = headers?.get("X-RateLimit-Reset") ?? undefined;
   }
 }
 
@@ -82,7 +89,7 @@ export interface StreamCallbacks {
     messageId: string;
     fullResponse: string;
   }) => void;
-  onError: (message: string) => void;
+  onError: (message: string, status?: number) => void;
 }
 
 export async function sendMessage(
@@ -151,9 +158,10 @@ export async function sendMessageStreaming(
           const body = JSON.parse(xhr.responseText);
           callbacks.onError(
             body?.error?.message ?? `Chat request failed (${xhr.status})`,
+            xhr.status,
           );
         } catch {
-          callbacks.onError(`Chat request failed (${xhr.status})`);
+          callbacks.onError(`Chat request failed (${xhr.status})`, xhr.status);
         }
       }
       resolve();
@@ -175,16 +183,17 @@ export async function sendMessageStreaming(
   });
 }
 
-// --- Onboarding ---
-
-export async function submitOnboarding(
-  answers: OnboardingAnswers,
-): Promise<OnboardingResponse> {
-  return apiRequest<OnboardingResponse>("/api/v1/onboarding", {
+export async function sendMessageFeedback(
+  messageId: string,
+  feedback: -1 | 0 | 1,
+): Promise<void> {
+  await apiRequest("/api/v1/chat/feedback", {
     method: "POST",
-    body: JSON.stringify({ answers }),
+    body: JSON.stringify({ messageId, feedback }),
   });
 }
+
+// --- Onboarding ---
 
 export async function getOnboardingFollowups(input: {
   userName: string;
@@ -211,7 +220,40 @@ export async function completeOnboardingDynamic(input: {
   });
 }
 
-// --- Push Token (used by future notification setup) ---
+// --- User Profile ---
+
+export interface UserProfileData {
+  name: string;
+  email: string;
+  allyName: string;
+  dailyPingTime: string | null;
+  timezone: string | null;
+  occupation: string | null;
+  tier: string;
+}
+
+export interface UpdateProfileRequest {
+  name?: string;
+  allyName?: string;
+  dailyPingTime?: string;
+  timezone?: string;
+  occupation?: string;
+}
+
+export async function getUserProfile(): Promise<UserProfileData> {
+  return apiRequest<UserProfileData>("/api/v1/users/profile");
+}
+
+export async function updateUserProfile(
+  data: UpdateProfileRequest,
+): Promise<UserProfileData> {
+  return apiRequest<UserProfileData>("/api/v1/users/profile", {
+    method: "PATCH",
+    body: JSON.stringify(data),
+  });
+}
+
+// --- Push Token ---
 
 export async function registerPushToken(token: string): Promise<void> {
   await apiRequest("/api/v1/users/push-token", {
@@ -220,7 +262,7 @@ export async function registerPushToken(token: string): Promise<void> {
   });
 }
 
-// --- Conversations (used by future chat history screen) ---
+// --- Conversations ---
 
 export async function getConversations(
   limit = 10,
@@ -290,12 +332,101 @@ export async function deleteMemoryProfile(): Promise<{ deleted: boolean }> {
   return apiRequest("/api/v1/memory/profile", { method: "DELETE" });
 }
 
-// --- Briefing (used by future briefing screen) ---
+// --- You Screen ---
+
+export interface YouScreenData {
+  personalInfo: {
+    preferredName: string | null;
+    fullName: string | null;
+    age: number | null;
+    birthday: string | null;
+    location: string | null;
+    livingSituation: string | null;
+  };
+  relationships: Array<{
+    name: string;
+    relation: string;
+    notes: string;
+    lastMentioned: string | null;
+  }>;
+  goals: Array<{
+    description: string;
+    category: string;
+    status: string;
+    progressNotes: string | null;
+    createdAt: string;
+    updatedAt: string;
+  }>;
+  upcomingEvents: Array<{
+    id: string;
+    content: string;
+    eventDate: string;
+    context: string | null;
+  }>;
+  emotionalPatterns: {
+    primaryStressors: string[];
+    copingMechanisms: string[];
+    moodTrends: Array<{ period: string; trend: string; notes: string }>;
+    recurringThemes: string[];
+    sensitivities: string[];
+  };
+  dynamicAttributes: Record<
+    string,
+    { value: string; confidence: number; learnedAt: string }
+  >;
+  recentEpisodes: Array<{
+    id: string;
+    content: string;
+    emotion: string | null;
+    category: string;
+    date: string;
+  }>;
+  completenessSignal: Record<
+    "work" | "relationships" | "health" | "emotionalPatterns" | "interests",
+    "clear" | "emerging" | "fuzzy"
+  >;
+  tier: string;
+}
+
+export async function getYouScreen(): Promise<YouScreenData> {
+  return apiRequest<YouScreenData>("/api/v1/profile/you");
+}
+
+// --- Briefing ---
 
 export async function getTodayBriefing(): Promise<{
   briefing: Briefing | null;
 }> {
   return apiRequest("/api/v1/briefing");
+}
+
+export async function getBriefingHistory(
+  limit = 7,
+  offset = 0,
+): Promise<{ briefings: Briefing[]; limit: number; offset: number }> {
+  return apiRequest(
+    `/api/v1/briefing/history?limit=${limit}&offset=${offset}`,
+  );
+}
+
+// --- Insights (Premium) ---
+
+export async function getWeeklyInsights(
+  limit = 4,
+  offset = 0,
+): Promise<{
+  insights: Array<WeeklyInsight & { id: string; delivered: boolean; createdAt: string }>;
+  limit: number;
+  offset: number;
+} | null> {
+  try {
+    return await apiRequest(
+      `/api/v1/insights/weekly?limit=${limit}&offset=${offset}`,
+    );
+  } catch (err) {
+    if (err instanceof ApiError && err.status === 403) return null;
+    throw err;
+  }
 }
 
 // --- Health ---

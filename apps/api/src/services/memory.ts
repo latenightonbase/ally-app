@@ -1,11 +1,16 @@
 import { db, schema } from "../db";
-import { eq, and, sql, desc } from "drizzle-orm";
-import { generateEmbeddings, addContextualPrefix } from "./embedding";
+import { eq, and, sql, desc, isNull } from "drizzle-orm";
+import { generateEmbedding, generateEmbeddings, addContextualPrefix } from "./embedding";
+import { upsertMemory, batchUpsertMemories, deleteMemory, updatePayload } from "./vectorStore";
+import { upsertEntity, createEdge, resolveEntityIdByName } from "./graphStore";
 import type {
   MemoryProfile,
+  DynamicAttribute,
   ExtractedFact,
+  ExtractedEntity,
   PendingFollowup,
   MemoryCategory,
+  MemorySourceType,
 } from "@ally/shared";
 
 export async function getOrCreateProfile(
@@ -15,7 +20,27 @@ export async function getOrCreateProfile(
     where: eq(schema.memoryProfiles.userId, userId),
   });
 
-  if (existing) return existing.profile;
+  if (existing) {
+    // Merge with defaults so older/partial profiles never crash on missing fields
+    const p = existing.profile;
+    const defaultPersonalInfo = { preferredName: null, fullName: null, age: null, birthday: null, location: null, livingSituation: null, other: {} };
+    const defaultWork = { role: null, company: null, companyType: null, currentProjects: [], currentGoals: [], stressors: [], colleagues: [] };
+    const defaultHealth = { fitnessGoals: [], currentRoutine: null, sleepNotes: null, dietNotes: null, mentalHealthNotes: null, other: {} };
+    const defaultEmotional = { primaryStressors: [], copingMechanisms: [], moodTrends: [], recurringThemes: [], sensitivities: [] };
+    return {
+      ...p,
+      userId: p.userId ?? userId,
+      version: p.version ?? 2,
+      personalInfo: { ...defaultPersonalInfo, ...p.personalInfo },
+      relationships: p.relationships ?? [],
+      work: { ...defaultWork, ...p.work },
+      health: { ...defaultHealth, ...p.health },
+      interests: p.interests ?? [],
+      goals: p.goals ?? [],
+      emotionalPatterns: { ...defaultEmotional, ...p.emotionalPatterns },
+      pendingFollowups: p.pendingFollowups ?? [],
+    };
+  }
 
   const defaultProfile: MemoryProfile = {
     userId,
@@ -73,14 +98,14 @@ export async function getOrCreateProfile(
  * plain objects, recurse; if both are arrays, concatenate; otherwise
  * the source value wins.
  */
-function deepMerge<T extends Record<string, any>>(target: T, source: Partial<T>): T {
+function deepMerge<T extends Record<string, unknown>>(target: T, source: Partial<T>): T {
   const result = { ...target };
   for (const key of Object.keys(source) as (keyof T)[]) {
     const sv = source[key];
     const tv = target[key];
     if (sv === undefined || sv === null) continue;
     if (Array.isArray(tv) && Array.isArray(sv)) {
-      (result as any)[key] = [...tv, ...sv];
+      (result as Record<string, unknown>)[key as string] = [...tv, ...sv];
     } else if (
       typeof tv === "object" &&
       tv !== null &&
@@ -89,9 +114,12 @@ function deepMerge<T extends Record<string, any>>(target: T, source: Partial<T>)
       sv !== null &&
       !Array.isArray(sv)
     ) {
-      (result as any)[key] = deepMerge(tv, sv as any);
+      (result as Record<string, unknown>)[key as string] = deepMerge(
+        tv as Record<string, unknown>,
+        sv as Record<string, unknown>,
+      );
     } else {
-      (result as any)[key] = sv;
+      (result as Record<string, unknown>)[key as string] = sv;
     }
   }
   return result;
@@ -102,7 +130,10 @@ export async function updateProfile(
   updates: Partial<MemoryProfile>,
 ): Promise<void> {
   const current = await getOrCreateProfile(userId);
-  const merged = deepMerge(current, { ...updates, updatedAt: new Date().toISOString() });
+  const merged = deepMerge(
+    current as unknown as Record<string, unknown>,
+    { ...updates, updatedAt: new Date().toISOString() } as Record<string, unknown>,
+  ) as unknown as MemoryProfile;
 
   await db
     .update(schema.memoryProfiles)
@@ -110,24 +141,32 @@ export async function updateProfile(
     .where(eq(schema.memoryProfiles.userId, userId));
 }
 
+function computeEpisodicTTL(importance: number): Date {
+  const now = new Date();
+  let daysToAdd: number;
+  if (importance < 0.5) daysToAdd = 7;
+  else if (importance < 0.7) daysToAdd = 14;
+  else daysToAdd = 30;
+  now.setDate(now.getDate() + daysToAdd);
+  return now;
+}
+
+/**
+ * Store durable semantic facts (memoryType: "semantic").
+ * Persists to Postgres + Qdrant. Handles contradiction resolution
+ * by marking superseded facts inactive.
+ */
 export async function storeExtractedFacts(
   userId: string,
   facts: ExtractedFact[],
   sourceConversationId: string | null,
 ): Promise<void> {
-  if (facts.length === 0) {
-    console.log(`[storeExtractedFacts] No facts provided, skipping`);
-    return;
-  }
+  if (facts.length === 0) return;
 
-  const validFacts = facts.filter((f) => f.confidence >= 0.7);
-  if (validFacts.length === 0) {
-    console.log(
-      `[storeExtractedFacts] All ${facts.length} facts filtered out by confidence threshold (need >= 0.7). ` +
-      `Confidences: ${facts.map((f) => f.confidence).join(", ")}`,
-    );
-    return;
-  }
+  const validFacts = facts.filter(
+    (f) => f.confidence >= 0.85 && (f.memoryType === "semantic" || !f.memoryType),
+  );
+  if (validFacts.length === 0) return;
 
   const textsToEmbed = validFacts.map((f) => addContextualPrefix(f.content, f.category));
   const embeddings = await generateEmbeddings(textsToEmbed, "document");
@@ -138,16 +177,257 @@ export async function storeExtractedFacts(
     category: fact.category,
     importance: fact.importance,
     confidence: fact.confidence,
-    temporal: fact.temporal,
+    temporal: false,
     entities: fact.entities,
     emotion: fact.emotion,
-    embedding: embeddings[i],
     sourceConversationId,
+    sourceDate: new Date(),
+    sourceType: "chat" as const,
+  }));
+
+  const insertedFacts = await db
+    .insert(schema.memoryFacts)
+    .values(rows)
+    .returning({ id: schema.memoryFacts.id, content: schema.memoryFacts.content });
+
+  const qdrantUpserts = insertedFacts.map((inserted, i) => ({
+    factId: inserted.id,
+    embedding: embeddings[i],
+    payload: {
+      factId: inserted.id,
+      userId,
+      type: "fact" as const,
+      category: validFacts[i].category,
+      importance: validFacts[i].importance,
+      emotion: validFacts[i].emotion,
+      createdAt: new Date().toISOString(),
+      sourceType: "chat" as const,
+      content: validFacts[i].content,
+    },
+  }));
+
+  await batchUpsertMemories(qdrantUpserts);
+
+  // Contradiction resolution: mark superseded facts
+  for (const fact of validFacts) {
+    if (fact.supersedes) {
+      await markSupersededFact(userId, fact.supersedes, insertedFacts.find(
+        (_, i) => validFacts[i] === fact,
+      )?.id ?? null);
+    }
+  }
+
+  console.log(`[memory] Stored ${insertedFacts.length} semantic facts for user ${userId}`);
+}
+
+async function markSupersededFact(
+  userId: string,
+  supersededContent: string,
+  newFactId: string | null,
+): Promise<void> {
+  if (!newFactId) return;
+
+  const existing = await db.query.memoryFacts.findFirst({
+    where: and(
+      eq(schema.memoryFacts.userId, userId),
+      eq(schema.memoryFacts.content, supersededContent),
+      isNull(schema.memoryFacts.supersededBy),
+    ),
+    columns: { id: true },
+  });
+
+  if (!existing) return;
+
+  await db
+    .update(schema.memoryFacts)
+    .set({ supersededBy: newFactId })
+    .where(eq(schema.memoryFacts.id, existing.id));
+
+  await deleteMemory(existing.id).catch(() => {});
+}
+
+/**
+ * Store short-lived episodic facts (memoryType: "episodic").
+ * TTL is computed from importance. Persists to Postgres + Qdrant.
+ */
+export async function storeExtractedEpisodes(
+  userId: string,
+  facts: ExtractedFact[],
+  sourceConversationId: string | null,
+): Promise<void> {
+  if (facts.length === 0) return;
+
+  const validFacts = facts.filter((f) => f.confidence >= 0.85);
+  if (validFacts.length === 0) return;
+
+  const textsToEmbed = validFacts.map((f) => addContextualPrefix(f.content, f.category));
+  const embeddings = await generateEmbeddings(textsToEmbed, "document");
+
+  const rows = validFacts.map((fact) => ({
+    userId,
+    content: fact.content,
+    category: fact.category,
+    emotion: fact.emotion,
+    entities: fact.entities,
+    importance: fact.importance,
+    confidence: fact.confidence,
+    expiresAt: computeEpisodicTTL(fact.importance),
+    sourceConversationId,
+    sourceType: "chat" as const,
     sourceDate: new Date(),
   }));
 
-  await db.insert(schema.memoryFacts).values(rows);
-  console.log(`[storeExtractedFacts] Inserted ${rows.length} facts into DB for user ${userId}`);
+  const insertedEpisodes = await db
+    .insert(schema.memoryEpisodes)
+    .values(rows)
+    .returning({ id: schema.memoryEpisodes.id });
+
+  const qdrantUpserts = insertedEpisodes.map((inserted, i) => ({
+    factId: inserted.id,
+    embedding: embeddings[i],
+    payload: {
+      factId: inserted.id,
+      userId,
+      type: "episode" as const,
+      category: validFacts[i].category,
+      importance: validFacts[i].importance,
+      emotion: validFacts[i].emotion,
+      createdAt: new Date().toISOString(),
+      sourceType: "chat" as const,
+      content: validFacts[i].content,
+    },
+  }));
+
+  await batchUpsertMemories(qdrantUpserts);
+
+  console.log(`[memory] Stored ${insertedEpisodes.length} episodic memories for user ${userId}`);
+}
+
+/**
+ * Store future-dated temporal events (memoryType: "event").
+ * No vectors — events are proactively injected by date, not searched.
+ */
+export async function storeExtractedEvents(
+  userId: string,
+  facts: ExtractedFact[],
+  sourceConversationId: string | null,
+): Promise<void> {
+  if (facts.length === 0) return;
+
+  const validFacts = facts.filter(
+    (f) => f.confidence >= 0.85 && f.eventDate,
+  );
+  if (validFacts.length === 0) return;
+
+  const rows = validFacts.map((fact) => ({
+    userId,
+    content: fact.content,
+    eventDate: new Date(fact.eventDate!),
+    context: null as string | null,
+    sourceConversationId,
+    sourceType: "chat" as const,
+  }));
+
+  await db.insert(schema.memoryEvents).values(rows);
+
+  console.log(`[memory] Stored ${rows.length} future events for user ${userId}`);
+}
+
+/**
+ * Store extracted entities in FalkorDB graph.
+ * Entity names are normalized for coreference resolution.
+ */
+export async function storeEntities(
+  userId: string,
+  entities: ExtractedEntity[],
+  linkedFactIds: string[],
+): Promise<void> {
+  if (entities.length === 0) return;
+
+  const entityIdMap = new Map<string, string>();
+
+  for (const entity of entities) {
+    const factId = linkedFactIds[0];
+    const entityId = await upsertEntity({
+      userId,
+      name: entity.name,
+      type: entity.type,
+      description: entity.description,
+      aliases: entity.aliases,
+      factId,
+    }).catch((err) => {
+      console.error(`[memory] Entity upsert failed for "${entity.name}": ${err.message}`);
+      return null;
+    });
+
+    if (entityId) entityIdMap.set(entity.name.toLowerCase(), entityId);
+  }
+
+  for (const entity of entities) {
+    const sourceId = entityIdMap.get(entity.name.toLowerCase());
+    if (!sourceId) continue;
+
+    for (const rel of entity.relatedTo ?? []) {
+      // Prefer current-batch id; fall back to graph lookup for cross-batch targets
+      const batchId = entityIdMap.get(rel.name.toLowerCase());
+      const resolvedId = batchId ?? (await resolveEntityIdByName(userId, rel.name).catch(() => null));
+      if (!resolvedId) continue;
+      const targetId = resolvedId;
+
+      await createEdge({
+        userId,
+        sourceEntityId: sourceId,
+        targetEntityId: targetId,
+        relationType: rel.relation,
+      }).catch((err) =>
+        console.error(`[memory] Edge creation failed: ${err.message}`),
+      );
+
+      // Create the reverse edge for symmetric relationships (best_friend, partner, sibling, etc.)
+      const symmetric = /best_friend|partner|sibling|spouse|married|colleague|co_?worker|roommate/i.test(rel.relation);
+      if (symmetric) {
+        await createEdge({
+          userId,
+          sourceEntityId: targetId,
+          targetEntityId: sourceId,
+          relationType: rel.relation,
+        }).catch(() => {});
+      }
+    }
+  }
+}
+
+/**
+ * Merge newly extracted dynamic attributes into the user's hot profile.
+ * Adds learnedAt timestamp and skips attributes with confidence below threshold.
+ * Lower-confidence new observations won't overwrite higher-confidence existing ones.
+ */
+export async function mergeDynamicAttributes(
+  userId: string,
+  attributes: Record<string, { value: string; confidence: number }>,
+  sourceConversationId?: string,
+): Promise<void> {
+  if (Object.keys(attributes).length === 0) return;
+
+  const now = new Date().toISOString();
+  const profile = await getOrCreateProfile(userId);
+  const existing = profile.dynamicAttributes ?? {};
+
+  const merged: Record<string, DynamicAttribute> = { ...existing };
+  for (const [key, attr] of Object.entries(attributes)) {
+    const existingAttr = existing[key];
+    if (existingAttr && existingAttr.confidence >= attr.confidence) {
+      continue;
+    }
+    merged[key] = {
+      value: attr.value,
+      confidence: attr.confidence,
+      learnedAt: now,
+      sourceConversationId,
+    };
+  }
+
+  await updateProfile(userId, { dynamicAttributes: merged });
 }
 
 export async function addFollowups(
@@ -177,6 +457,12 @@ export async function deleteProfile(userId: string): Promise<void> {
   await db
     .delete(schema.memoryFacts)
     .where(eq(schema.memoryFacts.userId, userId));
+  await db
+    .delete(schema.memoryEpisodes)
+    .where(eq(schema.memoryEpisodes.userId, userId));
+  await db
+    .delete(schema.memoryEvents)
+    .where(eq(schema.memoryEvents.userId, userId));
 }
 
 export async function deleteFact(
@@ -193,7 +479,11 @@ export async function deleteFact(
     )
     .returning({ id: schema.memoryFacts.id });
 
-  return result.length > 0;
+  if (result.length > 0) {
+    await deleteMemory(factId).catch(() => {});
+    return true;
+  }
+  return false;
 }
 
 export async function updateFact(
@@ -206,7 +496,7 @@ export async function updateFact(
       eq(schema.memoryFacts.id, factId),
       eq(schema.memoryFacts.userId, userId),
     ),
-    columns: { id: true, category: true },
+    columns: { id: true, category: true, importance: true, emotion: true },
   });
 
   if (!existing) return false;
@@ -216,7 +506,7 @@ export async function updateFact(
 
   const result = await db
     .update(schema.memoryFacts)
-    .set({ content, embedding, sourceDate: new Date() })
+    .set({ content, sourceDate: new Date() })
     .where(
       and(
         eq(schema.memoryFacts.id, factId),
@@ -225,14 +515,31 @@ export async function updateFact(
     )
     .returning({ id: schema.memoryFacts.id });
 
+  if (result.length > 0) {
+    await upsertMemory(factId, embedding, {
+      factId,
+      userId,
+      type: "fact",
+      category: existing.category,
+      importance: existing.importance,
+      emotion: existing.emotion,
+      createdAt: new Date().toISOString(),
+      sourceType: "chat",
+      content,
+    });
+  }
+
   return result.length > 0;
 }
 
 export async function listFacts(
   userId: string,
-  options: { category?: MemoryCategory; limit: number; offset: number },
+  options: { category?: MemoryCategory; limit: number; offset: number; includeSuperseeded?: boolean },
 ) {
   const conditions = [eq(schema.memoryFacts.userId, userId)];
+  if (!options.includeSuperseeded) {
+    conditions.push(isNull(schema.memoryFacts.supersededBy));
+  }
   if (options.category) {
     conditions.push(eq(schema.memoryFacts.category, options.category));
   }
@@ -250,6 +557,8 @@ export async function listFacts(
         confidence: true,
         sourceDate: true,
         createdAt: true,
+        sourceType: true,
+        supersededBy: true,
       },
     }),
     db
@@ -259,4 +568,49 @@ export async function listFacts(
   ]);
 
   return { facts, total: Number(countResult[0].count) };
+}
+
+/**
+ * Restore a superseded fact: clear its supersededBy pointer and re-index in Qdrant.
+ * Returns false if the fact doesn't exist, belongs to a different user, or is not superseded.
+ */
+export async function restoreFact(userId: string, factId: string): Promise<boolean> {
+  const fact = await db.query.memoryFacts.findFirst({
+    where: and(
+      eq(schema.memoryFacts.id, factId),
+      eq(schema.memoryFacts.userId, userId),
+    ),
+    columns: {
+      id: true,
+      content: true,
+      category: true,
+      importance: true,
+      sourceType: true,
+      emotion: true,
+      supersededBy: true,
+    },
+  });
+
+  if (!fact || !fact.supersededBy) return false;
+
+  await db
+    .update(schema.memoryFacts)
+    .set({ supersededBy: null })
+    .where(eq(schema.memoryFacts.id, factId));
+
+  // Re-index in Qdrant so the restored fact participates in retrieval
+  const embedding = await generateEmbedding(addContextualPrefix(fact.content, fact.category));
+  await upsertMemory(factId, embedding, {
+    factId,
+    userId,
+    type: "fact",
+    category: fact.category,
+    importance: fact.importance,
+    emotion: fact.emotion ?? null,
+    createdAt: new Date().toISOString(),
+    sourceType: (fact.sourceType ?? "chat") as MemorySourceType,
+    content: fact.content,
+  });
+
+  return true;
 }

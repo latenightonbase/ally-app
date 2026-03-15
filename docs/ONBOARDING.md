@@ -1,206 +1,209 @@
 # Ally Onboarding Flow
 
-Onboarding is the first interaction a user has with Ally. The goal is to collect enough context to make Ally's very first response feel personal, warm, and like talking to someone who actually listened.
+Onboarding is the first interaction a user has with Ally. The goal is to collect enough context to make Ally's very first response feel personal, warm, and like talking to someone who actually listened — while making the experience feel like a natural conversation, not a form.
 
 ---
 
-## The 5 Questions
+## Architecture
 
-### Question 1: Name and Greeting
+Onboarding uses a **two-phase dynamic conversation** approach:
 
-**Prompt displayed in app:**
-> "Hey! I'm Ally. What should I call you? (Tell me however you'd like to introduce yourself.)"
+1. **Initial seed question** — a single open-ended question asking the user to share a bit about themselves
+2. **AI-generated followup round** — Claude generates 2-3 personalized followup questions based on what the user shared
+3. **Completion** — the full conversation is processed by Claude into a structured memory profile + personalized greeting
 
-**Why it matters:**
-This sets the tone for the entire relationship. By letting users introduce themselves naturally (rather than filling in a "First Name" form field), we get:
-- Their preferred name vs. formal name ("Call me Sar" vs. "Sarah")
-- Personality cues from how they introduce themselves
-- An immediate sense of being heard as a person, not a form entry
-
-**What gets extracted:**
-- `personalInfo.preferredName`
-- `personalInfo.fullName` (if provided)
-- Initial tone calibration (casual vs. formal based on their style)
+This replaces the old static 5-question flow. The AI adapts to what the user shares — someone who mentions a difficult job situation gets followups about work and stress; someone who mentions hobbies gets asked about them specifically.
 
 ---
 
-### Question 2: Life Context
+## API Endpoints
 
-**Prompt displayed in app:**
-> "Give me the quick snapshot -- what does your life look like right now? (Work, living situation, whatever feels relevant.)"
+### Phase 1: Followup Generation
 
-**Why it matters:**
-Gives Ally a baseline understanding of who this person is today. Without this, Ally would need several conversations to piece together basic context. With it, the first real conversation can already reference their world.
-
-**What gets extracted:**
-- `personalInfo.location`
-- `personalInfo.livingSituation`
-- `work.role`, `work.companyType`
-- `relationships` (partner, roommates, pets mentioned)
-- Any other relevant `personalInfo`
-
----
-
-### Question 3: Current Focus
-
-**Prompt displayed in app:**
-> "What's taking up most of your mental energy right now? Could be a goal, a project, a decision you're wrestling with -- anything."
-
-**Why it matters:**
-Identifies what the user is most likely to want to talk about in their first few conversations. This gives Ally something specific to reference and follow up on, making the relationship feel immediately relevant rather than generic.
-
-**What gets extracted:**
-- `goals` (with status "active")
-- `work.currentProjects` or `work.currentGoals`
-- `emotionalPatterns.primaryStressors` (if stress-related)
-- `pendingFollowups` (things to proactively ask about)
-
----
-
-### Question 4: Stress and Support
-
-**Prompt displayed in app:**
-> "When things get tough, what does that usually look like for you? And who or what helps you get through it?"
-
-**Why it matters:**
-This is the emotional intelligence question. It tells Ally:
-- What kind of hard moments to watch for in future conversations
-- Whether to offer solutions, space, or just empathy (based on their coping style)
-- Who the important support people in their life are
-- How to calibrate emotional responses from day one
-
-**What gets extracted:**
-- `emotionalPatterns.primaryStressors`
-- `emotionalPatterns.copingMechanisms`
-- `relationships` (support people mentioned)
-- `emotionalPatterns.sensitivities` (if any sensitive topics surface)
-
----
-
-### Question 5: Expectations for Ally
-
-**Prompt displayed in app:**
-> "Last one -- what would make Ally actually useful to you? What do you wish you had more of in your day-to-day?"
-
-**Why it matters:**
-Directly shapes how Ally behaves. A user who says "I want accountability" will get check-ins on goals. A user who says "I just want someone to listen" will get a more reflective, less proactive Ally. This prevents the one-size-fits-all problem.
-
-**What gets extracted:**
-- Internal configuration flags for Ally's behavior:
-  - `proactive_checkins`: true/false
-  - `goal_tracking_emphasis`: high/medium/low
-  - `emotional_support_emphasis`: high/medium/low
-  - `advice_giving`: active/only_when_asked
-- Additional `goals` or `interests` mentioned
-
----
-
-## How Answers Are Processed
-
-### Step 1: User Completes All 5 Questions
-
-The mobile app collects all 5 answers and sends them as a single `POST /api/v1/onboarding` request. The questions are presented one at a time in the app with a conversational, low-pressure UI (not a form).
-
-### Step 2: AI Processing
-
-The backend sends the answers to `apps/api/src/ai/onboarding.ts`, which calls Claude (`claude-sonnet-4-6`) via the Anthropic TypeScript SDK. The system prompt instructs Claude to:
-
-1. Create a structured memory profile from the answers
-2. Write a warm, personalized first greeting (2-3 sentences) that shows Ally was listening
-
-The prompt and response format are defined in `apps/api/src/ai/prompts.ts`.
-
-### Step 3: Store and Respond
-
-- The memory profile is saved to the `memory_profiles` table (PostgreSQL JSONB)
-- The greeting is returned to the mobile app
-- The mobile app displays the greeting as Ally's first message in the chat interface
-
----
-
-## Expected Mobile App UX Flow
-
-### Screen 1: Welcome
-- Ally's logo/avatar
-- "Meet Ally -- the friend who never forgets."
-- "Let's get to know each other. I have 5 quick questions."
-- [Get Started] button
-
-### Screens 2-6: One Question Per Screen
-- Ally's avatar at the top
-- Question text styled as a chat message from Ally
-- Large text input area (multi-line, no character limit displayed but max 500 chars)
-- [Next] button (disabled until user types something)
-- Progress indicator (1/5, 2/5, etc.)
-- Back button to revise previous answers
-
-### Screen 7: Processing
-- Brief loading state: "Ally is thinking about what you shared..."
-- 2-3 second wait (actual API call typically takes 3-5 seconds)
-- Transition to chat interface
-
-### Screen 8: Chat Interface
-- Ally's greeting appears as the first message
-- User can immediately start chatting
-- The onboarding is complete -- there is no separate "profile review" step
-
-### Design Notes for Mobile Team
-- Keep the tone conversational, not form-like
-- No asterisks or "required" labels -- every question is required but shouldn't feel that way
-- Allow users to type as much or as little as they want
-- If a user writes a very short answer (under 10 characters), do not block them but consider showing a gentle prompt: "The more you share, the better Ally can be for you."
-- The processing screen should feel like anticipation, not waiting
-
----
-
-## API Integration Guide for Mobile Team
-
-### 1. Collect Answers
-
-Present the 5 questions sequentially and collect responses as strings.
-
-### 2. Submit Onboarding
-
-```http
-POST /api/v1/onboarding
-Authorization: Bearer <jwt>
+```
+POST /api/v1/onboarding/followup
+Authorization: Bearer <session-cookie>
 Content-Type: application/json
+```
 
+**Request:**
+```json
 {
-  "answers": {
-    "nameAndGreeting": "I'm Sarah, you can call me Sar",
-    "lifeContext": "Product manager at a startup in Austin. I live with my partner Alex and our dog Benny.",
-    "currentFocus": "Trying to get promoted this quarter. Also training for a half marathon in June.",
-    "stressAndSupport": "Work deadlines make me spiral. I usually call my best friend Maya or go for a run.",
-    "allyExpectations": "I want someone to check in on me and hold me accountable for my goals. And just someone to talk to on rough days."
-  }
+  "userName": "Alex",
+  "allyName": "Ally",
+  "conversation": [
+    {
+      "question": "Hey, I'm Ally. Tell me a bit about yourself — where you are in life right now, what takes up your mental energy, whatever feels relevant.",
+      "answer": "I'm a software engineer in SF. Just switched jobs last month and it's been hectic. I run to decompress, training for a half marathon in June."
+    }
+  ],
+  "dynamicRound": 1
 }
 ```
 
-### 3. Handle Response
-
+**Response:**
 ```json
 {
-  "greeting": "Hey Sar! Really glad to meet you. Sounds like you've got an exciting few months ahead -- chasing a promotion AND a half marathon is no joke. I love that you've got Maya and your runs as your go-to pressure valves. I'm here to keep you on track and be another one of those outlets. So tell me -- how's the training going? Are you following a specific plan?",
+  "questions": [
+    {
+      "title": "A half marathon in June — do you have a training plan, or are you building as you go?",
+      "subtitle": "That's exciting!",
+      "type": "multiline",
+      "placeholder": "Tell me about the training..."
+    },
+    {
+      "title": "What made you switch jobs?",
+      "subtitle": "New job + hectic sounds like a lot at once.",
+      "type": "multiline",
+      "placeholder": ""
+    },
+    {
+      "title": "When things get tough, what usually helps you?",
+      "subtitle": "Running sounds like part of it — what else?",
+      "type": "chips",
+      "options": ["Talking to someone", "Time alone", "Exercise", "Music", "Work harder", "Sleep it off"]
+    }
+  ],
+  "summary": "Software engineer who just switched jobs and is training for a June half marathon — that's a lot on your plate. Let me make sure I check in on the right things."
+}
+```
+
+**Notes:**
+- `conversation` is the full exchange so far (all prior questions + answers)
+- `dynamicRound` is always `1` in the current implementation (one followup round)
+- The `summary` field is a warm acknowledgment to show before the completion step — display it to the user
+
+---
+
+### Phase 2: Onboarding Completion
+
+After the user answers the followup questions, send the full conversation to complete onboarding.
+
+```
+POST /api/v1/onboarding/complete
+Authorization: Bearer <session-cookie>
+Content-Type: application/json
+```
+
+**Request:**
+```json
+{
+  "userName": "Alex",
+  "allyName": "Ally",
+  "conversation": [
+    {
+      "question": "Hey, I'm Ally. Tell me a bit about yourself...",
+      "answer": "I'm a software engineer in SF. Just switched jobs last month..."
+    },
+    {
+      "question": "A half marathon in June — do you have a training plan?",
+      "answer": "Following a 16-week plan, currently at week 3. Struggling with the long runs."
+    },
+    {
+      "question": "What made you switch jobs?",
+      "answer": "Burned out at my old place. New job pays better but it's still an adjustment."
+    },
+    {
+      "question": "When things get tough, what usually helps?",
+      "answer": "Running, honestly. And calling my girlfriend Sarah."
+    }
+  ],
+  "dailyPingTime": "09:00",
+  "timezone": "America/Los_Angeles"
+}
+```
+
+**Response:**
+```json
+{
+  "greeting": "Alex — software engineer in SF training for a June half marathon, freshly into a new job, running to keep sane. I already feel like I know you a little. Long runs being the tough part is real — we can keep an eye on how training's going. Welcome.",
   "memoryProfileCreated": true
 }
 ```
 
-### 4. Display Greeting
+**Notes:**
+- `dailyPingTime` is in HH:MM format (24-hour). This sets when Ally sends daily check-ins.
+- `timezone` is an IANA timezone string (e.g., `"America/New_York"`, `"Europe/London"`)
+- On success (HTTP 201), display the greeting as Ally's first message in chat
+- The endpoint creates the memory profile, sets ally name, and configures notification preferences in one step
 
-Show the greeting as Ally's first chat message. The user is now in the main chat experience.
+---
 
-### 5. Error Handling
+## What Gets Extracted
 
-| Status | Meaning                        | Action                                       |
-|--------|--------------------------------|----------------------------------------------|
-| 201    | Success                        | Display greeting, transition to chat          |
-| 401    | Invalid/expired JWT            | Redirect to login                             |
-| 422    | Missing or invalid answers     | Show validation errors, let user fix          |
-| 503    | AI service unavailable         | Show "Ally is taking a moment. Try again soon." and offer retry |
+Claude processes the full conversation and creates:
 
-### 6. Edge Cases
+1. **Structured memory profile** — populated fields in `MemoryProfile`:
+   - `personalInfo` (name, location)
+   - `work` (role, company, stressors, current goals)
+   - `health` (fitness goals, mental health notes)
+   - `relationships` (people mentioned with notes)
+   - `interests` (hobbies, activities)
+   - `goals` (explicit goals, status: "active")
+   - `emotionalPatterns` (stressors, coping mechanisms, sensitivities)
 
-- **User closes app mid-onboarding:** Store answers locally, resume where they left off
-- **User already completed onboarding:** The endpoint returns 409 Conflict. Mobile app should route to chat instead.
-- **Very slow response (>10s):** Show a timeout message and offer retry. The backend has a 30-second timeout on AI calls.
+2. **Dynamic attributes** — foundational character traits Ally picks up from HOW the user writes and WHAT they share. Not stored in fixed fields — stored in `profile.dynamicAttributes`:
+   - Examples: `communication_style`, `relationship_with_work`, `stress_response`
+   - These are injected into every Claude system prompt and used to shape Ally's behavior from day one
+   - Only populated when something clear and foundational emerges — never invented
+
+3. **Ally's first greeting** — personalized to reference specific things the user shared
+
+---
+
+## Mobile App Flow
+
+### Screen 1: Welcome
+- Ally avatar + "Meet Ally — the friend who never forgets"
+- "Let's get to know each other. Just tell me about yourself." [Get Started]
+
+### Screen 2: Seed Question
+- Single open-ended prompt displayed as an Ally message
+- Large multi-line text input
+- [Continue] button (enabled once user types ≥ 10 characters)
+
+### Screen 3: AI Followup Questions
+- Show the AI-generated `summary` as an Ally bubble first
+- Render the 2-3 `questions` from the followup response
+  - `multiline` → large text area
+  - `text` → single-line input
+  - `chips` → multi-select chip group
+  - `choice` → single-select chip group
+- Each question has a title (the question) and a subtitle (a warm comment)
+
+### Screen 4: Time Picker
+- "When should I check in with you each day?"
+- Chip selection (Morning 8am / Mid-morning 9am / Noon / Evening 8pm / Night 10pm)
+
+### Screen 5: Processing
+- "Ally is getting to know you…" loading state
+- Calls `POST /api/v1/onboarding/complete`
+- Transitions to chat on success
+
+### Screen 6: Chat (first message)
+- The `greeting` from the API appears as Ally's first message
+- User can immediately start chatting
+
+---
+
+## Error Handling
+
+| Status | Meaning | Action |
+|--------|---------|--------|
+| 201 | Success | Show greeting, transition to chat |
+| 401 | Not authenticated | Redirect to sign-in |
+| 422 | Missing/invalid body | Show validation error, let user retry |
+| 503 | Claude unavailable | "Ally is taking a moment. Try again." with retry button |
+
+**Edge cases:**
+- User closes mid-onboarding: store answers in AsyncStorage, resume on next open
+- Followup questions fail (503): fall through to time picker step, skip followup
+- Very short answers: allow submission but Claude will generate more general followups
+
+---
+
+## Incremental Memory Updates
+
+The followup endpoint also returns early memory updates from the user's initial answer via the AI-generated `memoryUpdates` field (sent to the backend automatically). This means that by the time `complete` is called, the profile may already have partial data — the completion step does a final full merge.
+
+This is handled transparently in `routes/onboarding.ts` — the mobile team doesn't need to do anything special.

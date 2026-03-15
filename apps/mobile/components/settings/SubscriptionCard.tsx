@@ -2,14 +2,33 @@ import React from "react";
 import { View, Text } from "react-native";
 import { MotiView } from "moti";
 import { Button } from "../ui/Button";
-import { useAppStore } from "../../store/useAppStore";
 
 interface SubscriptionCardProps {
-  plan?: string;
+  tier?: string | null;
+  allyName?: string;
 }
 
-export function SubscriptionCard({ plan = "Free" }: SubscriptionCardProps) {
-  const allyName = useAppStore((s) => s.user.allyName) || "Ally";
+const TIER_LABELS: Record<string, string> = {
+  free_trial: "Free Trial",
+  basic: "Basic",
+  premium: "Premium",
+};
+
+const TIER_DESCRIPTIONS: Record<string, string> = {
+  free_trial: "Full access for 14 days. Upgrade anytime.",
+  basic: "Unlimited chats, daily briefings, full memory.",
+  premium: "All Basic features + weekly insights & proactive check-ins.",
+};
+
+export function SubscriptionCard({
+  tier,
+  allyName = "Ally",
+}: SubscriptionCardProps) {
+  const resolvedTier = tier ?? "free_trial";
+  const label = TIER_LABELS[resolvedTier] ?? resolvedTier;
+  const description =
+    TIER_DESCRIPTIONS[resolvedTier] ?? "Manage your subscription.";
+  const isPremium = resolvedTier === "premium";
 
   return (
     <MotiView
@@ -22,14 +41,14 @@ export function SubscriptionCard({ plan = "Free" }: SubscriptionCardProps) {
           Current Plan
         </Text>
         <Text className="text-foreground text-2xl font-sans-bold mb-1">
-          {allyName} {plan}
+          {allyName} {label}
         </Text>
         <Text className="text-muted text-sm font-sans text-center mb-4">
-          Unlimited chats, daily briefings, memory vault
+          {description}
         </Text>
-        {plan === "Free" && (
+        {!isPremium && (
           <Button
-            title="Upgrade to Pro"
+            title="Upgrade to Premium"
             onPress={() => {}}
             variant="primary"
             size="sm"

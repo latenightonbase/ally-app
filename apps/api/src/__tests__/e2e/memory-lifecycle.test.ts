@@ -8,19 +8,8 @@ import { eq } from "drizzle-orm";
 import { extractMemories } from "../../ai/extraction";
 import { storeExtractedFacts, addFollowups } from "../../services/memory";
 import { loadMemoryProfile, retrieveRelevantFacts } from "../../services/retrieval";
-import { SignJWT } from "jose";
-import { e2eCleanup, e2eSeedUser, E2E_USER_ID } from "./helpers";
-
-const JWT_SECRET = new TextEncoder().encode(process.env.JWT_SECRET!);
-
-async function makeToken() {
-  return new SignJWT({ email: "e2e@ally-test.com", tier: "pro" })
-    .setProtectedHeader({ alg: "HS256" })
-    .setSubject(E2E_USER_ID)
-    .setIssuedAt()
-    .setExpirationTime("1h")
-    .sign(JWT_SECRET);
-}
+import { e2eCleanup, e2eSeedUser, E2E_SESSION_TOKEN, E2E_USER_ID } from "./helpers";
+import { ensureCollection } from "../../services/vectorStore";
 
 function createApp() {
   return new Elysia()
@@ -39,13 +28,13 @@ function createApp() {
 
 describe("Memory Lifecycle (golden path)", () => {
   let app: ReturnType<typeof createApp>;
-  let token: string;
+  const token = E2E_SESSION_TOKEN;
 
   beforeAll(async () => {
     await e2eCleanup();
     await e2eSeedUser();
+    await ensureCollection();
     app = createApp();
-    token = await makeToken();
   });
 
   afterAll(async () => {
@@ -55,20 +44,24 @@ describe("Memory Lifecycle (golden path)", () => {
   it("full loop: onboard -> chat -> extract -> retrieve -> chat with context", async () => {
     // --- Step 1: Onboard ---
     const onboardRes = await app.handle(
-      new Request("http://localhost/api/v1/onboarding", {
+      new Request("http://localhost/api/v1/onboarding/complete", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({
-          answers: {
-            nameAndGreeting: "I'm Alex, call me Al",
-            lifeContext: "Software engineer in SF, living alone, moved from Austin",
-            currentFocus: "Getting promoted and training for a half marathon in June",
-            stressAndSupport: "Deadlines stress me. Running and talking to my friend Maya help. I have imposter syndrome.",
-            allyExpectations: "A friend who remembers things and checks in on me",
-          },
+          userName: "Alex",
+          allyName: "Ally",
+          conversation: [
+            { question: "What's your name?", answer: "I'm Alex, call me Al" },
+            { question: "What's your life like?", answer: "Software engineer in SF, living alone, moved from Austin" },
+            { question: "What are you focused on?", answer: "Getting promoted and training for a half marathon in June" },
+            { question: "What stresses you out?", answer: "Deadlines stress me. Running and talking to my friend Maya help. I have imposter syndrome." },
+            { question: "What do you want from Ally?", answer: "A friend who remembers things and checks in on me" },
+          ],
+          dailyPingTime: "9:00 AM",
+          timezone: "America/Los_Angeles",
         }),
       }),
     );
@@ -82,6 +75,8 @@ describe("Memory Lifecycle (golden path)", () => {
     expect(profile).not.toBeNull();
 
     // --- Step 2: First chat ---
+    // Use statements that generate high-confidence SEMANTIC facts (persistent traits/relationships),
+    // not episodic events. Episodic facts (one-time occurrences) are filtered by storeExtractedFacts.
     const chat1Res = await app.handle(
       new Request("http://localhost/api/v1/chat", {
         method: "POST",
@@ -90,7 +85,7 @@ describe("Memory Lifecycle (golden path)", () => {
           Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({
-          message: "Hey! I just had a really tough on-call shift. A P0 incident at 3am and I couldn't sleep after.",
+          message: "I really love bouldering — I go every weekend at the climbing gym. It's my favourite way to decompress from work stress.",
         }),
       }),
     );
@@ -109,7 +104,7 @@ describe("Memory Lifecycle (golden path)", () => {
           Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({
-          message: "Yeah it was bad. Sam (my manager) was understanding about it at least. I'm thinking of taking Friday off to recover.",
+          message: "My best friend from college is Sam — we've been close for 8 years. She lives in Seattle but we video-call every Sunday.",
           conversationId: convId,
         }),
       }),
@@ -143,17 +138,16 @@ describe("Memory Lifecycle (golden path)", () => {
       await addFollowups(E2E_USER_ID, extractionData.followups);
     }
 
-    // --- Step 5: Verify facts are stored with embeddings ---
+    // --- Step 5: Verify facts are stored ---
     const storedFacts = await db.query.memoryFacts.findMany({
       where: eq(schema.memoryFacts.userId, E2E_USER_ID),
     });
     expect(storedFacts.length).toBeGreaterThan(0);
-    expect(storedFacts.every((f) => f.embedding !== null)).toBe(true);
 
     // --- Step 6: Verify retrieval works against the new facts ---
     const retrieved = await retrieveRelevantFacts({
       userId: E2E_USER_ID,
-      query: "on-call incident and sleep problems",
+      query: "climbing hobbies and close friends",
       limit: 5,
     });
     expect(retrieved.length).toBeGreaterThan(0);
@@ -167,7 +161,7 @@ describe("Memory Lifecycle (golden path)", () => {
           Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({
-          message: "Hey, did you remember what happened to me at work recently?",
+          message: "Do you remember what I told you about my hobbies?",
         }),
       }),
     );
@@ -178,14 +172,13 @@ describe("Memory Lifecycle (golden path)", () => {
 
     const lower = chat3Body.response.toLowerCase();
     const hasContext =
-      lower.includes("on-call") ||
-      lower.includes("incident") ||
-      lower.includes("shift") ||
-      lower.includes("p0") ||
-      lower.includes("sleep") ||
-      lower.includes("3am") ||
+      lower.includes("climb") ||
+      lower.includes("boulder") ||
+      lower.includes("gym") ||
+      lower.includes("hobby") ||
+      lower.includes("weekend") ||
       lower.includes("sam") ||
-      lower.includes("friday");
+      lower.includes("friend");
     expect(hasContext).toBe(true);
   });
 });

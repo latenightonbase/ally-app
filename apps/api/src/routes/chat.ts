@@ -2,16 +2,67 @@ import { Elysia, t } from "elysia";
 import { authMiddleware } from "../middleware/auth";
 import { rateLimitMiddleware } from "../middleware/rateLimit";
 import { db, schema } from "../db";
-import { eq, and, sql } from "drizzle-orm";
+import { eq, and, sql, desc } from "drizzle-orm";
 import { generateReply, generateReplyStreaming } from "../ai/conversation";
 import { AIError } from "../ai/client";
 import {
   retrieveRelevantFacts,
   loadMemoryProfile,
-  touchFacts,
 } from "../services/retrieval";
 import { enqueueExtraction } from "../services/memoryQueue";
 import { resolveSession, buildSessionContext } from "../services/session";
+
+/**
+ * Emit a structured log line for implicit conversation quality signals.
+ * These feed the fine-tuning pipeline: session_depth + response_ms are
+ * revealed-preference signals that don't require user action.
+ * Pipe stdout to a log aggregator (Axiom, Datadog, etc.) to query them.
+ */
+async function logConversationSignal(
+  userId: string,
+  conversationId: string,
+  sessionId: string,
+  sessionCount: number,
+  responseMs: number,
+): Promise<void> {
+  try {
+    const [turnCountResult, lastAllyMsg] = await Promise.all([
+      db
+        .select({ count: sql<number>`count(*)` })
+        .from(schema.messages)
+        .where(eq(schema.messages.sessionId, sessionId)),
+      db.query.messages.findFirst({
+        where: and(
+          eq(schema.messages.sessionId, sessionId),
+          eq(schema.messages.role, "ally"),
+        ),
+        orderBy: [desc(schema.messages.createdAt)],
+        columns: { createdAt: true },
+      }),
+    ]);
+
+    const sessionDepth = Number(turnCountResult[0]?.count ?? 0);
+    const userResponseMs = lastAllyMsg
+      ? Date.now() - lastAllyMsg.createdAt.getTime()
+      : null;
+
+    console.log(
+      JSON.stringify({
+        event: "conversation_signal",
+        userId,
+        conversationId,
+        sessionId,
+        sessionCount,
+        sessionDepth,
+        responseMs,
+        userResponseMs,
+        ts: new Date().toISOString(),
+      }),
+    );
+  } catch {
+    // Signal logging is best-effort — never let it affect the user experience
+  }
+}
 
 async function prepareContext(userId: string, conversationId: string, sessionId: string, message: string) {
   const [profile, relevantFacts, sessionContext] = await Promise.all([
@@ -25,7 +76,13 @@ async function prepareContext(userId: string, conversationId: string, sessionId:
     content: m.content,
   }));
 
-  return { profile, relevantFacts, history, sessionSummaries: sessionContext.sessionSummaries };
+  return {
+    profile,
+    relevantFacts,
+    history,
+    sessionSummaries: sessionContext.sessionSummaries,
+    sessionCount: sessionContext.sessionCount,
+  };
 }
 
 async function ensureConversation(userId: string, message: string, existingId?: string) {
@@ -78,7 +135,7 @@ export const chatRoutes = new Elysia({ prefix: "/api/v1" })
         content: message,
       });
 
-      const { profile, relevantFacts, history, sessionSummaries } = await prepareContext(
+      const { profile, relevantFacts, history, sessionSummaries, sessionCount } = await prepareContext(
         user.id,
         conversationId,
         sessionId,
@@ -94,6 +151,8 @@ export const chatRoutes = new Elysia({ prefix: "/api/v1" })
           : undefined,
       };
 
+      const requestStart = Date.now();
+
       try {
         if (stream) {
           set.headers["content-type"] = "text/event-stream";
@@ -105,7 +164,7 @@ export const chatRoutes = new Elysia({ prefix: "/api/v1" })
             async start(controller) {
               try {
                 const { response } = await generateReplyStreaming(
-                  { message, profile, relevantFacts, conversationHistory: history, sessionSummaries, toolContext },
+                  { message, profile, relevantFacts, conversationHistory: history, sessionSummaries, sessionCount, toolContext },
                   (token) => {
                     controller.enqueue(
                       encoder.encode(`data: ${JSON.stringify({ type: "token", content: token })}\n\n`),
@@ -114,11 +173,9 @@ export const chatRoutes = new Elysia({ prefix: "/api/v1" })
                 );
 
                 const messageId = await saveMessages(conversationId, sessionId, response);
-                touchFacts(relevantFacts.map((f) => f.id)).catch(() => {});
-
-                console.log(`[streaming] Full response generated for user ${user.id}, conv ${conversationId}`);
 
                 enqueueExtraction(user.id, conversationId, message, response);
+                logConversationSignal(user.id, conversationId, sessionId, sessionCount, Date.now() - requestStart);
 
                 controller.enqueue(
                   encoder.encode(
@@ -153,13 +210,14 @@ export const chatRoutes = new Elysia({ prefix: "/api/v1" })
           relevantFacts,
           conversationHistory: history,
           sessionSummaries,
+          sessionCount,
           toolContext,
         });
 
         const messageId = await saveMessages(conversationId, sessionId, response);
-        touchFacts(relevantFacts.map((f) => f.id)).catch(() => {});
 
         enqueueExtraction(user.id, conversationId, message, response);
+        logConversationSignal(user.id, conversationId, sessionId, sessionCount, Date.now() - requestStart);
 
         return { response, conversationId, messageId };
       } catch (e) {

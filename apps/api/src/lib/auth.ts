@@ -1,5 +1,6 @@
 import { betterAuth } from "better-auth";
 import { expo } from "@better-auth/expo";
+import { bearer } from "better-auth/plugins";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { db } from "../db";
 
@@ -12,7 +13,7 @@ export const auth = betterAuth({
   emailAndPassword: {
     enabled: true,
   },
-  plugins: [expo()],
+  plugins: [expo(), bearer()],
   trustedOrigins: [
     "ally-app://",
     ...(process.env.NODE_ENV === "development"

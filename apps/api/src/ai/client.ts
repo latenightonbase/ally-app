@@ -141,6 +141,7 @@ export async function callClaudeStreamingWithTools(options: {
 }): Promise<{ fullText: string; tokensUsed: number }> {
   let messages = [...options.messages];
   let totalTokens = 0;
+  let fullText = "";
   const maxLoops = 5;
 
   for (let i = 0; i < maxLoops; i++) {
@@ -152,8 +153,6 @@ export async function callClaudeStreamingWithTools(options: {
         messages,
         tools: options.tools,
       } as Anthropic.Messages.MessageStreamParams);
-
-      let fullText = "";
 
       stream.on("text", (text) => {
         fullText += text;

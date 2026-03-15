@@ -1,96 +1,82 @@
 import { Elysia, t } from "elysia";
 import { authMiddleware } from "../middleware/auth";
-import { processOnboarding, generateOnboardingFollowups, processOnboardingConversation } from "../ai/onboarding";
+import { generateOnboardingFollowups, processOnboardingConversation } from "../ai/onboarding";
 import { AIError } from "../ai/client";
 import { updateProfile } from "../services/memory";
 import { db, schema } from "../db";
 import { eq } from "drizzle-orm";
-import type { MemoryProfile } from "@ally/shared";
+import type { MemoryProfile, DynamicAttribute, OnboardingQA } from "@ally/shared";
+
+function buildProfile(
+  userId: string,
+  data: Partial<MemoryProfile>,
+  overrides: { userName: string },
+): MemoryProfile {
+  return {
+    userId,
+    version: 2,
+    personalInfo: {
+      preferredName: data.personalInfo?.preferredName ?? overrides.userName,
+      fullName: data.personalInfo?.fullName ?? null,
+      age: data.personalInfo?.age ?? null,
+      birthday: data.personalInfo?.birthday ?? null,
+      location: data.personalInfo?.location ?? null,
+      livingSituation: data.personalInfo?.livingSituation ?? null,
+      other: {},
+    },
+    relationships: data.relationships ?? [],
+    work: {
+      role: data.work?.role ?? null,
+      company: data.work?.company ?? null,
+      companyType: null,
+      currentProjects: [],
+      currentGoals: data.work?.currentGoals ?? [],
+      stressors: data.work?.stressors ?? [],
+      colleagues: [],
+    },
+    health: {
+      fitnessGoals: data.health?.fitnessGoals ?? [],
+      currentRoutine: null,
+      sleepNotes: null,
+      dietNotes: null,
+      mentalHealthNotes: data.health?.mentalHealthNotes ?? null,
+      other: {},
+    },
+    interests: data.interests ?? [],
+    goals: data.goals ?? [],
+    emotionalPatterns: {
+      primaryStressors: data.emotionalPatterns?.primaryStressors ?? [],
+      copingMechanisms: data.emotionalPatterns?.copingMechanisms ?? [],
+      moodTrends: [],
+      recurringThemes: [],
+      sensitivities: data.emotionalPatterns?.sensitivities ?? [],
+    },
+    pendingFollowups: [],
+    dynamicAttributes: normaliseDynamicAttributes(data.dynamicAttributes),
+    updatedAt: new Date().toISOString(),
+  };
+}
+
+function normaliseDynamicAttributes(
+  raw: Record<string, { value: string; confidence: number; learnedAt?: string }> | undefined,
+): Record<string, DynamicAttribute> | undefined {
+  if (!raw || Object.keys(raw).length === 0) return undefined;
+  const now = new Date().toISOString();
+  const result: Record<string, DynamicAttribute> = {};
+  for (const [key, attr] of Object.entries(raw)) {
+    if (attr.confidence >= 0.8 && attr.value) {
+      result[key] = {
+        value: attr.value,
+        confidence: attr.confidence,
+        learnedAt: attr.learnedAt ?? now,
+      };
+    }
+  }
+  return Object.keys(result).length > 0 ? result : undefined;
+}
 
 export const onboardingRoutes = new Elysia({ prefix: "/api/v1" })
   .use(authMiddleware)
-  // Legacy endpoint — kept for backward compatibility
-  .post(
-    "/onboarding",
-    async ({ body, user, set }) => {
-      let data;
-      try {
-        ({ data } = await processOnboarding(body.answers));
-      } catch (e) {
-        if (e instanceof AIError) {
-          set.status = e.statusCode;
-          throw new Error(e.message);
-        }
-        throw e;
-      }
-
-      const profile: MemoryProfile = {
-        userId: user.id,
-        version: 2,
-        personalInfo: {
-          preferredName: data.memoryProfile.personalInfo?.preferredName ?? null,
-          fullName: data.memoryProfile.personalInfo?.fullName ?? null,
-          age: null,
-          birthday: null,
-          location: data.memoryProfile.personalInfo?.location ?? null,
-          livingSituation:
-            data.memoryProfile.personalInfo?.livingSituation ?? null,
-          other: {},
-        },
-        relationships: data.memoryProfile.relationships ?? [],
-        work: {
-          role: data.memoryProfile.work?.role ?? null,
-          company: data.memoryProfile.work?.company ?? null,
-          companyType: null,
-          currentProjects: [],
-          currentGoals: data.memoryProfile.work?.currentGoals ?? [],
-          stressors: data.memoryProfile.work?.stressors ?? [],
-          colleagues: [],
-        },
-        health: {
-          fitnessGoals: [],
-          currentRoutine: null,
-          sleepNotes: null,
-          dietNotes: null,
-          mentalHealthNotes: null,
-          other: {},
-        },
-        interests: [],
-        goals: data.memoryProfile.goals ?? [],
-        emotionalPatterns: {
-          primaryStressors:
-            data.memoryProfile.emotionalPatterns?.primaryStressors ?? [],
-          copingMechanisms:
-            data.memoryProfile.emotionalPatterns?.copingMechanisms ?? [],
-          moodTrends: [],
-          recurringThemes: [],
-          sensitivities: [],
-        },
-        pendingFollowups: [],
-        updatedAt: new Date().toISOString(),
-      };
-
-      await updateProfile(user.id, profile);
-
-      set.status = 201;
-      return {
-        greeting: data.greeting,
-        memoryProfileCreated: true,
-      };
-    },
-    {
-      body: t.Object({
-        answers: t.Object({
-          nameAndGreeting: t.String(),
-          lifeContext: t.String(),
-          currentFocus: t.String(),
-          stressAndSupport: t.String(),
-          allyExpectations: t.String(),
-        }),
-      }),
-    },
-  )
-  // Dynamic onboarding: generate followup questions
   .post(
     "/onboarding/followup",
     async ({ body, user, set }) => {
@@ -98,16 +84,14 @@ export const onboardingRoutes = new Elysia({ prefix: "/api/v1" })
         const { data } = await generateOnboardingFollowups({
           userName: body.userName,
           allyName: body.allyName,
-          conversation: body.conversation,
+          conversation: body.conversation as OnboardingQA[],
           dynamicRound: body.dynamicRound,
         });
 
-        // Incrementally save memory updates if present
         if (data.memoryUpdates && Object.keys(data.memoryUpdates).length > 0) {
           try {
             await updateProfile(user.id, data.memoryUpdates as Partial<MemoryProfile>);
           } catch {
-            // Non-critical — don't fail the request if incremental save fails
             console.warn("[onboarding/followup] Failed to save incremental memory updates");
           }
         }
@@ -138,7 +122,6 @@ export const onboardingRoutes = new Elysia({ prefix: "/api/v1" })
       }),
     },
   )
-  // Dynamic onboarding: finalize and create full memory profile
   .post(
     "/onboarding/complete",
     async ({ body, user, set }) => {
@@ -146,55 +129,14 @@ export const onboardingRoutes = new Elysia({ prefix: "/api/v1" })
         const { data } = await processOnboardingConversation({
           userName: body.userName,
           allyName: body.allyName,
-          conversation: body.conversation,
+          conversation: body.conversation as OnboardingQA[],
         });
 
-        const profile: MemoryProfile = {
-          userId: user.id,
-          version: 2,
-          personalInfo: {
-            preferredName: data.memoryProfile.personalInfo?.preferredName ?? body.userName,
-            fullName: data.memoryProfile.personalInfo?.fullName ?? null,
-            age: null,
-            birthday: null,
-            location: data.memoryProfile.personalInfo?.location ?? null,
-            livingSituation: data.memoryProfile.personalInfo?.livingSituation ?? null,
-            other: {},
-          },
-          relationships: data.memoryProfile.relationships ?? [],
-          work: {
-            role: data.memoryProfile.work?.role ?? null,
-            company: data.memoryProfile.work?.company ?? null,
-            companyType: null,
-            currentProjects: [],
-            currentGoals: data.memoryProfile.work?.currentGoals ?? [],
-            stressors: data.memoryProfile.work?.stressors ?? [],
-            colleagues: [],
-          },
-          health: {
-            fitnessGoals: data.memoryProfile.health?.fitnessGoals ?? [],
-            currentRoutine: null,
-            sleepNotes: null,
-            dietNotes: null,
-            mentalHealthNotes: data.memoryProfile.health?.mentalHealthNotes ?? null,
-            other: {},
-          },
-          interests: data.memoryProfile.interests ?? [],
-          goals: data.memoryProfile.goals ?? [],
-          emotionalPatterns: {
-            primaryStressors: data.memoryProfile.emotionalPatterns?.primaryStressors ?? [],
-            copingMechanisms: data.memoryProfile.emotionalPatterns?.copingMechanisms ?? [],
-            moodTrends: [],
-            recurringThemes: [],
-            sensitivities: data.memoryProfile.emotionalPatterns?.sensitivities ?? [],
-          },
-          pendingFollowups: [],
-          updatedAt: new Date().toISOString(),
-        };
-
+        const profile = buildProfile(user.id, data.memoryProfile, {
+          userName: body.userName,
+        });
         await updateProfile(user.id, profile);
 
-        // Save daily ping preference and ally name on the user record
         await db
           .update(schema.user)
           .set({

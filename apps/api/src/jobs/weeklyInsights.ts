@@ -1,7 +1,8 @@
 import { db, schema } from "../db";
-import { eq, and, gte, desc, sql } from "drizzle-orm";
+import { eq, and, gte } from "drizzle-orm";
 import { callClaudeStructured } from "../ai/client";
 import { loadMemoryProfile } from "../services/retrieval";
+import { sendPushNotification } from "../services/notifications";
 import type { WeeklyInsight } from "@ally/shared";
 
 export async function runWeeklyInsights() {
@@ -9,6 +10,7 @@ export async function runWeeklyInsights() {
 
   const premiumUsers = await db.query.user.findMany({
     where: eq(schema.user.tier, "premium"),
+    columns: { id: true, expoPushToken: true, allyName: true },
   });
 
   const weekAgo = new Date();
@@ -17,6 +19,15 @@ export async function runWeeklyInsights() {
 
   for (const user of premiumUsers) {
     try {
+      const existing = await db.query.weeklyInsights.findFirst({
+        where: and(
+          eq(schema.weeklyInsights.userId, user.id),
+          eq(schema.weeklyInsights.weekOf, weekOf),
+        ),
+        columns: { id: true },
+      });
+      if (existing) continue;
+
       const profile = await loadMemoryProfile(user.id);
       if (!profile) continue;
 
@@ -58,13 +69,29 @@ Return as JSON: { "weekOf": "${weekOf}", "summary": "...", "moodTrend": "improvi
         maxTokens: 1024,
       });
 
-      await db.insert(schema.jobRuns).values({
-        jobName: "weekly_insights",
-        userId: user.id,
-        status: "completed",
-        completedAt: new Date(),
-        metadata: { insight: data },
-      });
+      await db
+        .insert(schema.weeklyInsights)
+        .values({
+          userId: user.id,
+          weekOf: data.weekOf ?? weekOf,
+          summary: data.summary,
+          moodTrend: data.moodTrend,
+          topThemes: data.topThemes ?? [],
+          followUpSuggestions: data.followUpSuggestions ?? [],
+        })
+        .onConflictDoNothing();
+
+      if (user.expoPushToken) {
+        const allyName = user.allyName ?? "Ally";
+        await sendPushNotification(
+          user.expoPushToken,
+          `${allyName} has your weekly reflection`,
+          "Your week in review is ready. Tap to see how your week looked.",
+          { type: "weekly_insight", weekOf },
+        ).catch((err) => {
+          console.warn(`[weekly-insights] Push failed for ${user.id}:`, err);
+        });
+      }
 
       console.log(`[weekly-insights] Generated for user ${user.id}`);
     } catch (err) {

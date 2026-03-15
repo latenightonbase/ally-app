@@ -154,6 +154,8 @@ async function handleRememberFact(
     entities: [],
     emotion: null,
     temporal: false,
+    memoryType: "semantic",
+    eventDate: null,
   };
 
   await storeExtractedFacts(ctx.userId, [fact], ctx.conversationId);

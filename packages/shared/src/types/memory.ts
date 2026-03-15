@@ -7,10 +7,13 @@ export type MemoryCategory =
   | "goals"
   | "emotional_patterns";
 
+export type MemoryType = "semantic" | "episodic" | "event";
+export type EntityType = "person" | "place" | "org" | "topic" | "goal";
 export type GoalStatus = "active" | "completed" | "paused" | "abandoned";
 export type FollowupPriority = "high" | "medium" | "low";
 export type MoodTrend = "improving" | "declining" | "stable" | "mixed";
 export type FactUpdateType = "new" | "update" | "correction";
+export type MemorySourceType = "chat" | "calendar" | "notes" | "health";
 
 export interface Relationship {
   name: string;
@@ -46,6 +49,19 @@ export interface PendingFollowup {
   detectedAt: string;
   resolved: boolean;
   priority: FollowupPriority;
+}
+
+/**
+ * A dynamic attribute is something Ally learned about this specific person
+ * that doesn't fit any fixed category — communication style, relationship with
+ * failure, humor, values, creative identity, etc. These are promoted from
+ * recurring high-confidence cold-tier patterns and injected into every AI call.
+ */
+export interface DynamicAttribute {
+  value: string;
+  confidence: number;
+  learnedAt: string;
+  sourceConversationId?: string;
 }
 
 export interface MemoryProfile {
@@ -88,6 +104,12 @@ export interface MemoryProfile {
     sensitivities: string[];
   };
   pendingFollowups: PendingFollowup[];
+  /**
+   * Open-ended personality/behavioral traits Ally has learned from patterns.
+   * Keys are snake_case descriptors (e.g. "communication_style", "relationship_with_failure").
+   * Populated by consolidation and extraction; injected into every system prompt.
+   */
+  dynamicAttributes?: Record<string, DynamicAttribute>;
   updatedAt: string;
 }
 
@@ -116,4 +138,60 @@ export interface ExtractedFact {
   entities: string[];
   emotion: string | null;
   temporal: boolean;
+  memoryType: MemoryType;
+  eventDate: string | null;
+  supersedes?: string | null;
+}
+
+export interface ExtractedEntity {
+  name: string;
+  type: EntityType;
+  description: string | null;
+  aliases: string[];
+  relatedTo: { name: string; relation: string }[];
+}
+
+export interface MemoryEpisode {
+  id: string;
+  userId: string;
+  content: string;
+  category: MemoryCategory;
+  emotion: string | null;
+  entities: string[];
+  importance: number;
+  confidence: number;
+  expiresAt: string;
+  consolidatedAt: string | null;
+  consolidatedIntoFactId: string | null;
+  sourceConversationId: string | null;
+  sourceType: MemorySourceType;
+  sourceDate: string;
+  createdAt: string;
+}
+
+export interface MemoryEvent {
+  id: string;
+  userId: string;
+  content: string;
+  eventDate: string;
+  context: string | null;
+  notifiedAt: string | null;
+  completedAt: string | null;
+  sourceConversationId: string | null;
+  sourceType: MemorySourceType;
+  createdAt: string;
+}
+
+export interface EntityNode {
+  id: string;
+  userId: string;
+  type: EntityType;
+  name: string;
+  normalizedName: string;
+  description: string | null;
+  aliases: string[];
+  factIds: string[];
+  episodeIds: string[];
+  createdAt: string;
+  updatedAt: string;
 }

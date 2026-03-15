@@ -1,10 +1,15 @@
 import { db, schema } from "../../db";
 import { sql } from "drizzle-orm";
+import { deleteMemoriesForUser } from "../../services/vectorStore";
 import type { MemoryProfile } from "@ally/shared";
 
 export const E2E_USER_ID = "00000000-0000-0000-0000-e2e000000001";
+export const E2E_SESSION_TOKEN = "e2e-test-session-token-fixed-for-testing";
 
 export async function e2eCleanup() {
+  // Delete Qdrant vectors first (no cascade from Postgres)
+  await deleteMemoriesForUser(E2E_USER_ID).catch(() => {});
+
   await db.execute(sql`DELETE FROM job_runs WHERE user_id = ${E2E_USER_ID}`);
   await db.execute(sql`DELETE FROM briefings WHERE user_id = ${E2E_USER_ID}`);
   await db.execute(sql`DELETE FROM memory_facts WHERE user_id = ${E2E_USER_ID}`);
@@ -15,6 +20,7 @@ export async function e2eCleanup() {
     )
   `);
   await db.execute(sql`DELETE FROM conversations WHERE user_id = ${E2E_USER_ID}`);
+  // Deleting the user cascades to the session table
   await db.execute(sql`DELETE FROM "user" WHERE id = ${E2E_USER_ID}`);
 }
 
@@ -25,9 +31,24 @@ export async function e2eSeedUser() {
       id: E2E_USER_ID,
       email: "e2e@ally-test.com",
       name: "E2E Test User",
-      tier: "pro",
+      tier: "premium",
     })
     .onConflictDoNothing();
+
+  // Insert a real Better Auth session so auth middleware (getSession) can validate it.
+  // The auth middleware uses Better Auth's session lookup, not raw JWT verification.
+  await db
+    .insert(schema.session)
+    .values({
+      id: "00000000-e2e0-0000-0000-session000001",
+      token: E2E_SESSION_TOKEN,
+      userId: E2E_USER_ID,
+      expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+      updatedAt: new Date(),
+    })
+    .onConflictDoNothing();
+
+  return { sessionToken: E2E_SESSION_TOKEN };
 }
 
 export function buildE2EProfile(overrides?: Partial<MemoryProfile>): MemoryProfile {

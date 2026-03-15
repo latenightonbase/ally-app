@@ -54,20 +54,50 @@ The collection auto-saves `conversationId` when you send a chat message, so foll
 curl http://localhost:3000/api/v1/health | jq
 ```
 
-### Onboarding
+### Onboarding (Dynamic Flow)
+
+**Step 1 — Generate AI followup questions:**
 
 ```bash
-curl -X POST http://localhost:3000/api/v1/onboarding \
+curl -X POST http://localhost:3000/api/v1/onboarding/followup \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $ALLY_TOKEN" \
   -d '{
-    "answers": {
-      "nameAndGreeting": "I'\''m Alex, call me Al",
-      "lifeContext": "Software engineer at a startup in SF",
-      "currentFocus": "Getting promoted and training for a half marathon",
-      "stressAndSupport": "Deadlines stress me. I cope by running.",
-      "allyExpectations": "A friend who remembers things and checks in"
-    }
+    "userName": "Alex",
+    "allyName": "Ally",
+    "conversation": [
+      {
+        "question": "Hey! I'\''m Ally. Tell me a bit about yourself — where you are in life right now, whatever feels relevant.",
+        "answer": "Software engineer in SF. Just switched jobs, kind of hectic. I run to decompress, training for a half marathon in June."
+      }
+    ],
+    "dynamicRound": 1
+  }' | jq
+```
+
+Save the followup questions and let the user answer them, then:
+
+**Step 2 — Complete onboarding:**
+
+```bash
+curl -X POST http://localhost:3000/api/v1/onboarding/complete \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $ALLY_TOKEN" \
+  -d '{
+    "userName": "Alex",
+    "allyName": "Ally",
+    "conversation": [
+      {
+        "question": "Tell me about yourself...",
+        "answer": "Software engineer in SF. Just switched jobs..."
+      },
+      {
+        "question": "Training plan for the half marathon?",
+        "answer": "16-week plan, week 3. Long runs are tough."
+      }
+    ],
+    "dailyPingTime": "09:00",
+    "timezone": "America/Los_Angeles"
   }' | jq
 ```
 
@@ -183,6 +213,21 @@ curl "http://localhost:3000/api/v1/briefing/history?limit=10" \
 ```bash
 curl http://localhost:3000/api/v1/insights/weekly \
   -H "Authorization: Bearer $ALLY_TOKEN" | jq
+
+# With pagination
+curl "http://localhost:3000/api/v1/insights/weekly?limit=4&offset=0" \
+  -H "Authorization: Bearer $ALLY_TOKEN" | jq
+```
+
+### "You" Screen Profile
+
+```bash
+# Trial/basic tier — personalInfo, relationships, goals, upcoming events
+curl http://localhost:3000/api/v1/profile/you \
+  -H "Authorization: Bearer $ALLY_TOKEN" | jq
+
+# Pro/Premium tier — also includes emotionalPatterns, dynamicAttributes, recentEpisodes, completenessSignal
+# (generate a pro-tier JWT to test the full response)
 ```
 
 ### Webhook (Subscription Update)
@@ -218,12 +263,14 @@ A typical manual testing session:
 1. Start the server: `bun run dev`
 2. Generate a JWT (see above)
 3. Hit health check to verify connectivity
-4. Submit onboarding to create a memory profile
-5. Send a few chat messages (non-streaming)
-6. Try streaming chat with curl
-7. Check memory profile and facts to see what was stored
-8. List conversations to verify history
-9. Continue an existing conversation to test context retention
+4. POST `/onboarding/followup` to get AI-generated questions
+5. POST `/onboarding/complete` to create a memory profile + get greeting
+6. Send a few chat messages (non-streaming)
+7. Try streaming chat with curl
+8. Check memory profile and facts to see what was stored
+9. GET `/profile/you` to verify the You screen data
+10. List conversations to verify history
+11. Continue an existing conversation to test context retention
 
 ---
 
@@ -238,12 +285,13 @@ Start the Expo dev server: `cd apps/mobile && bun run dev`
 - [ ] **Sign out** — settings → Sign Out → confirm; lands on sign-in screen, Zustand state cleared
 
 ### Onboarding Flow
-- [ ] **Fixed questions** — name and ally name inputs accept text and advance correctly
-- [ ] **Seed question** — multiline input works, "Continue" advances to AI followup phase
-- [ ] **Dynamic followup questions** — Claude-generated questions render (text, chips, choice types all display)
-- [ ] **AI followup failure** — kill the API mid-onboarding; screen should gracefully fall through to time picker
+- [ ] **Name + ally name inputs** — accept text and advance correctly to seed question
+- [ ] **Seed question** — multiline input works, "Continue" calls `/api/v1/onboarding/followup` and advances to followup phase
+- [ ] **Dynamic followup questions** — Claude-generated questions render correctly (multiline, text, chips, choice types)
+- [ ] **Followup summary** — warm summary from AI displays before the questions
+- [ ] **AI followup failure (503)** — kill the API mid-onboarding; screen gracefully falls through to time picker
 - [ ] **Time picker** — chip selection sets daily ping time
-- [ ] **Completion** — tapping final "Continue" calls `/api/v1/onboarding/complete`, then navigates to chat
+- [ ] **Completion** — tapping final "Continue" calls `/api/v1/onboarding/complete`, then navigates to chat with Ally's greeting as first message
 
 ### Chat Screen
 - [ ] **Send a message** — message appears in the list, TypingIndicator shows, then ally response streams in token by token
@@ -253,13 +301,22 @@ Start the Expo dev server: `cd apps/mobile && bun run dev`
 - [ ] **Input max length** — can't type beyond 500 characters
 - [ ] **Disabled state** — send button disabled while streaming
 
-### Memory Vault
-- [ ] **Load memories** — switching to Memory tab fetches and groups facts by category
-- [ ] **Empty state** — categories with no facts show the empty state component
-- [ ] **Delete** — tap trash icon → fact removed from list; verify deleted on server via `GET /api/v1/memory/facts`
-- [ ] **Edit** — tap pencil icon → inline text input; change text → tap checkmark → fact updated; verify via `GET /api/v1/memory/facts`
-- [ ] **Edit cancel** — tap X after editing → text reverts to original, no API call made
-- [ ] **Edit error** — simulate a 500 from the patch endpoint; alert shown, local state unchanged
+### "You" Screen
+- [ ] **Load You screen** — switching to You tab calls `GET /api/v1/profile/you` and renders correctly
+- [ ] **Trial/non-pro tier** — personalInfo, relationships, goals, and upcoming events display; pro-locked sections show upgrade prompt
+- [ ] **Pro/Premium tier** — emotionalPatterns, dynamicAttributes, recentEpisodes, completenessSignal all render
+- [ ] **Dynamic attributes** — if profile has dynamicAttributes, they display as "What Ally notices about you"
+- [ ] **Upcoming events** — events within 7 days show in "Coming Up" section
+- [ ] **Completeness signal** — "Ally has a clear picture of X. Y is still fuzzy." renders correctly
+- [ ] **Empty state** — newly onboarded users with minimal data see appropriate empty states per section
+
+### Memory Facts (Advanced)
+- [ ] **Load facts** — `GET /api/v1/memory/facts?limit=20&offset=0` returns facts
+- [ ] **Category filter** — `?category=work` returns only work facts
+- [ ] **Delete** — tap trash icon → fact removed from list; verify deleted on server
+- [ ] **Edit** — update fact content; verify via GET facts
+- [ ] **Superseded facts** — `?includeSuperseeded=true` includes superseded facts with `superseded: true` flag
+- [ ] **Restore** — `PATCH /api/v1/memory/facts/:id/restore` clears supersededBy pointer
 
 ### Settings
 - [ ] **Theme picker** — switching themes changes colors across all screens immediately

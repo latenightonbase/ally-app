@@ -37,6 +37,13 @@ const FIXED_QUESTIONS: DynamicOnboardingQuestion[] = [
     type: "text",
     placeholder: "e.g. Ally, Atlas, Nova...",
   },
+  {
+    title: "When's your birthday?",
+    subtitle: "So I never forget — and can do the math when you mention your age 😄",
+    type: "text",
+    placeholder: "e.g. March 15, 2001",
+    optional: true,
+  },
 ];
 
 // The seed question that kicks off the dynamic phase
@@ -120,6 +127,7 @@ export default function OnboardingScreen() {
   const canContinue = (() => {
     if (!currentStepData) return false;
     if (loading || submitting) return false;
+    if (currentStepData.question.optional) return true;
     switch (currentStepData.question.type) {
       case "chips":
         return currentStepData.selectedOptions.length > 0;
@@ -218,7 +226,7 @@ export default function OnboardingScreen() {
         const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
         const dailyPingTime = steps[currentStep].selectedOptions[0] || "9 AM";
 
-        await completeOnboardingDynamic({
+        const { greeting } = await completeOnboardingDynamic({
           userName,
           allyName,
           conversation,
@@ -226,16 +234,15 @@ export default function OnboardingScreen() {
           timezone,
         });
 
-        completeOnboarding({
-          name: userName,
-          allyName,
-          job: "",
-          challenges: "",
-          interests: [],
-          briefingTime: dailyPingTime,
-          dailyPingTime,
-          timezone,
-        });
+        completeOnboarding(
+          {
+            name: userName,
+            allyName,
+            dailyPingTime,
+            timezone,
+          },
+          greeting,
+        );
         router.replace("/(tabs)");
       } catch {
         Alert.alert("Something went wrong", "Please try again.");
@@ -357,9 +364,9 @@ export default function OnboardingScreen() {
       });
     }
 
-    // For fixed step 1 (ally name), after answering, make sure
+    // For fixed step 2 (birthday), after answering/skipping, make sure
     // the seed question is present
-    if (currentStep === 1) {
+    if (currentStep === 2) {
       setSteps((prev) => {
         if (prev.length <= 2) {
           return [

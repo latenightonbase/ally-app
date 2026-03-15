@@ -1,4 +1,4 @@
-export type Tier = "free_trial" | "basic" | "pro" | "premium";
+export type Tier = "free_trial" | "basic" | "premium";
 
 export interface User {
   id: string;

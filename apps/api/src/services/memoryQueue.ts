@@ -1,33 +1,70 @@
+import { Queue, Worker, type Job, type ConnectionOptions } from "bullmq";
 import { extractMemories } from "../ai/extraction";
 import {
   storeExtractedFacts,
+  storeExtractedEpisodes,
+  storeExtractedEvents,
   addFollowups,
   updateProfile,
+  storeEntities,
+  mergeDynamicAttributes,
 } from "./memory";
 import { loadMemoryProfile } from "./retrieval";
 
-interface PendingExtraction {
+interface ExtractionJobData {
   userId: string;
   conversationId: string;
-  userMessage: string;
-  allyResponse: string;
-  timestamp: number;
+  messages: { userMessage: string; allyResponse: string; timestamp: number }[];
 }
 
-interface UserBatch {
-  items: PendingExtraction[];
-  timer: ReturnType<typeof setTimeout> | null;
-}
-
+const QUEUE_NAME = "memory-extraction";
 const BATCH_SIZE = 4;
 const BATCH_WINDOW_MS = 15_000;
-const MAX_CONCURRENT = 2;
 const MAX_RETRIES = 2;
-const RETRY_BASE_DELAY_MS = 2_000;
 
-let activeExtractions = 0;
-const userBatches = new Map<string, UserBatch>();
-const processingQueue: (() => Promise<void>)[] = [];
+let _connection: ConnectionOptions | null = null;
+let _queue: Queue | null = null;
+let _worker: Worker | null = null;
+
+const pendingBatches = new Map<
+  string,
+  { messages: ExtractionJobData["messages"]; timer: ReturnType<typeof setTimeout> | null }
+>();
+
+function getConnection(): ConnectionOptions {
+  if (!_connection) {
+    // REDIS_URL takes priority (dedicated Redis for BullMQ).
+    // FALKORDB_URL is the graph store — it may not support Lua scripting (EVAL) required by BullMQ.
+    const url = process.env.REDIS_URL ?? process.env.FALKORDB_URL;
+    if (!url) throw new Error("REDIS_URL or FALKORDB_URL env var is required for the memory queue");
+
+    const parsed = new URL(url);
+    const tls = parsed.protocol === "rediss:";
+    _connection = {
+      host: parsed.hostname,
+      port: parsed.port ? parseInt(parsed.port, 10) : tls ? 6380 : 6379,
+      password: parsed.password || undefined,
+      username: parsed.username || undefined,
+      ...(tls ? { tls: {} } : {}),
+    } as ConnectionOptions;
+  }
+  return _connection;
+}
+
+function getQueue(): Queue {
+  if (!_queue) {
+    _queue = new Queue(QUEUE_NAME, {
+      connection: getConnection(),
+      defaultJobOptions: {
+        attempts: MAX_RETRIES + 1,
+        backoff: { type: "exponential", delay: 2000 },
+        removeOnComplete: 100,
+        removeOnFail: 50,
+      },
+    });
+  }
+  return _queue;
+}
 
 function shouldExtract(userMessage: string, allyResponse: string): boolean {
   const combined = `${userMessage} ${allyResponse}`.toLowerCase();
@@ -52,132 +89,153 @@ function shouldExtract(userMessage: string, allyResponse: string): boolean {
   return signalPatterns.some((p) => p.test(combined));
 }
 
+async function flushBatch(userId: string, conversationId: string): Promise<void> {
+  const pending = pendingBatches.get(userId);
+  if (!pending || pending.messages.length === 0) return;
+
+  if (pending.timer) {
+    clearTimeout(pending.timer);
+    pending.timer = null;
+  }
+
+  const messages = [...pending.messages];
+  pending.messages = [];
+
+  const jobData: ExtractionJobData = { userId, conversationId, messages };
+  await getQueue().add("extract", jobData, { jobId: `extract:${userId}:${Date.now()}` });
+}
+
 export function enqueueExtraction(
   userId: string,
   conversationId: string,
   userMessage: string,
   allyResponse: string,
 ): void {
-  if (!shouldExtract(userMessage, allyResponse)) {
-    return;
+  if (!shouldExtract(userMessage, allyResponse)) return;
+
+  let pending = pendingBatches.get(userId);
+  if (!pending) {
+    pending = { messages: [], timer: null };
+    pendingBatches.set(userId, pending);
   }
 
-  const item: PendingExtraction = {
-    userId,
-    conversationId,
-    userMessage,
-    allyResponse,
-    timestamp: Date.now(),
-  };
+  pending.messages.push({ userMessage, allyResponse, timestamp: Date.now() });
 
-  let batch = userBatches.get(userId);
-  if (!batch) {
-    batch = { items: [], timer: null };
-    userBatches.set(userId, batch);
-  }
-
-  batch.items.push(item);
-
-  if (batch.items.length >= BATCH_SIZE) {
-    flushBatch(userId);
-  } else if (!batch.timer) {
-    batch.timer = setTimeout(() => flushBatch(userId), BATCH_WINDOW_MS);
+  if (pending.messages.length >= BATCH_SIZE) {
+    flushBatch(userId, conversationId).catch((err) =>
+      console.error(`[memoryQueue] Failed to flush batch for ${userId}:`, err),
+    );
+  } else if (!pending.timer) {
+    pending.timer = setTimeout(() => {
+      flushBatch(userId, conversationId).catch((err) =>
+        console.error(`[memoryQueue] Timer flush failed for ${userId}:`, err),
+      );
+    }, BATCH_WINDOW_MS);
   }
 }
 
-function flushBatch(userId: string): void {
-  const batch = userBatches.get(userId);
-  if (!batch || batch.items.length === 0) return;
-
-  if (batch.timer) {
-    clearTimeout(batch.timer);
-    batch.timer = null;
+export async function flushAllBatches(): Promise<void> {
+  const flushPromises: Promise<void>[] = [];
+  for (const userId of pendingBatches.keys()) {
+    const pending = pendingBatches.get(userId);
+    if (pending && pending.messages.length > 0) {
+      flushPromises.push(
+        flushBatch(userId, "unknown").catch((err) =>
+          console.error(`[memoryQueue] flushAll failed for ${userId}:`, err),
+        ),
+      );
+    }
   }
-
-  const items = [...batch.items];
-  batch.items = [];
-
-  const task = () => processBatch(userId, items);
-  processingQueue.push(task);
-  drainQueue();
+  await Promise.all(flushPromises);
 }
 
-async function drainQueue(): Promise<void> {
-  while (processingQueue.length > 0 && activeExtractions < MAX_CONCURRENT) {
-    const task = processingQueue.shift();
-    if (!task) break;
+async function processExtractionJob(job: Job<ExtractionJobData>): Promise<void> {
+  const { userId, conversationId, messages } = job.data;
 
-    activeExtractions++;
-    task().finally(() => {
-      activeExtractions--;
-      drainQueue();
-    });
+  const profile = await loadMemoryProfile(userId);
+
+  const formattedMessages = messages.flatMap((m) => [
+    { role: "user" as const, content: m.userMessage, createdAt: new Date(m.timestamp).toISOString() },
+    { role: "ally" as const, content: m.allyResponse, createdAt: new Date(m.timestamp).toISOString() },
+  ]);
+
+  const { data } = await extractMemories({ messages: formattedMessages, existingProfile: profile });
+
+  const storePromises: Promise<void>[] = [];
+
+  const semanticFacts = data.facts.filter((f) => f.memoryType === "semantic");
+  const episodicFacts = data.facts.filter((f) => f.memoryType === "episodic");
+  const eventFacts = data.facts.filter((f) => f.memoryType === "event");
+
+  if (semanticFacts.length > 0) {
+    storePromises.push(storeExtractedFacts(userId, semanticFacts, conversationId));
   }
-}
+  if (episodicFacts.length > 0) {
+    storePromises.push(storeExtractedEpisodes(userId, episodicFacts, conversationId));
+  }
+  if (eventFacts.length > 0) {
+    storePromises.push(storeExtractedEvents(userId, eventFacts, conversationId));
+  }
+  if (data.followups?.length > 0) {
+    storePromises.push(addFollowups(userId, data.followups));
+  }
+  if (data.profileUpdates && Object.keys(data.profileUpdates).length > 0) {
+    storePromises.push(updateProfile(userId, data.profileUpdates));
+  }
 
-async function processBatch(
-  userId: string,
-  items: PendingExtraction[],
-  attempt = 0,
-): Promise<void> {
-  try {
-    const profile = await loadMemoryProfile(userId);
+  await Promise.all(storePromises);
 
-    const messages = items.flatMap((item) => [
-      { role: "user" as const, content: item.userMessage, createdAt: new Date(item.timestamp).toISOString() },
-      { role: "ally" as const, content: item.allyResponse, createdAt: new Date(item.timestamp).toISOString() },
-    ]);
+  if (data.dynamicAttributes && Object.keys(data.dynamicAttributes).length > 0) {
+    await mergeDynamicAttributes(userId, data.dynamicAttributes, conversationId).catch((err) =>
+      console.error(`[memoryQueue] Dynamic attribute merge failed for ${userId}:`, err),
+    );
+  }
 
-    const conversationId = items[items.length - 1].conversationId;
-
-    const { data } = await extractMemories({
-      messages,
-      existingProfile: profile,
-    });
-
-    const storePromises: Promise<void>[] = [];
-
-    if (data.facts.length > 0) {
-      storePromises.push(storeExtractedFacts(userId, data.facts, conversationId));
-    }
-
-    if (data.followups?.length > 0) {
-      storePromises.push(addFollowups(userId, data.followups));
-    }
-
-    if (data.profileUpdates && Object.keys(data.profileUpdates).length > 0) {
-      storePromises.push(updateProfile(userId, data.profileUpdates));
-    }
-
-    await Promise.all(storePromises);
-  } catch (err) {
-    if (attempt < MAX_RETRIES) {
-      const delay = RETRY_BASE_DELAY_MS * Math.pow(2, attempt);
-      await new Promise((r) => setTimeout(r, delay));
-      return processBatch(userId, items, attempt + 1);
-    }
-    console.error(
-      `[memory-queue] Extraction failed for user ${userId} after ${MAX_RETRIES + 1} attempts:`,
-      err instanceof Error ? err.message : err,
+  if (data.entities && data.entities.length > 0) {
+    const allStoredIds = [
+      ...semanticFacts.map((_, i) => `pending-${i}`),
+      ...episodicFacts.map((_, i) => `pending-ep-${i}`),
+    ];
+    await storeEntities(userId, data.entities, allStoredIds).catch((err) =>
+      console.error(`[memoryQueue] Entity storage failed for ${userId}:`, err),
     );
   }
 }
 
-export function flushAllBatches(): void {
-  for (const userId of userBatches.keys()) {
-    flushBatch(userId);
-  }
+/**
+ * Start the BullMQ worker. Call once during server startup.
+ * The worker runs in the same process (sufficient for single-instance);
+ * extract to a separate process for horizontal scaling.
+ */
+export function startMemoryWorker(): Worker {
+  if (_worker) return _worker;
+
+  _worker = new Worker(QUEUE_NAME, processExtractionJob, {
+    connection: getConnection(),
+    concurrency: 2,
+  });
+
+  _worker.on("failed", (job, err) => {
+    console.error(
+      `[memoryQueue] Job ${job?.id} failed after ${job?.attemptsMade} attempts: ${err.message}`,
+    );
+  });
+
+  _worker.on("completed", (job) => {
+    console.log(`[memoryQueue] Job ${job.id} completed for user ${job.data.userId}`);
+  });
+
+  console.log("[memoryQueue] BullMQ worker started");
+  return _worker;
 }
 
 export function getQueueStats() {
   let pendingItems = 0;
-  for (const batch of userBatches.values()) {
-    pendingItems += batch.items.length;
+  for (const batch of pendingBatches.values()) {
+    pendingItems += batch.messages.length;
   }
   return {
     pendingItems,
-    activeExtractions,
-    queuedTasks: processingQueue.length,
-    trackedUsers: userBatches.size,
+    trackedUsers: pendingBatches.size,
   };
 }

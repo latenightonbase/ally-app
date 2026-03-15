@@ -19,6 +19,7 @@ interface ConversationInput {
   relevantFacts: Pick<MemoryFact, "content" | "category">[];
   conversationHistory: Pick<Message, "role" | "content">[];
   sessionSummaries?: string;
+  sessionCount?: number;
   toolContext?: ToolContext;
   modelTier?: ModelTier;
 }
@@ -43,12 +44,15 @@ function buildTools(input: ConversationInput): Anthropic.Messages.Tool[] {
   return tools;
 }
 
-function classifyMessageComplexity(message: string): ModelTier {
+function classifyMessageComplexity(message: string, sessionCount: number = 0): ModelTier {
   const emotionalPatterns = [
     /\b(feel|feeling|felt|sad|happy|angry|anxious|depressed|stressed|overwhelmed|lonely|scared|worried|hurt|frustrated|confused|lost|stuck)\b/i,
     /\b(advice|help me|what should i|how do i deal|cope|struggling|breaking down)\b/i,
     /\b(relationship|breakup|divorce|death|loss|grief|trauma)\b/i,
   ];
+
+  // Deep relationships require nuanced reasoning — always use quality model
+  if (sessionCount >= 20) return "quality";
 
   if (message.length > 200 || emotionalPatterns.some((p) => p.test(message))) {
     return "quality";
@@ -57,7 +61,12 @@ function classifyMessageComplexity(message: string): ModelTier {
 }
 
 function buildCachedSystemPrompt(input: ConversationInput): Anthropic.Messages.TextBlockParam[] {
-  const systemText = buildAllySystemPrompt(input.profile, input.relevantFacts, input.sessionSummaries);
+  const systemText = buildAllySystemPrompt(
+    input.profile,
+    input.relevantFacts,
+    input.sessionSummaries,
+    input.sessionCount ?? 0,
+  );
   return [
     {
       type: "text" as const,
@@ -74,7 +83,7 @@ export async function generateReply(input: ConversationInput): Promise<{
   const system = buildCachedSystemPrompt(input);
   const messages = buildMessages(input);
   const tools = buildTools(input);
-  const modelTier = input.modelTier ?? classifyMessageComplexity(input.message);
+  const modelTier = input.modelTier ?? classifyMessageComplexity(input.message, input.sessionCount ?? 0);
 
   const result = await callClaudeWithTools({
     system,
@@ -97,7 +106,7 @@ export async function generateReplyStreaming(
   const system = buildCachedSystemPrompt(input);
   const messages = buildMessages(input);
   const tools = buildTools(input);
-  const modelTier = input.modelTier ?? classifyMessageComplexity(input.message);
+  const modelTier = input.modelTier ?? classifyMessageComplexity(input.message, input.sessionCount ?? 0);
 
   const result = await callClaudeStreamingWithTools({
     system,

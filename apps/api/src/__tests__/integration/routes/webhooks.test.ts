@@ -27,7 +27,7 @@ describe("POST /api/v1/webhooks/subscription", () => {
   it("updates user tier with valid webhook secret", async () => {
     const res = await request(app, "/api/v1/webhooks/subscription", {
       method: "POST",
-      headers: { "x-webhook-secret": "test-webhook-secret" },
+      headers: { "x-webhook-secret": process.env.WEBHOOK_SECRET ?? "test-webhook-secret" },
       body: webhookBody,
     });
 

@@ -17,7 +17,7 @@ describe("Auth Middleware", () => {
   });
 
   it("passes with a valid token", async () => {
-    const token = await signTestToken({ sub: "user-123", tier: "pro" });
+    const token = await signTestToken({ sub: "user-123", tier: "basic" });
     const res = await app.handle(
       new Request("http://localhost/test", {
         headers: { Authorization: `Bearer ${token}` },
@@ -27,8 +27,9 @@ describe("Auth Middleware", () => {
     expect(res.status).toBe(200);
     const body = (await res.json()) as any;
     expect(body.userId).toBe("user-123");
-    expect(body.tier).toBe("pro");
+    expect(body.tier).toBe("basic");
   });
+
 
   it("returns 401 when no Authorization header", async () => {
     const res = await app.handle(new Request("http://localhost/test"));
