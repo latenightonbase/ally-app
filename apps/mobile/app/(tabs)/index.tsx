@@ -25,6 +25,7 @@ import {
   ApiError,
   type Message,
 } from "../../lib/api";
+import { useSession } from "../../lib/auth";
 
 const CHAT_SUGGESTIONS = [
   "How are you feeling today?",
@@ -176,11 +177,36 @@ export default function ChatScreen() {
 
   const flatListRef = useRef<FlatList>(null);
   const hasHydrated = useRef(false);
+  const previousUserId = useRef<string | null>(null);
   const insets = useSafeAreaInsets();
+  const { data: session } = useSession();
 
   const tabBarHeight =
     64 + Math.max(insets.bottom, Platform.OS === "ios" ? 16 : 12) + 16;
 
+  // Reset hydration guard when the authenticated user changes
+  useEffect(() => {
+    const currentUserId = session?.user?.id ?? null;
+
+    if (!currentUserId) {
+      // Logged out — reset so next login re-fetches
+      hasHydrated.current = false;
+      previousUserId.current = null;
+      return;
+    }
+
+    if (previousUserId.current && previousUserId.current !== currentUserId) {
+      // Different user — force re-hydration
+      hasHydrated.current = false;
+      setMessages([]);
+      setActiveConversationId(null);
+      setIsHydrating(true);
+    }
+
+    previousUserId.current = currentUserId;
+  }, [session]);
+
+  // Hydrate chat from server on mount or after user switch
   useEffect(() => {
     if (hasHydrated.current) return;
     hasHydrated.current = true;
@@ -203,7 +229,7 @@ export default function ChatScreen() {
         setIsHydrating(false);
       }
     })();
-  }, []);
+  }, [session]);
 
   const handleSend = useCallback(
     async (text: string) => {

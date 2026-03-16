@@ -136,3 +136,12 @@ export const useAppStore = create<AppState>()(
     },
   ),
 );
+
+/**
+ * Explicitly remove the persisted Zustand store from AsyncStorage.
+ * Call this on sign-out to guarantee no stale data survives across accounts.
+ * The in-memory Zustand state should also be reset via `resetOnboarding()`.
+ */
+export async function clearPersistedStorage() {
+  await AsyncStorage.removeItem("ally-app-storage");
+}

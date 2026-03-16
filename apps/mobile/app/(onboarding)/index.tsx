@@ -11,11 +11,13 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { AnimatePresence, MotiView } from "moti";
 import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
+import * as Notifications from "expo-notifications";
 import { router } from "expo-router";
 import { ProgressBackground } from "../../components/onboarding/ProgressBackground";
 import { QuestionStep } from "../../components/onboarding/QuestionStep";
 import { useAppStore } from "../../store/useAppStore";
 import { useTheme } from "../../context/ThemeContext";
+import { registerForPushNotificationsAsync } from "../../lib/useNotifications";
 import {
   completeOnboardingDynamic,
   type OnboardingQA,
@@ -85,13 +87,23 @@ const TIME_PICKER_QUESTION: DynamicOnboardingQuestion = {
   options: ["6 AM", "9 AM", "12 PM", "3 PM", "6 PM", "9 PM"],
 };
 
+// Screen 7: Notification permission
+const SCREEN_NOTIFICATIONS: DynamicOnboardingQuestion = {
+  title: "Stay in the loop 🔔",
+  subtitle:
+    "I'll send you reminders, check-ins, and your daily briefing as push notifications.\n\nYou can change this anytime in Settings.",
+  type: "text",
+  placeholder: "",
+};
+
 type ScreenPhase =
   | "intro"
   | "mental-load"
   | "emotional"
   | "relief"
   | "promise"
-  | "time-picker";
+  | "time-picker"
+  | "notifications";
 
 // Phases that auto-advance when a choice is selected
 const AUTO_ADVANCE_PHASES: ScreenPhase[] = [
@@ -115,6 +127,7 @@ const INITIAL_STEPS: StepData[] = [
   { question: SCREEN_RELIEF, answer: "", selectedOptions: [], selectedChoice: "", phase: "relief" },
   { question: SCREEN_PROMISE, answer: "", selectedOptions: [], selectedChoice: "", phase: "promise" },
   { question: TIME_PICKER_QUESTION, answer: "", selectedOptions: [], selectedChoice: "", phase: "time-picker" },
+  { question: SCREEN_NOTIFICATIONS, answer: "", selectedOptions: [], selectedChoice: "", phase: "notifications" },
 ];
 
 export default function OnboardingScreen() {
@@ -128,7 +141,7 @@ export default function OnboardingScreen() {
   const totalSteps = steps.length;
   const progress = (currentStep + 1) / totalSteps;
   const currentStepData = steps[currentStep];
-  const isLastStep = currentStepData?.phase === "time-picker";
+  const isLastStep = currentStepData?.phase === "notifications";
 
   const canContinue = (() => {
     if (!currentStepData) return false;
@@ -144,6 +157,8 @@ export default function OnboardingScreen() {
         return true;
       case "time-picker":
         return currentStepData.selectedOptions.length > 0;
+      case "notifications":
+        return true;
       default:
         return false;
     }
@@ -227,17 +242,25 @@ export default function OnboardingScreen() {
   const handleNext = useCallback(async () => {
     if (!canContinue) return;
 
-    // If this is the time picker step → submit everything
+    // If this is the notifications step → request permission then submit everything
     if (isLastStep) {
       setSubmitting(true);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+
+      // Request push notification permission (non-blocking — user can skip)
+      try {
+        await registerForPushNotificationsAsync();
+      } catch (e) {
+        console.warn("[onboarding] Notification permission request failed:", e);
+      }
 
       try {
         const userName = steps[0].answer.trim();
         const conversation = buildConversation();
         const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+        // Time picker is now at index 5 (0-indexed)
         const dailyPingTime =
-          steps[currentStep].selectedOptions[0] || "9 AM";
+          steps[5].selectedOptions[0] || "9 AM";
 
         const { greeting } = await completeOnboardingDynamic({
           userName,
@@ -283,6 +306,7 @@ export default function OnboardingScreen() {
     if (submitting) return "Setting things up...";
     if (isLastStep) return "Let's go! 🚀";
     if (currentStepData.phase === "promise") return "I'm ready";
+    if (currentStepData.phase === "time-picker") return "Continue";
     return "Continue";
   };
 
@@ -345,7 +369,8 @@ export default function OnboardingScreen() {
               title={currentStepData.question.title}
               subtitle={currentStepData.question.subtitle}
               type={
-                currentStepData.phase === "promise"
+                currentStepData.phase === "promise" ||
+                currentStepData.phase === "notifications"
                   ? "promise"
                   : currentStepData.question.type
               }

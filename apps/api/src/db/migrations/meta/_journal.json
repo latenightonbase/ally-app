@@ -15,6 +15,13 @@
       "when": 1773485382584,
       "tag": "0001_tan_moonstone",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1773647271928,
+      "tag": "0002_nebulous_ricochet",
+      "breakpoints": true
     }
   ]
 }

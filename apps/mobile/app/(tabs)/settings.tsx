@@ -9,13 +9,15 @@ import {
   Pressable,
   KeyboardAvoidingView,
   Platform,
+  Linking,
+  AppState,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { MotiView } from "moti";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import { useTheme } from "../../context/ThemeContext";
-import { useAppStore } from "../../store/useAppStore";
+import { useAppStore, clearPersistedStorage } from "../../store/useAppStore";
 import { ThemePicker } from "../../components/settings/ThemePicker";
 import { SubscriptionCard } from "../../components/settings/SubscriptionCard";
 import { SettingsRow } from "../../components/settings/SettingsRow";
@@ -26,6 +28,7 @@ import {
   updateUserProfile,
   type UserProfileData,
 } from "../../lib/api";
+import * as Notifications from "expo-notifications";
 
 // --- Simple edit modal ---
 
@@ -222,7 +225,53 @@ export default function SettingsScreen() {
   const setUser = useAppStore((s) => s.setUser);
   const setTier = useAppStore((s) => s.setTier);
   const { data: session } = useSession();
-  const [notificationsEnabled, setNotificationsEnabled] = useState(true);
+  const [notificationsEnabled, setNotificationsEnabled] = useState(false);
+
+  // Check real notification permission status on mount and when app returns from settings
+  const checkNotificationPermission = useCallback(async () => {
+    const { status } = await Notifications.getPermissionsAsync();
+    setNotificationsEnabled(status === "granted");
+  }, []);
+
+  useEffect(() => {
+    checkNotificationPermission();
+    const subscription = AppState.addEventListener("change", (nextState) => {
+      if (nextState === "active") {
+        checkNotificationPermission();
+      }
+    });
+    return () => subscription.remove();
+  }, [checkNotificationPermission]);
+
+  const handleToggleNotifications = useCallback(async (value: boolean) => {
+    if (value) {
+      // Try to request permission
+      const { status } = await Notifications.requestPermissionsAsync();
+      if (status === "granted") {
+        setNotificationsEnabled(true);
+      } else {
+        // Permission denied — send user to system settings
+        Alert.alert(
+          "Notifications Disabled",
+          "To enable notifications, open your device Settings and allow notifications for Ally.",
+          [
+            { text: "Cancel", style: "cancel" },
+            { text: "Open Settings", onPress: () => Linking.openSettings() },
+          ],
+        );
+      }
+    } else {
+      // Can't programmatically revoke — send user to system settings
+      Alert.alert(
+        "Disable Notifications",
+        "To turn off notifications, open your device Settings.",
+        [
+          { text: "Cancel", style: "cancel" },
+          { text: "Open Settings", onPress: () => Linking.openSettings() },
+        ],
+      );
+    }
+  }, []);
 
   const [serverProfile, setServerProfile] = useState<UserProfileData | null>(null);
   const [profileLoading, setProfileLoading] = useState(true);
@@ -300,6 +349,7 @@ export default function SettingsScreen() {
         onPress: async () => {
           await authClient.signOut();
           resetOnboarding();
+          await clearPersistedStorage();
           router.replace("/");
         },
       },
@@ -398,7 +448,7 @@ export default function SettingsScreen() {
             label="Morning Briefing"
             isToggle
             toggleValue={notificationsEnabled}
-            onToggle={setNotificationsEnabled}
+            onToggle={handleToggleNotifications}
           />
           <SettingsRow
             icon="time-outline"

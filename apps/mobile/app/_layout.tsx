@@ -8,11 +8,13 @@ import { vars } from "nativewind";
 import { ThemeProvider, useTheme } from "../context/ThemeContext";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { ErrorBoundary } from "../components/ui/ErrorBoundary";
+import { useNotifications } from "../lib/useNotifications";
 
 SplashScreen.preventAutoHideAsync();
 
 function RootNavigation() {
   const { theme } = useTheme();
+  useNotifications();
 
   useEffect(() => {
     SplashScreen.hideAsync();
