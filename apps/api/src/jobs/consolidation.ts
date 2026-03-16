@@ -5,7 +5,7 @@ import { generateEmbeddings, addContextualPrefix } from "../services/embedding";
 import { batchUpsertMemories } from "../services/vectorStore";
 import { mergeDynamicAttributes } from "../services/memory";
 
-const REFLECTION_PROMPT = `You are a memory synthesis system for Ally, a personal AI companion.
+const REFLECTION_PROMPT = `You are a memory synthesis system for Anzi, a personal AI companion.
 
 You will receive a list of recent episodic observations about a user. Your job is to identify
 durable patterns or insights that should be preserved long-term.
@@ -19,11 +19,11 @@ Rules:
 
 Return JSON: { "insights": [{ "content": "...", "category": "personal_info|relationships|work|health|interests|goals|emotional_patterns", "importance": 0.7-0.95 }] }`;
 
-const DYNAMIC_PROMOTION_PROMPT = `You are a personality insight system for Ally, a personal AI companion.
+const DYNAMIC_PROMOTION_PROMPT = `You are a personality insight system for Anzi, a personal AI companion.
 
 You will receive a list of high-importance semantic facts about a user. Your job is to identify
 whether any of them represent foundational character traits, behavioral patterns, or values
-that should become part of Ally's permanent model of this person.
+that should become part of Anzi's permanent model of this person.
 
 A dynamic attribute is something about WHO this person IS — not what happened to them.
 Examples of valid dynamic attributes:

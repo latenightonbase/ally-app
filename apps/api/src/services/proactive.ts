@@ -67,7 +67,7 @@ async function handleInactivity({
   if (user?.expoPushToken) {
     await sendPushNotification(
       user.expoPushToken,
-      user.allyName ?? "Ally",
+      user.allyName ?? "Anzi",
       text,
       { type: "reengagement" },
     ).catch(() => {});

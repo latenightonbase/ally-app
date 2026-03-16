@@ -268,6 +268,51 @@ export const weeklyInsights = pgTable(
   }),
 );
 
+export const reminderStatusEnum = pgEnum("reminder_status", [
+  "pending",
+  "sent",
+  "dismissed",
+]);
+
+export const reminderSourceEnum = pgEnum("reminder_source", [
+  "chat",
+  "extraction",
+  "onboarding",
+  "system",
+]);
+
+export const reminders = pgTable(
+  "reminders",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    conversationId: uuid("conversation_id").references(() => conversations.id, {
+      onDelete: "set null",
+    }),
+    title: text("title").notNull(),
+    body: text("body"),
+    remindAt: timestamp("remind_at", { withTimezone: true }).notNull(),
+    timezone: text("timezone"),
+    source: reminderSourceEnum("source").notNull().default("chat"),
+    status: reminderStatusEnum("status").notNull().default("pending"),
+    notifiedAt: timestamp("notified_at", { withTimezone: true }),
+    dismissedAt: timestamp("dismissed_at", { withTimezone: true }),
+    metadata: jsonb("metadata").$type<Record<string, unknown>>().default({}),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => ({
+    userIdx: index("reminders_user_idx").on(table.userId),
+    pendingIdx: index("reminders_pending_idx").on(table.status, table.remindAt),
+    userPendingIdx: index("reminders_user_pending_idx").on(
+      table.userId,
+      table.status,
+      table.remindAt,
+    ),
+  }),
+);
+
 export const jobRuns = pgTable(
   "job_runs",
   {

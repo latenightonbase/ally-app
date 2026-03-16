@@ -66,7 +66,7 @@ async function closeSession(sessionId: string): Promise<void> {
   }
 
   const conversationText = messages
-    .map((m) => `${m.role === "user" ? "User" : "Ally"}: ${m.content}`)
+    .map((m) => `${m.role === "user" ? "User" : "Anzi"}: ${m.content}`)
     .join("\n");
 
   try {

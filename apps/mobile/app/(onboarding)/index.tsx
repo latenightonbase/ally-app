@@ -1,11 +1,10 @@
-import React, { useState, useCallback, useRef } from "react";
+import React, { useState, useCallback } from "react";
 import {
   View,
   KeyboardAvoidingView,
   Platform,
   Pressable,
   Alert,
-  ActivityIndicator,
   Text,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -18,123 +17,135 @@ import { QuestionStep } from "../../components/onboarding/QuestionStep";
 import { useAppStore } from "../../store/useAppStore";
 import { useTheme } from "../../context/ThemeContext";
 import {
-  getOnboardingFollowups,
   completeOnboardingDynamic,
   type OnboardingQA,
   type DynamicOnboardingQuestion,
 } from "../../lib/api";
 
-// The fixed opening questions
-const FIXED_QUESTIONS: DynamicOnboardingQuestion[] = [
-  {
-    title: "Hey! I'm Ally. What should I call you?",
-    type: "text",
-    placeholder: "Your name",
-  },
-  {
-    title: "Now, what would you like to name your agent? This is your personal companion — make it yours.",
-    subtitle: "You can always call it Ally, or pick something unique!",
-    type: "text",
-    placeholder: "e.g. Ally, Atlas, Nova...",
-  },
-  {
-    title: "When's your birthday?",
-    subtitle: "So I never forget — and can do the math when you mention your age 😄",
-    type: "text",
-    placeholder: "e.g. March 15, 2001",
-    optional: true,
-  },
-];
-
-// The seed question that kicks off the dynamic phase
-const SEED_QUESTION: DynamicOnboardingQuestion = {
-  title: "Tell me a bit about yourself — what do you do, what are you into, what's on your mind lately?",
-  subtitle: "No wrong answers here. Just talk to me like you would a new friend.",
-  type: "multiline",
-  placeholder: "I'm into...",
+// Screen 1: Intro — name input
+const SCREEN_INTRO: DynamicOnboardingQuestion = {
+  title: "Hey! I'm Anzi. What should I call you?",
+  type: "text",
+  placeholder: "Your name",
 };
 
-// The final time-picker question
+// Screen 2: Mental Load — single choice, auto-advance
+const SCREEN_MENTAL_LOAD: DynamicOnboardingQuestion = {
+  title: "What's been taking up the most space in your head lately?",
+  type: "choice",
+  choices: [
+    { label: "Work stuff", value: "work" },
+    { label: "Relationship things", value: "relationships" },
+    { label: "Health & body", value: "health" },
+    { label: "Money & finances", value: "money" },
+    { label: "Family", value: "family" },
+    { label: "Just life in general", value: "life" },
+  ],
+};
+
+// Screen 3: Emotional Check-in — single choice, auto-advance
+const SCREEN_EMOTIONAL: DynamicOnboardingQuestion = {
+  title: "And honestly — how are you holding up?",
+  type: "choice",
+  choices: [
+    { label: "Pretty good actually", value: "good" },
+    { label: "Hanging in there", value: "okay" },
+    { label: "Kinda struggling", value: "struggling" },
+    { label: "Honestly not great", value: "not_great" },
+  ],
+};
+
+// Screen 4: Desired Relief — single choice, auto-advance
+const SCREEN_RELIEF: DynamicOnboardingQuestion = {
+  title: "If I could help with one thing, what would matter most?",
+  type: "choice",
+  choices: [
+    { label: "Someone to vent to", value: "vent" },
+    { label: "Help me stay on top of things", value: "organize" },
+    { label: "Remember the stuff I forget", value: "remember" },
+    { label: "Just check in on me", value: "check_in" },
+  ],
+};
+
+// Screen 5: Promise — no input, just a statement + continue button
+const SCREEN_PROMISE: DynamicOnboardingQuestion = {
+  title: "I won't forget.",
+  subtitle:
+    "Not your appointments. Not your goals. Not the things people say that matter to you.\n\nThat's my whole job.",
+  type: "text",
+  placeholder: "",
+};
+
+// Screen 6: Time picker
 const TIME_PICKER_QUESTION: DynamicOnboardingQuestion = {
   title: "When should I ping you every day?",
-  subtitle: "I'll send you a little check-in at this time. You can always change it later!",
+  subtitle:
+    "I'll send you a little check-in at this time. You can always change it later!",
   type: "chips",
-  options: ["6 AM", "9 AM", "12 PM", "3 PM", "6 PM", "9 PM", "12 AM", "3 AM"],
+  options: ["6 AM", "9 AM", "12 PM", "3 PM", "6 PM", "9 PM"],
 };
 
-// Max number of dynamic AI rounds (after seed question)
-// Only 1 round: seed answer → 1-2 followup questions → time picker
-const MAX_DYNAMIC_ROUNDS = 2;
+type ScreenPhase =
+  | "intro"
+  | "mental-load"
+  | "emotional"
+  | "relief"
+  | "promise"
+  | "time-picker";
+
+// Phases that auto-advance when a choice is selected
+const AUTO_ADVANCE_PHASES: ScreenPhase[] = [
+  "mental-load",
+  "emotional",
+  "relief",
+];
 
 interface StepData {
   question: DynamicOnboardingQuestion;
   answer: string;
   selectedOptions: string[];
   selectedChoice: string;
-  phase: "fixed" | "dynamic" | "time-picker";
+  phase: ScreenPhase;
 }
+
+const INITIAL_STEPS: StepData[] = [
+  { question: SCREEN_INTRO, answer: "", selectedOptions: [], selectedChoice: "", phase: "intro" },
+  { question: SCREEN_MENTAL_LOAD, answer: "", selectedOptions: [], selectedChoice: "", phase: "mental-load" },
+  { question: SCREEN_EMOTIONAL, answer: "", selectedOptions: [], selectedChoice: "", phase: "emotional" },
+  { question: SCREEN_RELIEF, answer: "", selectedOptions: [], selectedChoice: "", phase: "relief" },
+  { question: SCREEN_PROMISE, answer: "", selectedOptions: [], selectedChoice: "", phase: "promise" },
+  { question: TIME_PICKER_QUESTION, answer: "", selectedOptions: [], selectedChoice: "", phase: "time-picker" },
+];
 
 export default function OnboardingScreen() {
   const completeOnboarding = useAppStore((s) => s.completeOnboarding);
   const { theme } = useTheme();
 
-  const [steps, setSteps] = useState<StepData[]>([
-    // Phase 1: Fixed questions
-    ...FIXED_QUESTIONS.map((q) => ({
-      question: q,
-      answer: "",
-      selectedOptions: [],
-      selectedChoice: "",
-      phase: "fixed" as const,
-    })),
-    // Phase 2: Seed question
-    {
-      question: SEED_QUESTION,
-      answer: "",
-      selectedOptions: [],
-      selectedChoice: "",
-      phase: "dynamic" as const,
-    },
-  ]);
-
+  const [steps, setSteps] = useState<StepData[]>(INITIAL_STEPS);
   const [currentStep, setCurrentStep] = useState(0);
-  const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const dynamicRoundRef = useRef(0);
-  const summaryRef = useRef("");
 
-  // Estimate total steps for the progress bar
-  // Fixed(2) + Seed(1) + followups(1-2) + time-picker(1) = ~6
-  const estimatedTotal = Math.max(steps.length, 6);
-  const progress = Math.min((currentStep + 1) / estimatedTotal, 0.95);
-  const isTimePickerStep = steps[currentStep]?.phase === "time-picker";
-  const isLastStep = isTimePickerStep;
-
+  const totalSteps = steps.length;
+  const progress = (currentStep + 1) / totalSteps;
   const currentStepData = steps[currentStep];
-
-  // Get the effective "answer" for the current step based on its type
-  const getCurrentAnswer = useCallback((): string => {
-    if (!currentStepData) return "";
-    if (currentStepData.question.type === "chips") {
-      return currentStepData.selectedOptions.join(", ");
-    }
-    if (currentStepData.question.type === "choice") {
-      return currentStepData.selectedChoice;
-    }
-    return currentStepData.answer;
-  }, [currentStepData]);
+  const isLastStep = currentStepData?.phase === "time-picker";
 
   const canContinue = (() => {
     if (!currentStepData) return false;
-    if (loading || submitting) return false;
-    if (currentStepData.question.optional) return true;
-    switch (currentStepData.question.type) {
-      case "chips":
-        return currentStepData.selectedOptions.length > 0;
-      case "choice":
-        return currentStepData.selectedChoice.length > 0;
-      default:
+    if (submitting) return false;
+    switch (currentStepData.phase) {
+      case "intro":
         return currentStepData.answer.trim().length > 0;
+      case "mental-load":
+      case "emotional":
+      case "relief":
+        return currentStepData.selectedChoice.length > 0;
+      case "promise":
+        return true;
+      case "time-picker":
+        return currentStepData.selectedOptions.length > 0;
+      default:
+        return false;
     }
   })();
 
@@ -154,16 +165,8 @@ export default function OnboardingScreen() {
       setSteps((prev) => {
         const next = [...prev];
         const step = { ...next[currentStep] };
-        if (step.selectedOptions.includes(option)) {
-          step.selectedOptions = step.selectedOptions.filter((o) => o !== option);
-        } else {
-          // For time picker, only allow one selection
-          if (step.phase === "time-picker") {
-            step.selectedOptions = [option];
-          } else {
-            step.selectedOptions = [...step.selectedOptions, option];
-          }
-        }
+        // Time picker: only allow one selection
+        step.selectedOptions = [option];
         next[currentStep] = step;
         return next;
       });
@@ -178,8 +181,19 @@ export default function OnboardingScreen() {
         next[currentStep] = { ...next[currentStep], selectedChoice: value };
         return next;
       });
+
+      // Auto-advance for choice screens after a brief delay
+      if (
+        currentStepData &&
+        AUTO_ADVANCE_PHASES.includes(currentStepData.phase)
+      ) {
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+        setTimeout(() => {
+          setCurrentStep((s) => s + 1);
+        }, 350);
+      }
     },
-    [currentStep],
+    [currentStep, currentStepData],
   );
 
   const goBack = useCallback(() => {
@@ -189,30 +203,29 @@ export default function OnboardingScreen() {
     }
   }, [currentStep]);
 
-  // Build the conversation history from all completed steps (for AI context)
-  const buildConversation = useCallback(
-    (upToStep: number): OnboardingQA[] => {
-      const convo: OnboardingQA[] = [];
-      for (let i = 0; i <= upToStep; i++) {
-        const s = steps[i];
-        if (!s || s.phase === "time-picker") continue;
-        let answer = s.answer;
-        if (s.question.type === "chips") answer = s.selectedOptions.join(", ");
-        if (s.question.type === "choice") answer = s.selectedChoice;
-        if (answer.trim()) {
-          convo.push({ question: s.question.title, answer: answer.trim() });
-        }
+  // Build the conversation history from onboarding answers for the API
+  const buildConversation = useCallback((): OnboardingQA[] => {
+    const convo: OnboardingQA[] = [];
+    for (const s of steps) {
+      if (s.phase === "time-picker" || s.phase === "promise") continue;
+
+      let answer = s.answer;
+      if (s.question.type === "choice") {
+        const choice = s.question.choices?.find(
+          (c) => c.value === s.selectedChoice,
+        );
+        answer = choice?.label ?? s.selectedChoice;
       }
-      return convo;
-    },
-    [steps],
-  );
+
+      if (answer.trim()) {
+        convo.push({ question: s.question.title, answer: answer.trim() });
+      }
+    }
+    return convo;
+  }, [steps]);
 
   const handleNext = useCallback(async () => {
     if (!canContinue) return;
-
-    const answer = getCurrentAnswer();
-    if (!answer.trim()) return;
 
     // If this is the time picker step → submit everything
     if (isLastStep) {
@@ -221,14 +234,14 @@ export default function OnboardingScreen() {
 
       try {
         const userName = steps[0].answer.trim();
-        const allyName = steps[1].answer.trim() || "Ally";
-        const conversation = buildConversation(currentStep);
+        const conversation = buildConversation();
         const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-        const dailyPingTime = steps[currentStep].selectedOptions[0] || "9 AM";
+        const dailyPingTime =
+          steps[currentStep].selectedOptions[0] || "9 AM";
 
         const { greeting } = await completeOnboardingDynamic({
           userName,
-          allyName,
+          allyName: "Anzi",
           conversation,
           dailyPingTime,
           timezone,
@@ -237,7 +250,7 @@ export default function OnboardingScreen() {
         completeOnboarding(
           {
             name: userName,
-            allyName,
+            allyName: "Anzi",
             dailyPingTime,
             timezone,
           },
@@ -253,152 +266,28 @@ export default function OnboardingScreen() {
     }
 
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-
-    // If we're in the dynamic phase and haven't exceeded max rounds,
-    // call Claude for followup questions
-    if (
-      currentStepData.phase === "dynamic" &&
-      dynamicRoundRef.current < MAX_DYNAMIC_ROUNDS
-    ) {
-      setLoading(true);
-      try {
-        const userName = steps[0].answer.trim();
-        const allyName = steps[1].answer.trim() || "Ally";
-        const conversation = buildConversation(currentStep);
-
-        const { questions: rawQuestions, summary } = await getOnboardingFollowups({
-          userName,
-          allyName,
-          conversation,
-          dynamicRound: dynamicRoundRef.current,
-        });
-
-        dynamicRoundRef.current += 1;
-
-        // Store the summary for the time-picker subtitle
-        if (summary) summaryRef.current = summary;
-
-        // Strictly cap at 3 followup questions
-        const questions = rawQuestions.slice(0, 3);
-
-        // Build the time-picker with the personalized summary
-        const timePickerStep: StepData = {
-          question: {
-            ...TIME_PICKER_QUESTION,
-            subtitle: summaryRef.current || TIME_PICKER_QUESTION.subtitle,
-          },
-          answer: "",
-          selectedOptions: [],
-          selectedChoice: "",
-          phase: "time-picker",
-        };
-
-        if (questions.length > 0) {
-          // Insert followup questions + time-picker at the end
-          const newSteps: StepData[] = questions.map((q) => ({
-            question: q,
-            answer: "",
-            selectedOptions: [],
-            selectedChoice: "",
-            phase: "dynamic" as const,
-          }));
-
-          setSteps((prev) => {
-            const next = [...prev];
-            // Remove any existing time-picker
-            const filtered = next.filter((s) => s.phase !== "time-picker");
-            return [...filtered, ...newSteps, timePickerStep];
-          });
-        } else {
-          // No followup questions — go straight to time-picker
-          setSteps((prev) => {
-            const filtered = prev.filter((s) => s.phase !== "time-picker");
-            return [...filtered, timePickerStep];
-          });
-        }
-      } catch (err) {
-        console.warn("Failed to get followup questions, moving to time picker:", err);
-        // On error, just move to time picker
-        setSteps((prev) => {
-          const filtered = prev.filter((s) => s.phase !== "time-picker");
-          return [
-            ...filtered,
-            {
-              question: TIME_PICKER_QUESTION,
-              answer: "",
-              selectedOptions: [],
-              selectedChoice: "",
-              phase: "time-picker",
-            },
-          ];
-        });
-      } finally {
-        setLoading(false);
-      }
-
-      setCurrentStep((s) => s + 1);
-      return;
-    }
-
-    // If this is a fixed step or we've exhausted dynamic rounds,
-    // check if we need to add the time picker before advancing
-    if (
-      currentStepData.phase === "dynamic" &&
-      dynamicRoundRef.current >= MAX_DYNAMIC_ROUNDS
-    ) {
-      setSteps((prev) => {
-        const filtered = prev.filter((s) => s.phase !== "time-picker");
-        return [
-          ...filtered,
-          {
-            question: {
-              ...TIME_PICKER_QUESTION,
-              subtitle: summaryRef.current || TIME_PICKER_QUESTION.subtitle,
-            },
-            answer: "",
-            selectedOptions: [],
-            selectedChoice: "",
-            phase: "time-picker",
-          },
-        ];
-      });
-    }
-
-    // For fixed step 2 (birthday), after answering/skipping, make sure
-    // the seed question is present
-    if (currentStep === 2) {
-      setSteps((prev) => {
-        if (prev.length <= 2) {
-          return [
-            ...prev,
-            {
-              question: SEED_QUESTION,
-              answer: "",
-              selectedOptions: [],
-              selectedChoice: "",
-              phase: "dynamic",
-            },
-          ];
-        }
-        return prev;
-      });
-    }
-
     setCurrentStep((s) => s + 1);
   }, [
     canContinue,
-    getCurrentAnswer,
     isLastStep,
-    currentStepData,
-    currentStep,
     steps,
+    currentStep,
     buildConversation,
     completeOnboarding,
   ]);
 
   if (!currentStepData) return null;
 
-  const totalDots = steps.length;
+  // Determine button title
+  const getButtonTitle = () => {
+    if (submitting) return "Setting things up...";
+    if (isLastStep) return "Let's go! 🚀";
+    if (currentStepData.phase === "promise") return "I'm ready";
+    return "Continue";
+  };
+
+  // Hide button for auto-advance choice screens
+  const showButton = !AUTO_ADVANCE_PHASES.includes(currentStepData.phase);
 
   return (
     <View className="flex-1 bg-background">
@@ -419,7 +308,7 @@ export default function OnboardingScreen() {
           )}
 
           <View className="flex-1 flex-row justify-center items-center gap-1.5">
-            {Array.from({ length: totalDots }).map((_, i) => (
+            {Array.from({ length: totalSteps }).map((_, i) => (
               <MotiView
                 key={i}
                 animate={{
@@ -442,60 +331,42 @@ export default function OnboardingScreen() {
         behavior={Platform.OS === "ios" ? "padding" : "height"}
         className="flex-1"
       >
-        {loading ? (
-          <View className="flex-1 justify-center items-center px-8">
-            <MotiView
-              from={{ opacity: 0, scale: 0.9 }}
-              animate={{ opacity: 1, scale: 1 }}
-              transition={{ type: "timing", duration: 300 }}
-              className="items-center"
-            >
-              <ActivityIndicator
-                size="small"
-                color={theme.preview.primary}
-              />
-              <Text className="text-muted text-base font-sans mt-4">
-                Thinking...
-              </Text>
-            </MotiView>
-          </View>
-        ) : (
-          <AnimatePresence exitBeforeEnter>
-            <MotiView
-              key={`step-${currentStep}`}
-              from={{ opacity: 0, translateY: 10 }}
-              animate={{ opacity: 1, translateY: 0 }}
-              exit={{ opacity: 0, translateY: -8 }}
-              transition={{ type: "timing", duration: 300 }}
-              className="flex-1"
-            >
-              <QuestionStep
-                stepIndex={currentStep}
-                title={currentStepData.question.title}
-                subtitle={currentStepData.question.subtitle}
-                type={currentStepData.question.type}
-                placeholder={currentStepData.question.placeholder ?? "Type your answer..."}
-                value={currentStepData.answer}
-                onChangeText={updateAnswer}
-                options={currentStepData.question.options}
-                selectedOptions={currentStepData.selectedOptions}
-                onToggleOption={toggleOption}
-                choices={currentStepData.question.choices}
-                selectedChoice={currentStepData.selectedChoice}
-                onSelectChoice={selectChoice}
-                canContinue={canContinue}
-                onNext={handleNext}
-                buttonTitle={
-                  submitting
-                    ? "Setting things up..."
-                    : isLastStep
-                      ? "Let's go! 🚀"
-                      : "Continue"
-                }
-              />
-            </MotiView>
-          </AnimatePresence>
-        )}
+        <AnimatePresence exitBeforeEnter>
+          <MotiView
+            key={`step-${currentStep}`}
+            from={{ opacity: 0, translateY: 10 }}
+            animate={{ opacity: 1, translateY: 0 }}
+            exit={{ opacity: 0, translateY: -8 }}
+            transition={{ type: "timing", duration: 300 }}
+            className="flex-1"
+          >
+            <QuestionStep
+              stepIndex={currentStep}
+              title={currentStepData.question.title}
+              subtitle={currentStepData.question.subtitle}
+              type={
+                currentStepData.phase === "promise"
+                  ? "promise"
+                  : currentStepData.question.type
+              }
+              placeholder={
+                currentStepData.question.placeholder ?? "Type your answer..."
+              }
+              value={currentStepData.answer}
+              onChangeText={updateAnswer}
+              options={currentStepData.question.options}
+              selectedOptions={currentStepData.selectedOptions}
+              onToggleOption={toggleOption}
+              choices={currentStepData.question.choices}
+              selectedChoice={currentStepData.selectedChoice}
+              onSelectChoice={selectChoice}
+              canContinue={canContinue}
+              onNext={handleNext}
+              buttonTitle={getButtonTitle()}
+              showButton={showButton}
+            />
+          </MotiView>
+        </AnimatePresence>
       </KeyboardAvoidingView>
     </View>
   );

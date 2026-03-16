@@ -80,6 +80,6 @@ if (process.env.NODE_ENV !== "test") {
     .catch((err) => console.error("[qdrant] Collection bootstrap failed:", err.message));
 }
 
-console.log(`Ally API running at ${app.server?.hostname}:${app.server?.port}`);
+console.log(`Anzi API running at ${app.server?.hostname}:${app.server?.port}`);
 
 export type App = typeof app;

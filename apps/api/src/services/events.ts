@@ -6,6 +6,7 @@ interface EventMap {
   "user:inactive": { userId: string; inactiveDays: number };
   "user:mood_shift": { userId: string; direction: "declining" | "improving" };
   "user:goal_deadline": { userId: string; goalDescription: string };
+  "reminder:due": { userId: string; reminderId: string; title: string };
   "system:daily_scan": Record<string, never>;
 }
 

@@ -7,6 +7,7 @@ import { runMemoryMaintenance } from "./memoryMaintenance";
 import { emit } from "../services/events";
 import { registerProactiveHandlers } from "../services/proactive";
 import { flushAllBatches } from "../services/memoryQueue";
+import { processReminders } from "../services/reminderService";
 
 interface ScheduledJob {
   name: string;
@@ -21,6 +22,13 @@ const jobs: ScheduledJob[] = [
     name: "daily_ping",
     cronExpression: "* * * * *",
     handler: runDailyPing,
+    enabled: true,
+    skipDedup: true,
+  },
+  {
+    name: "check_reminders",
+    cronExpression: "* * * * *",
+    handler: processReminders,
     enabled: true,
     skipDedup: true,
   },

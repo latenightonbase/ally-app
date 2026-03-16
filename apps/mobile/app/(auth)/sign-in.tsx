@@ -72,7 +72,7 @@ export default function SignInScreen() {
                 Welcome back
               </Text>
               <Text className="text-muted text-base font-sans text-center">
-                Sign in to continue to Ally
+                Sign in to continue to Anzi
               </Text>
             </MotiView>
 

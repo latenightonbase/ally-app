@@ -82,7 +82,7 @@ Return as JSON: { "weekOf": "${weekOf}", "summary": "...", "moodTrend": "improvi
         .onConflictDoNothing();
 
       if (user.expoPushToken) {
-        const allyName = user.allyName ?? "Ally";
+        const allyName = user.allyName ?? "Anzi";
         await sendPushNotification(
           user.expoPushToken,
           `${allyName} has your weekly reflection`,

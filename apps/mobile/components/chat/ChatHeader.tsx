@@ -5,7 +5,7 @@ import { Avatar } from "../ui/Avatar";
 import { useAppStore } from "../../store/useAppStore";
 
 export function ChatHeader() {
-  const allyName = useAppStore((s) => s.user.allyName) || "Ally";
+  const allyName = useAppStore((s) => s.user.allyName) || "Anzi";
 
   return (
     <SafeAreaView edges={["top"]} className="bg-background">

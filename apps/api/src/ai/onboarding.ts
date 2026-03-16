@@ -26,11 +26,11 @@ export async function generateOnboardingFollowups(input: {
   dynamicRound: number;
 }): Promise<{ data: FollowupResult; tokensUsed: number }> {
   const conversationText = input.conversation
-    .map((qa) => `[Ally] ${qa.question}\n[${input.userName}] ${qa.answer}`)
+    .map((qa) => `[Anzi] ${qa.question}\n[${input.userName}] ${qa.answer}`)
     .join("\n\n");
 
   const userMessage = `User's name: ${input.userName}
-Ally's name: ${input.allyName}
+Anzi's name: ${input.allyName}
 
 Conversation so far:
 ${conversationText}`;
@@ -49,7 +49,7 @@ export async function processOnboardingConversation(input: {
   conversation: OnboardingQA[];
 }): Promise<{ data: OnboardingResult; tokensUsed: number }> {
   const conversationText = input.conversation
-    .map((qa) => `[Ally] ${qa.question}\n[${input.userName}] ${qa.answer}`)
+    .map((qa) => `[Anzi] ${qa.question}\n[${input.userName}] ${qa.answer}`)
     .join("\n\n");
 
   const userMessage = `The user's name is "${input.userName}" and they named their companion "${input.allyName}".

@@ -8,7 +8,7 @@ interface MemoryEmptyStateProps {
 }
 
 export function MemoryEmptyState({ category }: MemoryEmptyStateProps) {
-  const allyName = useAppStore((s) => s.user.allyName) || "Ally";
+  const allyName = useAppStore((s) => s.user.allyName) || "Anzi";
 
   return (
     <MotiView

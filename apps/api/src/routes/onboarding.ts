@@ -3,6 +3,7 @@ import { authMiddleware } from "../middleware/auth";
 import { generateOnboardingFollowups, processOnboardingConversation } from "../ai/onboarding";
 import { AIError } from "../ai/client";
 import { updateProfile } from "../services/memory";
+import { createReminder } from "../services/reminderService";
 import { db, schema } from "../db";
 import { eq } from "drizzle-orm";
 import type { MemoryProfile, DynamicAttribute, OnboardingQA } from "@ally/shared";
@@ -148,6 +149,41 @@ export const onboardingRoutes = new Elysia({ prefix: "/api/v1" })
           })
           .where(eq(schema.user.id, user.id));
 
+        // Schedule a welcome reminder for the user's first daily ping time
+        try {
+          const welcomeRemindAt = getNextPingTime(body.dailyPingTime, body.timezone);
+          if (welcomeRemindAt) {
+            await createReminder({
+              userId: user.id,
+              title: `${body.allyName} is ready for you`,
+              body: `Hey ${body.userName}! I'm all set up and ready to chat whenever you are. Just wanted to say hi 👋`,
+              remindAt: welcomeRemindAt,
+              timezone: body.timezone,
+              source: "onboarding",
+              metadata: { type: "welcome", allyName: body.allyName },
+            });
+          }
+
+          // If any goals were mentioned during onboarding, create reminders
+          const goals = data.memoryProfile?.goals ?? [];
+          for (const goal of goals.filter((g) => g.status === "active").slice(0, 2)) {
+            const goalRemindAt = new Date(Date.now() + 3 * 86400_000); // 3 days from now
+            goalRemindAt.setHours(10, 0, 0, 0);
+
+            await createReminder({
+              userId: user.id,
+              title: `How's the goal going?`,
+              body: `You mentioned wanting to: ${goal.description}. Just checking in — how's that going?`,
+              remindAt: goalRemindAt,
+              timezone: body.timezone,
+              source: "onboarding",
+              metadata: { type: "goal_followup", goal: goal.description },
+            });
+          }
+        } catch (err) {
+          console.warn("[onboarding/complete] Failed to create welcome reminders:", err);
+        }
+
         set.status = 201;
         return {
           greeting: data.greeting,
@@ -176,3 +212,53 @@ export const onboardingRoutes = new Elysia({ prefix: "/api/v1" })
       }),
     },
   );
+
+/**
+ * Convert a user's preferred ping time (e.g. "9:00 AM") and timezone
+ * into the next occurrence as a UTC Date.
+ */
+function getNextPingTime(dailyPingTime: string, timezone: string): Date | null {
+  try {
+    const match = dailyPingTime.match(/(\d{1,2}):(\d{2})\s*(AM|PM)/i);
+    if (!match) return null;
+
+    let hours = parseInt(match[1]);
+    const minutes = parseInt(match[2]);
+    const period = match[3].toUpperCase();
+
+    if (period === "PM" && hours !== 12) hours += 12;
+    if (period === "AM" && hours === 12) hours = 0;
+
+    // Create a date in the user's timezone for tomorrow at their preferred time
+    const now = new Date();
+    const tomorrow = new Date(now);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+
+    // Format as YYYY-MM-DD in the user's timezone
+    const formatter = new Intl.DateTimeFormat("en-CA", {
+      timeZone: timezone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    });
+    const dateStr = formatter.format(tomorrow);
+
+    // Build an approximate UTC time by offsetting
+    const targetLocal = new Date(`${dateStr}T${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:00`);
+
+    // Approximate the timezone offset
+    const utcFormatter = new Intl.DateTimeFormat("en-US", {
+      timeZone: timezone,
+      hour: "numeric",
+      minute: "numeric",
+      hour12: false,
+    });
+    const localNow = utcFormatter.format(now);
+    const [localH, localM] = localNow.split(":").map(Number);
+    const offsetMs = (localH * 60 + localM - now.getUTCHours() * 60 - now.getUTCMinutes()) * 60_000;
+
+    return new Date(targetLocal.getTime() - offsetMs);
+  } catch {
+    return null;
+  }
+}

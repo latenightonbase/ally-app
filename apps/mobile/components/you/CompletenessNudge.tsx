@@ -10,16 +10,16 @@ interface CompletenessNudgeProps {
 }
 
 const SECTION_PROMPTS: Record<string, string> = {
-  interests: "Tell Ally about your hobbies and interests →",
-  relationships: "Tell Ally about the people in your life →",
-  work: "Tell Ally about your work and career →",
-  health: "Tell Ally about your health and wellness →",
-  emotionalPatterns: "Tell Ally how you've been feeling lately →",
+  interests: "Tell Anzi about your hobbies and interests →",
+  relationships: "Tell Anzi about the people in your life →",
+  work: "Tell Anzi about your work and career →",
+  health: "Tell Anzi about your health and wellness →",
+  emotionalPatterns: "Tell Anzi how you've been feeling lately →",
 };
 
 export function CompletenessNudge({ section }: CompletenessNudgeProps) {
   const { theme } = useTheme();
-  const nudgeText = SECTION_PROMPTS[section] ?? "Share more with Ally →";
+  const nudgeText = SECTION_PROMPTS[section] ?? "Share more with Anzi →";
 
   const handlePress = () => {
     router.push("/(tabs)");

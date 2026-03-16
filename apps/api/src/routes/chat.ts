@@ -11,6 +11,7 @@ import {
 } from "../services/retrieval";
 import { enqueueExtraction } from "../services/memoryQueue";
 import { resolveSession, buildSessionContext } from "../services/session";
+import { getPendingReminders, dismissReminder } from "../services/reminderService";
 
 /**
  * Emit a structured log line for implicit conversation quality signals.
@@ -258,6 +259,25 @@ export const chatRoutes = new Elysia({ prefix: "/api/v1" })
       body: t.Object({
         messageId: t.String(),
         feedback: t.Integer({ minimum: -1, maximum: 1 }),
+      }),
+    },
+  )
+  .get(
+    "/reminders",
+    async ({ user }) => {
+      const reminders = await getPendingReminders(user.id, 20);
+      return { reminders };
+    },
+  )
+  .post(
+    "/reminders/:id/dismiss",
+    async ({ params, user }) => {
+      const success = await dismissReminder(user.id, params.id);
+      return { success };
+    },
+    {
+      params: t.Object({
+        id: t.String(),
       }),
     },
   );

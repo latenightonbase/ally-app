@@ -195,3 +195,33 @@ export interface EntityNode {
   createdAt: string;
   updatedAt: string;
 }
+
+export type ReminderStatus = "pending" | "sent" | "dismissed";
+export type ReminderSource = "chat" | "extraction" | "onboarding" | "system";
+
+export interface Reminder {
+  id: string;
+  userId: string;
+  conversationId: string | null;
+  title: string;
+  body: string | null;
+  remindAt: string;
+  timezone: string | null;
+  source: ReminderSource;
+  status: ReminderStatus;
+  notifiedAt: string | null;
+  dismissedAt: string | null;
+  metadata: Record<string, unknown>;
+  createdAt: string;
+}
+
+export interface CreateReminderInput {
+  userId: string;
+  title: string;
+  body?: string;
+  remindAt: Date | string;
+  timezone?: string;
+  conversationId?: string;
+  source?: ReminderSource;
+  metadata?: Record<string, unknown>;
+}

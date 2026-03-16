@@ -37,7 +37,7 @@ interface AppState {
 
 const INITIAL_USER: UserProfile = {
   name: "",
-  allyName: "Ally",
+  allyName: "Anzi",
   dailyPingTime: "9:00 AM",
   timezone: "",
 };
@@ -52,10 +52,10 @@ export const useAppStore = create<AppState>()(
       messages: [],
 
       completeOnboarding: (user, greeting) => {
-        const allyName = user.allyName || "Ally";
+        const allyName = user.allyName || "Anzi";
         const welcomeText =
           greeting ??
-          `Hey ${user.name}! I'm ${allyName} — so glad we've met. I already feel like I know you a little — and I can't wait to learn more. What's on your mind?`;
+          `Thanks for sharing that with me, ${user.name}. I'm really glad you're here.\n\nBefore we get started — tell me one thing you don't want to forget this week.`;
 
         const welcomeMessage: ChatMessage = {
           id: `msg-welcome-${Date.now()}`,

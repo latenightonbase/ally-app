@@ -74,7 +74,7 @@ export default function YouScreen() {
     });
   }, []);
 
-  const allyName = user.allyName || "Ally";
+  const allyName = user.allyName || "Anzi";
 
   if (loading) {
     return (

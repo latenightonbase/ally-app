@@ -13,7 +13,7 @@ interface QuestionStepProps {
   stepIndex: number;
   title: string;
   subtitle?: string;
-  type: "text" | "multiline" | "chips" | "choice";
+  type: "text" | "multiline" | "chips" | "choice" | "promise";
   placeholder?: string;
 
   // For text/multiline
@@ -33,6 +33,7 @@ interface QuestionStepProps {
   canContinue: boolean;
   onNext: () => void;
   buttonTitle?: string;
+  showButton?: boolean;
 }
 
 export function QuestionStep({
@@ -52,6 +53,7 @@ export function QuestionStep({
   canContinue,
   onNext,
   buttonTitle = "Continue",
+  showButton = true,
 }: QuestionStepProps) {
   const { theme } = useTheme();
   const inputRef = useRef<RNTextInput>(null);
@@ -92,6 +94,8 @@ export function QuestionStep({
           delay: 150,
         }}
       >
+        {type === "promise" && null}
+
         {(type === "text" || type === "multiline") && (
           <RNTextInput
             ref={inputRef}
@@ -158,23 +162,25 @@ export function QuestionStep({
       </MotiView>
 
       {/* Continue button */}
-      <MotiView
-        from={{ opacity: 0, translateY: 10 }}
-        animate={{ opacity: canContinue ? 1 : 0.4, translateY: 0 }}
-        transition={{
-          type: "timing",
-          duration: 400,
-          delay: 300,
-        }}
-        className="mt-12"
-      >
-        <Button
-          title={buttonTitle}
-          onPress={onNext}
-          disabled={!canContinue}
-          size="lg"
-        />
-      </MotiView>
+      {showButton && (
+        <MotiView
+          from={{ opacity: 0, translateY: 10 }}
+          animate={{ opacity: canContinue ? 1 : 0.4, translateY: 0 }}
+          transition={{
+            type: "timing",
+            duration: 400,
+            delay: 300,
+          }}
+          className="mt-12"
+        >
+          <Button
+            title={buttonTitle}
+            onPress={onNext}
+            disabled={!canContinue}
+            size="lg"
+          />
+        </MotiView>
+      )}
     </View>
   );
 }

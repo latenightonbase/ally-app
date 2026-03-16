@@ -10,6 +10,9 @@ import {
   mergeDynamicAttributes,
 } from "./memory";
 import { loadMemoryProfile } from "./retrieval";
+import { createReminder } from "./reminderService";
+import { db, schema } from "../db";
+import { and, eq, gte, lte } from "drizzle-orm";
 
 interface ExtractionJobData {
   userId: string;
@@ -175,6 +178,10 @@ async function processExtractionJob(job: Job<ExtractionJobData>): Promise<void> 
   }
   if (eventFacts.length > 0) {
     storePromises.push(storeExtractedEvents(userId, eventFacts, conversationId));
+    // Also create push-notification reminders for extracted events
+    storePromises.push(
+      createRemindersFromEvents(userId, eventFacts, conversationId),
+    );
   }
   if (data.followups?.length > 0) {
     storePromises.push(addFollowups(userId, data.followups));
@@ -198,6 +205,77 @@ async function processExtractionJob(job: Job<ExtractionJobData>): Promise<void> 
     ];
     await storeEntities(userId, data.entities, allStoredIds).catch((err) =>
       console.error(`[memoryQueue] Entity storage failed for ${userId}:`, err),
+    );
+  }
+}
+
+/**
+ * Create push-notification reminders for extracted future events.
+ * Sets a reminder for the morning of the event day (9:00 AM) so the user
+ * gets a heads-up. For events happening today, remind in 30 minutes.
+ */
+async function createRemindersFromEvents(
+  userId: string,
+  eventFacts: { content: string; eventDate: string | null; confidence: number }[],
+  conversationId: string,
+): Promise<void> {
+  const now = new Date();
+  const DEDUP_WINDOW_MS = 5 * 60_000; // 5 minutes
+
+  for (const fact of eventFacts) {
+    if (!fact.eventDate || fact.confidence < 0.85) continue;
+
+    const eventDate = new Date(fact.eventDate);
+    if (isNaN(eventDate.getTime()) || eventDate <= now) continue;
+
+    // Set reminder for 9:00 AM on the event day, or 30 min from now if same day
+    const reminderDate = new Date(eventDate);
+    reminderDate.setHours(9, 0, 0, 0);
+
+    const remindAt =
+      reminderDate <= now
+        ? new Date(now.getTime() + 30 * 60_000) // same day: 30 min from now
+        : reminderDate;
+
+    // Dedup: skip if a pending reminder already exists for the same user +
+    // conversation with a remind_at within ±5 minutes (e.g. from a chat tool call).
+    try {
+      const existing = await db
+        .select({ id: schema.reminders.id })
+        .from(schema.reminders)
+        .where(
+          and(
+            eq(schema.reminders.userId, userId),
+            eq(schema.reminders.conversationId, conversationId),
+            eq(schema.reminders.status, "pending"),
+            gte(schema.reminders.remindAt, new Date(remindAt.getTime() - DEDUP_WINDOW_MS)),
+            lte(schema.reminders.remindAt, new Date(remindAt.getTime() + DEDUP_WINDOW_MS)),
+          ),
+        )
+        .limit(1);
+
+      if (existing.length > 0) {
+        console.log(
+          `[memoryQueue] Skipping duplicate reminder for user ${userId}: "${fact.content}" ` +
+          `(existing reminder ${existing[0].id} within ±5min window)`,
+        );
+        continue;
+      }
+    } catch (err) {
+      // If dedup check fails, proceed with creation (better to duplicate than miss)
+      console.error(`[memoryQueue] Dedup check failed, proceeding with creation:`, err);
+    }
+
+    await createReminder({
+      userId,
+      title: fact.content,
+      body: `You mentioned this is happening on ${eventDate.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })}`,
+      remindAt,
+      conversationId,
+      source: "extraction",
+      metadata: { eventDate: fact.eventDate, extractedFrom: "conversation" },
+    }).catch((err) =>
+      console.error(`[memoryQueue] Failed to create reminder for event: ${err.message}`),
     );
   }
 }

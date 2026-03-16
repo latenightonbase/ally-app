@@ -22,7 +22,7 @@ const TIER_DESCRIPTIONS: Record<string, string> = {
 
 export function SubscriptionCard({
   tier,
-  allyName = "Ally",
+  allyName = "Anzi",
 }: SubscriptionCardProps) {
   const resolvedTier = tier ?? "free_trial";
   const label = TIER_LABELS[resolvedTier] ?? resolvedTier;

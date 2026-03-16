@@ -307,7 +307,7 @@ export default function SettingsScreen() {
   };
 
   const handleResetOnboarding = () => {
-    const allyNameLabel = user.allyName || "Ally";
+    const allyNameLabel = user.allyName || "Anzi";
     Alert.alert(
       `Reset ${allyNameLabel}`,
       "This will erase all memories and take you back to the beginning. Are you sure?",
@@ -331,7 +331,7 @@ export default function SettingsScreen() {
   };
 
   const handleResetMemories = () => {
-    const allyNameLabel = user.allyName || "Ally";
+    const allyNameLabel = user.allyName || "Anzi";
     Alert.alert(
       "Clear Memories",
       `This will erase all of ${allyNameLabel}'s memories about you. Your chat history will remain. Are you sure?`,
@@ -354,7 +354,7 @@ export default function SettingsScreen() {
 
   const displayName =
     serverProfile?.name ?? session?.user?.name ?? user.name ?? "";
-  const displayAllyName = serverProfile?.allyName ?? user.allyName ?? "Ally";
+  const displayAllyName = serverProfile?.allyName ?? user.allyName ?? "Anzi";
   const displayOccupation = serverProfile?.occupation ?? "";
   const displayPingTime =
     serverProfile?.dailyPingTime
@@ -435,7 +435,7 @@ export default function SettingsScreen() {
           />
           <SettingsRow
             icon="sparkles-outline"
-            label="Ally's Name"
+            label="Anzi's Name"
             value={displayAllyName}
             showChevron
             onPress={() => setEditField("allyName")}
@@ -483,15 +483,15 @@ export default function SettingsScreen() {
         visible={editField === "name"}
         title="Your Name"
         value={displayName}
-        placeholder="What should Ally call you?"
+        placeholder="What should Anzi call you?"
         onSave={(v) => handleEdit("name", v)}
         onClose={() => setEditField(null)}
       />
       <EditModal
         visible={editField === "allyName"}
-        title="Ally's Name"
+        title="Anzi's Name"
         value={displayAllyName}
-        placeholder="e.g. Ally, Atlas, Nova…"
+        placeholder="e.g. Anzi, Atlas, Nova…"
         onSave={(v) => handleEdit("allyName", v)}
         onClose={() => setEditField(null)}
       />

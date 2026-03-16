@@ -21,7 +21,7 @@ export async function extractMemories(input: {
   existingProfile: MemoryProfile | null;
 }): Promise<{ data: ExtractionResult; tokensUsed: number }> {
   const conversationText = input.messages
-    .map((m) => `[${m.role === "user" ? "User" : "Ally"}] ${m.content}`)
+    .map((m) => `[${m.role === "user" ? "User" : "Anzi"}] ${m.content}`)
     .join("\n");
 
   const profileContext = input.existingProfile

@@ -12,7 +12,7 @@ export const user = pgTable("user", {
   email: text("email").notNull().unique(),
   emailVerified: boolean("email_verified").default(false).notNull(),
   image: text("image"),
-  allyName: text("ally_name").default("Ally"),
+  allyName: text("ally_name").default("Anzi"),
   notificationPreferences: jsonb("notification_preferences").$type<NotificationPreferences>(),
   expoPushToken: text("expo_push_token"),
   createdAt: timestamp("created_at").defaultNow().notNull(),

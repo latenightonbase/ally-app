@@ -1,8 +1,9 @@
 import { db, schema } from "../db";
-import { eq, isNotNull, sql, gte, lte, isNull, desc } from "drizzle-orm";
+import { eq, isNotNull, sql, gte, lte, isNull, desc, and } from "drizzle-orm";
 import { loadMemoryProfile } from "../services/retrieval";
 import { callClaude } from "../ai/client";
 import { sendPushNotification } from "../services/notifications";
+import { getPendingReminders } from "../services/reminderService";
 import type { NotificationPreferences } from "../db/auth-schema";
 
 /**
@@ -39,7 +40,7 @@ export async function runDailyPing() {
 
       const profile = await loadMemoryProfile(userRow.id);
       const displayName = profile?.personalInfo.preferredName ?? userRow.name ?? "there";
-      const allyName = userRow.allyName ?? "Ally";
+      const allyName = userRow.allyName ?? "Anzi";
 
       // Build prioritized context: followups → upcoming events → recent session → goals
       const contextParts: string[] = [];
@@ -72,6 +73,20 @@ export async function runDailyPing() {
         contextParts.push(
           `Upcoming events:\n${upcomingEvents
             .map((e) => `- ${e.content} (${e.eventDate.toISOString().split("T")[0]})`)
+            .join("\n")}`,
+        );
+      }
+
+      // Fetch upcoming reminders for additional context
+      const upcomingReminders = await getPendingReminders(userRow.id, 5).catch(() => []);
+      const todayReminders = upcomingReminders.filter((r) => {
+        const remindDate = new Date(r.remindAt);
+        return remindDate.toISOString().split("T")[0] === now.toISOString().split("T")[0];
+      });
+      if (todayReminders.length > 0) {
+        contextParts.push(
+          `Reminders set for today:\n${todayReminders
+            .map((r) => `- ${r.title}${r.body ? `: ${r.body}` : ""}`)
             .join("\n")}`,
         );
       }

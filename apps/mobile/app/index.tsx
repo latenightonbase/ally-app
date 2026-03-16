@@ -25,7 +25,7 @@ export default function Index() {
           completeOnboardingStore(
             {
               name: profile.personalInfo?.preferredName ?? "",
-              allyName: "Ally",
+              allyName: "Anzi",
               dailyPingTime: "09:00",
               timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
             },

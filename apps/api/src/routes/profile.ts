@@ -107,7 +107,7 @@ export const profileRoutes = new Elysia({ prefix: "/api/v1" })
       return {
         name: "",
         email: user.email,
-        allyName: "Ally",
+        allyName: "Anzi",
         dailyPingTime: null,
         timezone: null,
         occupation: null,
@@ -123,7 +123,7 @@ export const profileRoutes = new Elysia({ prefix: "/api/v1" })
     return {
       name: userRow.name,
       email: userRow.email,
-      allyName: userRow.allyName ?? "Ally",
+      allyName: userRow.allyName ?? "Anzi",
       dailyPingTime: userRow.notificationPreferences?.dailyPingTime ?? null,
       timezone: userRow.notificationPreferences?.timezone ?? null,
       occupation: profile?.profile?.work?.role ?? null,
@@ -216,7 +216,7 @@ export const profileRoutes = new Elysia({ prefix: "/api/v1" })
         updated: true,
         name: updatedUser?.name ?? "",
         email: updatedUser?.email ?? user.email,
-        allyName: updatedUser?.allyName ?? "Ally",
+        allyName: updatedUser?.allyName ?? "Anzi",
         dailyPingTime:
           updatedUser?.notificationPreferences?.dailyPingTime ?? null,
         timezone: updatedUser?.notificationPreferences?.timezone ?? null,

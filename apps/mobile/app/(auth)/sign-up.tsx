@@ -95,7 +95,7 @@ export default function SignUpScreen() {
                 Create Account
               </Text>
               <Text className="text-muted text-base font-sans text-center">
-                Join Ally — the friend who never forgets
+                Join Anzi — the friend who never forgets
               </Text>
             </MotiView>
 
