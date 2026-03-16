@@ -109,8 +109,8 @@ export default function YouScreen() {
     <View className="flex-1 bg-background">
       <SafeAreaView edges={["top"]} className="flex-1">
         <ScrollView
-          className="flex-1 px-5 pt-4"
-          contentContainerStyle={{ paddingBottom: 110 }}
+          className="flex-1 px-5 pt-2"
+          contentContainerStyle={{ paddingBottom: 120 }}
           showsVerticalScrollIndicator={false}
           refreshControl={
             <RefreshControl
@@ -120,9 +120,9 @@ export default function YouScreen() {
           }
         >
           <MotiView
-            from={{ opacity: 0, translateY: 8 }}
+            from={{ opacity: 0, translateY: 12 }}
             animate={{ opacity: 1, translateY: 0 }}
-            transition={{ type: "timing", duration: 300 }}
+            transition={{ type: "timing", duration: 400 }}
           >
             {/* Header */}
             <YouHeader
@@ -184,10 +184,7 @@ export default function YouScreen() {
 
             {/* Interests nudge if fuzzy */}
             {completeness.interests === "fuzzy" && (
-              <View className="mb-4">
-                <Text className="text-muted text-xs font-sans-medium uppercase tracking-wider mb-3 px-1">
-                  Interests
-                </Text>
+              <View className="mb-6">
                 <CompletenessNudge section="interests" prompt="" />
               </View>
             )}

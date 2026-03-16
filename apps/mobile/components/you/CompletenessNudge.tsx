@@ -9,17 +9,19 @@ interface CompletenessNudgeProps {
   prompt: string;
 }
 
-const SECTION_PROMPTS: Record<string, string> = {
-  interests: "Tell Anzi about your hobbies and interests →",
-  relationships: "Tell Anzi about the people in your life →",
-  work: "Tell Anzi about your work and career →",
-  health: "Tell Anzi about your health and wellness →",
-  emotionalPatterns: "Tell Anzi how you've been feeling lately →",
+const SECTION_PROMPTS: Record<string, { text: string; icon: keyof typeof Ionicons.glyphMap }> = {
+  interests: { text: "Share your hobbies and interests", icon: "heart-outline" },
+  relationships: { text: "Tell us about the people in your life", icon: "people-outline" },
+  work: { text: "Share what you're working on", icon: "briefcase-outline" },
+  health: { text: "How are you taking care of yourself?", icon: "fitness-outline" },
+  emotionalPatterns: { text: "How have you been feeling lately?", icon: "happy-outline" },
 };
+
+const DEFAULT_PROMPT = { text: "Share a bit more", icon: "chatbubble-outline" as keyof typeof Ionicons.glyphMap };
 
 export function CompletenessNudge({ section }: CompletenessNudgeProps) {
   const { theme } = useTheme();
-  const nudgeText = SECTION_PROMPTS[section] ?? "Share more with Anzi →";
+  const nudge = SECTION_PROMPTS[section] ?? DEFAULT_PROMPT;
 
   const handlePress = () => {
     router.push("/(tabs)");
@@ -28,18 +30,28 @@ export function CompletenessNudge({ section }: CompletenessNudgeProps) {
   return (
     <Pressable
       onPress={handlePress}
-      className="border border-primary-soft rounded-2xl px-4 py-3 mb-3 flex-row items-center gap-3 active:opacity-70"
+      className="bg-primary-soft/50 rounded-2xl px-4 py-4 mb-3 flex-row items-center gap-3.5 active:opacity-70"
     >
-      <View className="w-7 h-7 rounded-xl bg-primary-soft items-center justify-center">
+      <View className="w-9 h-9 rounded-2xl bg-background items-center justify-center">
         <Ionicons
-          name="add"
-          size={16}
+          name={nudge.icon}
+          size={17}
           color={theme.colors["--color-primary"]}
         />
       </View>
-      <Text className="text-primary text-sm font-sans-medium flex-1">
-        {nudgeText}
-      </Text>
+      <View className="flex-1">
+        <Text className="text-primary text-sm font-sans-medium">
+          {nudge.text}
+        </Text>
+        <Text className="text-primary/60 text-xs font-sans mt-0.5">
+          Tap to chat →
+        </Text>
+      </View>
+      <Ionicons
+        name="chevron-forward"
+        size={16}
+        color={theme.colors["--color-primary"]}
+      />
     </Pressable>
   );
 }

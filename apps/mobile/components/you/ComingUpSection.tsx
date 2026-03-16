@@ -36,18 +36,18 @@ export function ComingUpSection({ events }: ComingUpSectionProps) {
   const { theme } = useTheme();
 
   return (
-    <View className="mb-4">
-      <SectionHeader title="Coming Up" />
+    <View className="mb-6">
+      <SectionHeader title="Coming Up" icon="calendar-outline" />
 
       {safeEvents.map((ev) => (
         <View
           key={ev.id}
-          className="bg-surface rounded-2xl px-4 py-3.5 mb-2.5 flex-row items-start gap-3"
+          className="bg-surface rounded-2xl px-4 py-4 mb-3 flex-row items-start gap-3.5"
         >
-          <View className="w-8 h-8 rounded-xl bg-primary-soft items-center justify-center mt-0.5">
+          <View className="w-9 h-9 rounded-2xl bg-primary-soft items-center justify-center mt-0.5">
             <Ionicons
               name="calendar-outline"
-              size={15}
+              size={16}
               color={theme.colors["--color-primary"]}
             />
           </View>
@@ -55,11 +55,18 @@ export function ComingUpSection({ events }: ComingUpSectionProps) {
             <Text className="text-foreground text-sm font-sans leading-relaxed">
               {ev.content}
             </Text>
-            <Text className="text-primary text-xs font-sans-medium mt-1">
-              {formatEventDate(ev.eventDate)}
-            </Text>
+            <View className="flex-row items-center gap-1.5 mt-1.5">
+              <Ionicons
+                name="time-outline"
+                size={12}
+                color={theme.colors["--color-primary"]}
+              />
+              <Text className="text-primary text-xs font-sans-medium">
+                {formatEventDate(ev.eventDate)}
+              </Text>
+            </View>
             {ev.context && (
-              <Text className="text-muted text-xs font-sans mt-0.5">
+              <Text className="text-muted text-xs font-sans mt-1 leading-relaxed">
                 {ev.context}
               </Text>
             )}

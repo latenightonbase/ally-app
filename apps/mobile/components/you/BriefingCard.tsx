@@ -16,14 +16,16 @@ export function BriefingCard({ content, date }: BriefingCardProps) {
   const preview = content.slice(0, 120) + (content.length > 120 ? "…" : "");
 
   return (
-    <View className="bg-primary-soft rounded-3xl p-5 mb-5">
-      <View className="flex-row items-center justify-between mb-2">
-        <View className="flex-row items-center gap-2">
-          <Ionicons
-            name="sunny-outline"
-            size={16}
-            color={theme.colors["--color-primary"]}
-          />
+    <View className="bg-primary-soft rounded-3xl p-6 mb-8">
+      <View className="flex-row items-center justify-between mb-3">
+        <View className="flex-row items-center gap-2.5">
+          <View className="w-8 h-8 rounded-full bg-background items-center justify-center">
+            <Ionicons
+              name="sunny-outline"
+              size={17}
+              color={theme.colors["--color-primary"]}
+            />
+          </View>
           <Text className="text-primary text-xs font-sans-semibold uppercase tracking-wider">
             Today's Briefing
           </Text>
@@ -31,18 +33,23 @@ export function BriefingCard({ content, date }: BriefingCardProps) {
         <Text className="text-muted text-xs font-sans">{date}</Text>
       </View>
 
-      <Text className="text-foreground text-sm font-sans leading-relaxed">
+      <Text className="text-foreground text-sm font-sans leading-relaxed pl-0.5">
         {expanded ? content : preview}
       </Text>
 
       {content.length > 120 && (
         <Pressable
           onPress={() => setExpanded((e) => !e)}
-          className="mt-2 active:opacity-70"
+          className="mt-3 flex-row items-center gap-1 active:opacity-70"
         >
           <Text className="text-primary text-xs font-sans-semibold">
             {expanded ? "Show less" : "Read more"}
           </Text>
+          <Ionicons
+            name={expanded ? "chevron-up" : "chevron-down"}
+            size={12}
+            color={theme.colors["--color-primary"]}
+          />
         </Pressable>
       )}
     </View>

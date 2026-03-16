@@ -62,54 +62,65 @@ export function RecentStorySection({
   );
 
   return (
-    <View className="mb-4">
-      <SectionHeader title="Recent Story" />
+    <View className="mb-6">
+      <SectionHeader title="Recent Story" icon="book-outline" />
 
-      {safeEpisodes.map((ep, i) => (
-        <Pressable
-          key={ep.id}
-          onLongPress={() => handleLongPress(ep)}
-          delayLongPress={400}
-          className="active:opacity-80"
-        >
-          <View className="flex-row gap-3 mb-3">
-            {/* Timeline line */}
-            <View className="items-center" style={{ width: 20 }}>
-              <View
-                className="w-2.5 h-2.5 rounded-full mt-1"
-                style={{ backgroundColor: theme.colors["--color-primary"] }}
-              />
-              {i < safeEpisodes.length - 1 && (
+      <View className="bg-surface rounded-2xl px-4 py-4">
+        {safeEpisodes.map((ep, i) => (
+          <Pressable
+            key={ep.id}
+            onLongPress={() => handleLongPress(ep)}
+            delayLongPress={400}
+            className="active:opacity-80"
+          >
+            <View className="flex-row gap-3.5 mb-1">
+              {/* Timeline line */}
+              <View className="items-center" style={{ width: 22 }}>
                 <View
-                  className="flex-1 w-px mt-1"
+                  className="w-3 h-3 rounded-full mt-1"
                   style={{
-                    backgroundColor: theme.colors["--color-primary"] + "30",
-                    minHeight: 16,
+                    backgroundColor: theme.colors["--color-primary"] + "40",
+                    borderWidth: 2,
+                    borderColor: theme.colors["--color-primary"],
                   }}
                 />
-              )}
-            </View>
-
-            <View className="flex-1 pb-1">
-              <Text className="text-foreground text-sm font-sans leading-relaxed">
-                {ep.content}
-              </Text>
-              <View className="flex-row items-center gap-2 mt-1">
-                <Text className="text-muted text-xs font-sans">
-                  {formatRelativeDate(ep.date)}
-                </Text>
-                {ep.emotion && (
-                  <View className="bg-primary-soft px-1.5 py-0.5 rounded-full">
-                    <Text className="text-primary text-xs font-sans capitalize">
-                      {ep.emotion}
-                    </Text>
-                  </View>
+                {i < safeEpisodes.length - 1 && (
+                  <View
+                    className="flex-1 w-px mt-1"
+                    style={{
+                      backgroundColor: theme.colors["--color-primary"] + "20",
+                      minHeight: 20,
+                    }}
+                  />
                 )}
               </View>
+
+              <View className="flex-1 pb-3">
+                <Text className="text-foreground text-sm font-sans leading-relaxed">
+                  {ep.content}
+                </Text>
+                <View className="flex-row items-center gap-2 mt-1.5">
+                  <Ionicons
+                    name="time-outline"
+                    size={11}
+                    color={theme.colors["--color-muted"]}
+                  />
+                  <Text className="text-muted text-xs font-sans">
+                    {formatRelativeDate(ep.date)}
+                  </Text>
+                  {ep.emotion && (
+                    <View className="bg-primary-soft px-2 py-0.5 rounded-full">
+                      <Text className="text-primary text-xs font-sans capitalize">
+                        {ep.emotion}
+                      </Text>
+                    </View>
+                  )}
+                </View>
+              </View>
             </View>
-          </View>
-        </Pressable>
-      ))}
+          </Pressable>
+        ))}
+      </View>
     </View>
   );
 }
