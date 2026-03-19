@@ -16,7 +16,7 @@ import { and, eq, gte, lte } from "drizzle-orm";
 
 interface ExtractionJobData {
   userId: string;
-  conversationId: string;
+  conversationId: string | null;
   messages: { userMessage: string; allyResponse: string; timestamp: number }[];
 }
 
@@ -31,7 +31,7 @@ let _worker: Worker | null = null;
 
 const pendingBatches = new Map<
   string,
-  { messages: ExtractionJobData["messages"]; timer: ReturnType<typeof setTimeout> | null }
+  { messages: ExtractionJobData["messages"]; conversationId: string | null; timer: ReturnType<typeof setTimeout> | null }
 >();
 
 function getConnection(): ConnectionOptions {
@@ -92,7 +92,7 @@ function shouldExtract(userMessage: string, allyResponse: string): boolean {
   return signalPatterns.some((p) => p.test(combined));
 }
 
-async function flushBatch(userId: string, conversationId: string): Promise<void> {
+async function flushBatch(userId: string, conversationId: string | null): Promise<void> {
   const pending = pendingBatches.get(userId);
   if (!pending || pending.messages.length === 0) return;
 
@@ -104,7 +104,9 @@ async function flushBatch(userId: string, conversationId: string): Promise<void>
   const messages = [...pending.messages];
   pending.messages = [];
 
-  const jobData: ExtractionJobData = { userId, conversationId, messages };
+  // Use the provided conversationId, fall back to the batch's stored one
+  const resolvedConversationId = conversationId ?? pending.conversationId ?? null;
+  const jobData: ExtractionJobData = { userId, conversationId: resolvedConversationId, messages };
   await getQueue().add("extract", jobData, { jobId: `extract:${userId}:${Date.now()}` });
 }
 
@@ -118,8 +120,11 @@ export function enqueueExtraction(
 
   let pending = pendingBatches.get(userId);
   if (!pending) {
-    pending = { messages: [], timer: null };
+    pending = { messages: [], conversationId, timer: null };
     pendingBatches.set(userId, pending);
+  } else {
+    // Always keep the most recent conversationId
+    pending.conversationId = conversationId;
   }
 
   pending.messages.push({ userMessage, allyResponse, timestamp: Date.now() });
@@ -143,7 +148,7 @@ export async function flushAllBatches(): Promise<void> {
     const pending = pendingBatches.get(userId);
     if (pending && pending.messages.length > 0) {
       flushPromises.push(
-        flushBatch(userId, "unknown").catch((err) =>
+        flushBatch(userId, pending.conversationId ?? null).catch((err) =>
           console.error(`[memoryQueue] flushAll failed for ${userId}:`, err),
         ),
       );
@@ -193,7 +198,7 @@ async function processExtractionJob(job: Job<ExtractionJobData>): Promise<void> 
   await Promise.all(storePromises);
 
   if (data.dynamicAttributes && Object.keys(data.dynamicAttributes).length > 0) {
-    await mergeDynamicAttributes(userId, data.dynamicAttributes, conversationId).catch((err) =>
+    await mergeDynamicAttributes(userId, data.dynamicAttributes, conversationId ?? undefined).catch((err) =>
       console.error(`[memoryQueue] Dynamic attribute merge failed for ${userId}:`, err),
     );
   }
@@ -217,7 +222,7 @@ async function processExtractionJob(job: Job<ExtractionJobData>): Promise<void> 
 async function createRemindersFromEvents(
   userId: string,
   eventFacts: { content: string; eventDate: string | null; confidence: number }[],
-  conversationId: string,
+  conversationId: string | null,
 ): Promise<void> {
   const now = new Date();
   const DEDUP_WINDOW_MS = 5 * 60_000; // 5 minutes
@@ -240,18 +245,20 @@ async function createRemindersFromEvents(
     // Dedup: skip if a pending reminder already exists for the same user +
     // conversation with a remind_at within ±5 minutes (e.g. from a chat tool call).
     try {
+      const conditions = [
+        eq(schema.reminders.userId, userId),
+        eq(schema.reminders.status, "pending"),
+        gte(schema.reminders.remindAt, new Date(remindAt.getTime() - DEDUP_WINDOW_MS)),
+        lte(schema.reminders.remindAt, new Date(remindAt.getTime() + DEDUP_WINDOW_MS)),
+      ];
+      if (conversationId) {
+        conditions.push(eq(schema.reminders.conversationId, conversationId));
+      }
+
       const existing = await db
         .select({ id: schema.reminders.id })
         .from(schema.reminders)
-        .where(
-          and(
-            eq(schema.reminders.userId, userId),
-            eq(schema.reminders.conversationId, conversationId),
-            eq(schema.reminders.status, "pending"),
-            gte(schema.reminders.remindAt, new Date(remindAt.getTime() - DEDUP_WINDOW_MS)),
-            lte(schema.reminders.remindAt, new Date(remindAt.getTime() + DEDUP_WINDOW_MS)),
-          ),
-        )
+        .where(and(...conditions))
         .limit(1);
 
       if (existing.length > 0) {
@@ -271,7 +278,7 @@ async function createRemindersFromEvents(
       title: fact.content,
       body: `You mentioned this is happening on ${eventDate.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })}`,
       remindAt,
-      conversationId,
+      conversationId: conversationId ?? undefined,
       source: "extraction",
       metadata: { eventDate: fact.eventDate, extractedFrom: "conversation" },
     }).catch((err) =>
