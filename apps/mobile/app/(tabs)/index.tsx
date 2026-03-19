@@ -8,6 +8,7 @@ import {
   Pressable,
   ActivityIndicator,
   Animated,
+  AppState,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -22,6 +23,7 @@ import {
   sendMessageFeedback,
   getConversations,
   getConversationMessages,
+  getConversationStatus,
   ApiError,
   type Message,
 } from "../../lib/api";
@@ -230,6 +232,70 @@ export default function ChatScreen() {
       }
     })();
   }, [session]);
+
+  // Lightweight poll for server-side messages (reminders, daily pings, etc.)
+  // Checks a cheap status endpoint every 30s; only fetches full messages when
+  // the conversation has been updated since we last checked.
+  const lastSeenAtRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    const POLL_INTERVAL_MS = 30_000;
+
+    const poll = async () => {
+      const convId = useAppStore.getState().activeConversationId;
+      if (!convId) return;
+      // Don't poll while the user is actively sending / receiving a stream
+      if (isStreaming || isTyping) return;
+
+      try {
+        // Cheap call — returns just { messageCount, lastMessageAt }
+        const status = await getConversationStatus(convId);
+
+        // Only do a full fetch when the conversation has new activity
+        if (lastSeenAtRef.current && status.lastMessageAt !== lastSeenAtRef.current) {
+          const { messages: serverMessages } = await getConversationMessages(
+            convId,
+            50,
+          );
+          const prevCount = useAppStore.getState().messages.length;
+          setMessages(serverMessages.map(toLocalMessage));
+          if (serverMessages.length > prevCount) {
+            setTimeout(() => {
+              flatListRef.current?.scrollToEnd({ animated: true });
+            }, 100);
+          }
+        }
+
+        // Always track the latest timestamp we've seen
+        lastSeenAtRef.current = status.lastMessageAt;
+      } catch {
+        // Polling is best-effort — don't disturb the user on failure
+      }
+    };
+
+    // Seed the ref immediately so the first real poll can detect changes
+    const seed = async () => {
+      const convId = useAppStore.getState().activeConversationId;
+      if (!convId) return;
+      try {
+        const status = await getConversationStatus(convId);
+        lastSeenAtRef.current = status.lastMessageAt;
+      } catch {}
+    };
+    seed();
+
+    const interval = setInterval(poll, POLL_INTERVAL_MS);
+
+    // Also check when the app comes back to the foreground
+    const subscription = AppState.addEventListener("change", (state) => {
+      if (state === "active") poll();
+    });
+
+    return () => {
+      clearInterval(interval);
+      subscription.remove();
+    };
+  }, [isStreaming, isTyping]);
 
   const handleSend = useCallback(
     async (text: string) => {

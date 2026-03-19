@@ -103,4 +103,31 @@ export const conversationRoutes = new Elysia({ prefix: "/api/v1" })
         before: t.Optional(t.String()),
       }),
     },
+  )
+  .get(
+    "/conversations/:conversationId/status",
+    async ({ params, user, set }) => {
+      const conv = await db.query.conversations.findFirst({
+        where: and(
+          eq(schema.conversations.id, params.conversationId),
+          eq(schema.conversations.userId, user.id),
+        ),
+        columns: { messageCount: true, lastMessageAt: true },
+      });
+
+      if (!conv) {
+        set.status = 404;
+        return { error: { code: "NOT_FOUND", message: "Conversation not found", status: 404 } };
+      }
+
+      return {
+        messageCount: conv.messageCount,
+        lastMessageAt: conv.lastMessageAt.toISOString(),
+      };
+    },
+    {
+      params: t.Object({
+        conversationId: t.String(),
+      }),
+    },
   );

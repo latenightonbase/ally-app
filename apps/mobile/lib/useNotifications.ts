@@ -1,10 +1,11 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { Platform } from "react-native";
 import * as Device from "expo-device";
 import * as Notifications from "expo-notifications";
 import Constants from "expo-constants";
-import { registerPushToken } from "./api";
+import { registerPushToken, getConversationMessages } from "./api";
 import { useSession } from "./auth";
+import { useAppStore, type ChatMessage } from "../store/useAppStore";
 
 // ---------------------------------------------------------------------------
 // Foreground notification handler — show banner + sound even when app is open
@@ -93,6 +94,38 @@ export function useNotifications() {
   const responseListener = useRef<Notifications.EventSubscription>(null);
   const tokenSentRef = useRef(false);
 
+  /**
+   * When a reminder notification arrives, refresh the chat messages so the
+   * user sees the in-conversation reminder message immediately.
+   */
+  const refreshChatFromNotification = useCallback(
+    async (data: Record<string, unknown>) => {
+      if (data?.type !== "reminder") return;
+
+      const convId =
+        (data.conversationId as string) ??
+        useAppStore.getState().activeConversationId;
+      if (!convId) return;
+
+      try {
+        const { messages: serverMessages } = await getConversationMessages(
+          convId,
+          50,
+        );
+        const localMessages: ChatMessage[] = serverMessages.map((m) => ({
+          id: m.id,
+          text: m.content,
+          isUser: m.role === "user",
+          timestamp: new Date(m.createdAt),
+        }));
+        useAppStore.getState().setMessages(localMessages);
+      } catch {
+        // Best-effort — user will see the message next time they open the chat
+      }
+    },
+    [],
+  );
+
   // Register push token with backend once the user is authenticated
   useEffect(() => {
     if (!session?.user || tokenSentRef.current) return;
@@ -122,6 +155,10 @@ export function useNotifications() {
     notificationListener.current =
       Notifications.addNotificationReceivedListener((n) => {
         setNotification(n);
+
+        // Refresh chat messages if this is a reminder notification
+        const data = n.request.content.data;
+        if (data) refreshChatFromNotification(data);
       });
 
     // Listen for user tapping a notification
@@ -129,14 +166,16 @@ export function useNotifications() {
       Notifications.addNotificationResponseReceivedListener((response) => {
         const data = response.notification.request.content.data;
         console.log("[notifications] User tapped notification:", data);
-        // Future: deep-link to conversation based on data.conversationId
+
+        // Refresh chat messages when the user taps a reminder notification
+        if (data) refreshChatFromNotification(data);
       });
 
     return () => {
       notificationListener.current?.remove();
       responseListener.current?.remove();
     };
-  }, []);
+  }, [refreshChatFromNotification]);
 
   return { expoPushToken, notification };
 }

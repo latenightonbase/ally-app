@@ -285,6 +285,12 @@ export async function getConversationMessages(
   return apiRequest(`/api/v1/conversations/${conversationId}?${params}`);
 }
 
+export async function getConversationStatus(
+  conversationId: string,
+): Promise<{ messageCount: number; lastMessageAt: string }> {
+  return apiRequest(`/api/v1/conversations/${conversationId}/status`);
+}
+
 // --- Memory ---
 
 /** Subset of MemoryFact returned by the list endpoint (no embedding or userId). */

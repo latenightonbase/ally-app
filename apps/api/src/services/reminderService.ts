@@ -1,6 +1,7 @@
 import { db, schema } from "../db";
 import { eq, and, lte, sql } from "drizzle-orm";
 import { sendPushNotification } from "./notifications";
+import { resolveSession } from "./session";
 import type { CreateReminderInput } from "@ally/shared";
 
 /**
@@ -59,7 +60,49 @@ export async function processReminders(): Promise<void> {
 
   for (const reminder of dueReminders) {
     try {
-      // Look up user's push token and ally name
+      // Insert the in-conversation message FIRST — this is the reliable
+      // delivery path and must succeed even if push notifications fail.
+      if (reminder.conversationId) {
+        const messageText = reminder.body
+          ? `hey, reminder: ${reminder.title} — ${reminder.body}`
+          : `hey, reminder: ${reminder.title}`;
+
+        // Resolve or create a session so the message appears in active chat
+        const sessionId = await resolveSession(
+          reminder.userId,
+          reminder.conversationId,
+        );
+
+        await db.insert(schema.messages).values({
+          conversationId: reminder.conversationId,
+          sessionId,
+          role: "ally",
+          content: messageText,
+        });
+
+        // Update conversation's lastMessageAt and messageCount
+        const countResult = await db
+          .select({ count: sql<number>`count(*)` })
+          .from(schema.messages)
+          .where(eq(schema.messages.conversationId, reminder.conversationId));
+
+        await db
+          .update(schema.conversations)
+          .set({
+            lastMessageAt: new Date(),
+            messageCount: Number(countResult[0].count),
+          })
+          .where(eq(schema.conversations.id, reminder.conversationId));
+      }
+
+      // Mark as sent (chat message is already delivered at this point)
+      await db
+        .update(schema.reminders)
+        .set({ status: "sent", notifiedAt: new Date() })
+        .where(eq(schema.reminders.id, reminder.id));
+
+      // Attempt push notification as a best-effort bonus — failures here
+      // don't affect the reminder status since the chat message is already in.
       const userRow = await db.query.user.findFirst({
         where: eq(schema.user.id, reminder.userId),
         columns: { expoPushToken: true, allyName: true },
@@ -79,32 +122,11 @@ export async function processReminders(): Promise<void> {
             conversationId: reminder.conversationId,
           },
         );
+      } else {
+        console.warn(
+          `[reminders] No push token for user ${reminder.userId} — skipping push notification`,
+        );
       }
-
-      // Also insert an in-conversation message so the user sees it in chat
-      if (reminder.conversationId) {
-        const messageText = reminder.body
-          ? `hey, reminder: ${reminder.title} — ${reminder.body}`
-          : `hey, reminder: ${reminder.title}`;
-
-        await db.insert(schema.messages).values({
-          conversationId: reminder.conversationId,
-          role: "ally",
-          content: messageText,
-        });
-
-        // Update conversation's lastMessageAt
-        await db
-          .update(schema.conversations)
-          .set({ lastMessageAt: new Date() })
-          .where(eq(schema.conversations.id, reminder.conversationId));
-      }
-
-      // Mark as sent
-      await db
-        .update(schema.reminders)
-        .set({ status: "sent", notifiedAt: new Date() })
-        .where(eq(schema.reminders.id, reminder.id));
 
       console.log(`[reminders] Sent reminder ${reminder.id} to user ${reminder.userId}`);
     } catch (err) {
