@@ -31,6 +31,28 @@ export async function createReminder(input: CreateReminderInput): Promise<string
   return row.id;
 }
 
+const ROTATE_CLOSINGS = ["just a nudge", "didn't want this to sneak up on you", "I've got you"];
+let rotateIndex = 0;
+
+function formatWarmReminder(event: string, userName: string | null): string {
+  const lower = event.toLowerCase();
+
+  let closing: string;
+  if (/interview|presentation|exam|pitch/.test(lower)) {
+    closing = "you've got this";
+  } else if (/call|meeting|email|text/.test(lower)) {
+    closing = "just didn't want you to forget";
+  } else if (/doctor|dentist|appointment|checkup/.test(lower)) {
+    closing = "I've got you";
+  } else {
+    closing = ROTATE_CLOSINGS[rotateIndex % ROTATE_CLOSINGS.length];
+    rotateIndex++;
+  }
+
+  const greeting = userName ? `hey ${userName}` : "hey";
+  return `${greeting} — ${event}. ${closing}.`;
+}
+
 /**
  * Find all pending reminders whose remind_at has passed and send push notifications.
  * Called every minute by the scheduler.
@@ -60,13 +82,18 @@ export async function processReminders(): Promise<void> {
 
   for (const reminder of dueReminders) {
     try {
+      // Fetch user info early — needed for both chat message and push
+      const userRow = await db.query.user.findFirst({
+        where: eq(schema.user.id, reminder.userId),
+        columns: { name: true, expoPushToken: true, allyName: true },
+      });
+
+      const userName = userRow?.name ?? null;
+      const messageText = formatWarmReminder(reminder.title, userName);
+
       // Insert the in-conversation message FIRST — this is the reliable
       // delivery path and must succeed even if push notifications fail.
       if (reminder.conversationId) {
-        const messageText = reminder.body
-          ? `hey, reminder: ${reminder.title} — ${reminder.body}`
-          : `hey, reminder: ${reminder.title}`;
-
         // Resolve or create a session so the message appears in active chat
         const sessionId = await resolveSession(
           reminder.userId,
@@ -103,19 +130,13 @@ export async function processReminders(): Promise<void> {
 
       // Attempt push notification as a best-effort bonus — failures here
       // don't affect the reminder status since the chat message is already in.
-      const userRow = await db.query.user.findFirst({
-        where: eq(schema.user.id, reminder.userId),
-        columns: { expoPushToken: true, allyName: true },
-      });
-
       if (userRow?.expoPushToken) {
         const allyName = userRow.allyName ?? "Anzi";
-        const notificationBody = reminder.body ?? reminder.title;
 
         await sendPushNotification(
           userRow.expoPushToken,
-          `${allyName} — Reminder`,
-          notificationBody,
+          allyName,
+          messageText,
           {
             type: "reminder",
             reminderId: reminder.id,
