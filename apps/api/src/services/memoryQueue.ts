@@ -165,7 +165,7 @@ async function processExtractionJob(job: Job<ExtractionJobData>): Promise<void> 
   const formattedMessages = messages.flatMap((m) => [
     { role: "user" as const, content: m.userMessage, createdAt: new Date(m.timestamp).toISOString() },
     { role: "ally" as const, content: m.allyResponse, createdAt: new Date(m.timestamp).toISOString() },
-  ]);
+  ]).slice(-20);
 
   const { data } = await extractMemories({ messages: formattedMessages, existingProfile: profile });
 
