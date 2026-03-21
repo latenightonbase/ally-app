@@ -162,9 +162,15 @@ async function processExtractionJob(job: Job<ExtractionJobData>): Promise<void> 
 
   const profile = await loadMemoryProfile(userId);
 
+  // Cap each message to 8 000 chars to prevent a single oversized message
+  // from blowing up the extraction prompt token budget.
+  const MAX_MSG_CHARS = 8_000;
+  const truncMsg = (s: string) =>
+    s.length > MAX_MSG_CHARS ? s.slice(0, MAX_MSG_CHARS) + "… (truncated)" : s;
+
   const formattedMessages = messages.flatMap((m) => [
-    { role: "user" as const, content: m.userMessage, createdAt: new Date(m.timestamp).toISOString() },
-    { role: "ally" as const, content: m.allyResponse, createdAt: new Date(m.timestamp).toISOString() },
+    { role: "user" as const, content: truncMsg(m.userMessage), createdAt: new Date(m.timestamp).toISOString() },
+    { role: "ally" as const, content: truncMsg(m.allyResponse), createdAt: new Date(m.timestamp).toISOString() },
   ]).slice(-20);
 
   const { data } = await extractMemories({ messages: formattedMessages, existingProfile: profile });
@@ -301,8 +307,18 @@ export function startMemoryWorker(): Worker {
   });
 
   _worker.on("failed", (job, err) => {
+    // Include input-size diagnostics so we can spot prompt-too-long errors quickly.
+    let diagInfo = "";
+    if (job?.data) {
+      const d = job.data as ExtractionJobData;
+      const totalMsgChars = d.messages.reduce(
+        (sum, m) => sum + (m.userMessage?.length ?? 0) + (m.allyResponse?.length ?? 0),
+        0,
+      );
+      diagInfo = ` | userId=${d.userId}, msgs=${d.messages.length}, totalMsgChars=${totalMsgChars}`;
+    }
     console.error(
-      `[memoryQueue] Job ${job?.id} failed after ${job?.attemptsMade} attempts: ${err.message}`,
+      `[memoryQueue] Job ${job?.id} failed after ${job?.attemptsMade} attempts: ${err.message}${diagInfo}`,
     );
   });
 
