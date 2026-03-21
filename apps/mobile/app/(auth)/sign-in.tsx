@@ -69,10 +69,10 @@ export default function SignInScreen() {
                 <Text className="text-white text-3xl font-sans-bold">A</Text>
               </View>
               <Text className="text-foreground text-3xl font-sans-bold text-center mb-2">
-                Welcome back
+                Meet Anzi
               </Text>
               <Text className="text-muted text-base font-sans text-center">
-                Sign in to continue to Anzi
+                The friend who never forgets
               </Text>
             </MotiView>
 

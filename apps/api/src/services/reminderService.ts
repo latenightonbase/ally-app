@@ -31,26 +31,35 @@ export async function createReminder(input: CreateReminderInput): Promise<string
   return row.id;
 }
 
-const ROTATE_CLOSINGS = ["just a nudge", "didn't want this to sneak up on you", "I've got you"];
+const WARM_CLOSINGS = [
+  "just didn't want it to slip past you",
+  "didn't want this to sneak up on you",
+  "thought you'd want a heads up",
+  "just looking out for you",
+];
 let rotateIndex = 0;
 
 function formatWarmReminder(event: string, userName: string | null): string {
   const lower = event.toLowerCase();
+  const name = userName ?? "hey";
 
+  // Pick a warm, context-aware closing
   let closing: string;
   if (/interview|presentation|exam|pitch/.test(lower)) {
-    closing = "you've got this";
+    closing = "you've totally got this 💪";
   } else if (/call|meeting|email|text/.test(lower)) {
     closing = "just didn't want you to forget";
   } else if (/doctor|dentist|appointment|checkup/.test(lower)) {
-    closing = "I've got you";
+    closing = "I've got you — you're all set";
+  } else if (/birthday|anniversary/.test(lower)) {
+    closing = "didn't want this one to slip by 💛";
   } else {
-    closing = ROTATE_CLOSINGS[rotateIndex % ROTATE_CLOSINGS.length];
+    closing = WARM_CLOSINGS[rotateIndex % WARM_CLOSINGS.length];
     rotateIndex++;
   }
 
-  const greeting = userName ? `hey ${userName}` : "hey";
-  return `${greeting} — ${event}. ${closing}.`;
+  // Build a friendly, human-sounding message
+  return `hey ${name}, just a heads up — ${event}. ${closing}.`;
 }
 
 /**
@@ -205,18 +214,18 @@ export function parseReminderTime(
   const now = new Date();
   const lower = timeRef.toLowerCase().trim();
 
-  // Relative time patterns
-  const inMinutes = lower.match(/in\s+(\d+)\s+min(ute)?s?/);
+  // Relative time patterns — support both "in 5 minutes" and "5 minutes"
+  const inMinutes = lower.match(/(?:in\s+)?(\d+)\s*min(ute)?s?/);
   if (inMinutes) {
     return new Date(now.getTime() + parseInt(inMinutes[1]) * 60_000);
   }
 
-  const inHours = lower.match(/in\s+(\d+)\s+hours?/);
+  const inHours = lower.match(/(?:in\s+)?(\d+)\s*hours?/);
   if (inHours) {
     return new Date(now.getTime() + parseInt(inHours[1]) * 3600_000);
   }
 
-  const inDays = lower.match(/in\s+(\d+)\s+days?/);
+  const inDays = lower.match(/(?:in\s+)?(\d+)\s*days?/);
   if (inDays) {
     return new Date(now.getTime() + parseInt(inDays[1]) * 86400_000);
   }

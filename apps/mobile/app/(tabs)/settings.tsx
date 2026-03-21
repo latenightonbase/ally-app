@@ -350,7 +350,10 @@ export default function SettingsScreen() {
           await authClient.signOut();
           resetOnboarding();
           await clearPersistedStorage();
-          router.replace("/");
+          // Navigate directly to sign-in — don't rely on the root
+          // index redirect since the session hook may not have
+          // updated yet, causing a brief flash or getting stuck.
+          router.replace("/(auth)/sign-in");
         },
       },
     ]);

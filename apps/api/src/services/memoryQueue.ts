@@ -224,6 +224,10 @@ async function processExtractionJob(job: Job<ExtractionJobData>): Promise<void> 
  * Create push-notification reminders for extracted future events.
  * Sets a reminder for the morning of the event day (9:00 AM) so the user
  * gets a heads-up. For events happening today, remind in 30 minutes.
+ *
+ * Skips entirely if the AI already created a chat-sourced reminder for
+ * this conversation (the set_reminder tool fires first, so extraction
+ * shouldn't double up).
  */
 async function createRemindersFromEvents(
   userId: string,
@@ -231,7 +235,37 @@ async function createRemindersFromEvents(
   conversationId: string | null,
 ): Promise<void> {
   const now = new Date();
-  const DEDUP_WINDOW_MS = 5 * 60_000; // 5 minutes
+
+  // ── Early bail-out: if the AI already set a reminder via the chat tool
+  //    for this conversation, the extraction pipeline should not create
+  //    another one.  This is the primary dedup gate.
+  if (conversationId) {
+    try {
+      const chatReminders = await db
+        .select({ id: schema.reminders.id })
+        .from(schema.reminders)
+        .where(
+          and(
+            eq(schema.reminders.userId, userId),
+            eq(schema.reminders.conversationId, conversationId),
+            eq(schema.reminders.source, "chat"),
+            eq(schema.reminders.status, "pending"),
+          ),
+        )
+        .limit(1);
+
+      if (chatReminders.length > 0) {
+        console.log(
+          `[memoryQueue] Skipping extraction-based reminders for user ${userId} — ` +
+          `chat-sourced reminder ${chatReminders[0].id} already exists for conversation ${conversationId}`,
+        );
+        return;
+      }
+    } catch (err) {
+      console.error(`[memoryQueue] Chat-reminder dedup check failed:`, err);
+      // Fall through — better to risk a duplicate than miss a reminder
+    }
+  }
 
   for (const fact of eventFacts) {
     if (!fact.eventDate || fact.confidence < 0.85) continue;
@@ -248,34 +282,35 @@ async function createRemindersFromEvents(
         ? new Date(now.getTime() + 30 * 60_000) // same day: 30 min from now
         : reminderDate;
 
-    // Dedup: skip if a pending reminder already exists for the same user +
-    // conversation with a remind_at within ±5 minutes (e.g. from a chat tool call).
+    // Secondary dedup: check for ANY pending reminder for this user in
+    // the same conversation (regardless of time), or a time-window match
+    // across all conversations.  This catches edge-cases the early bail-out misses.
     try {
-      const conditions = [
-        eq(schema.reminders.userId, userId),
-        eq(schema.reminders.status, "pending"),
-        gte(schema.reminders.remindAt, new Date(remindAt.getTime() - DEDUP_WINDOW_MS)),
-        lte(schema.reminders.remindAt, new Date(remindAt.getTime() + DEDUP_WINDOW_MS)),
-      ];
-      if (conversationId) {
-        conditions.push(eq(schema.reminders.conversationId, conversationId));
-      }
-
       const existing = await db
         .select({ id: schema.reminders.id })
         .from(schema.reminders)
-        .where(and(...conditions))
+        .where(
+          and(
+            eq(schema.reminders.userId, userId),
+            eq(schema.reminders.status, "pending"),
+            ...(conversationId
+              ? [eq(schema.reminders.conversationId, conversationId)]
+              : [
+                  gte(schema.reminders.remindAt, new Date(remindAt.getTime() - 24 * 3600_000)),
+                  lte(schema.reminders.remindAt, new Date(remindAt.getTime() + 24 * 3600_000)),
+                ]),
+          ),
+        )
         .limit(1);
 
       if (existing.length > 0) {
         console.log(
           `[memoryQueue] Skipping duplicate reminder for user ${userId}: "${fact.content}" ` +
-          `(existing reminder ${existing[0].id} within ±5min window)`,
+          `(existing reminder ${existing[0].id} in same conversation)`,
         );
         continue;
       }
     } catch (err) {
-      // If dedup check fails, proceed with creation (better to duplicate than miss)
       console.error(`[memoryQueue] Dedup check failed, proceeding with creation:`, err);
     }
 
