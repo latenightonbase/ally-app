@@ -72,7 +72,7 @@ async function prepareContext(userId: string, conversationId: string, sessionId:
     buildSessionContext(userId, conversationId, sessionId),
   ]);
 
-  const history = sessionContext.history.map((m) => ({
+  const history = sessionContext.history.slice(-20).map((m) => ({
     role: m.role as "user" | "ally",
     content: m.content,
   }));
