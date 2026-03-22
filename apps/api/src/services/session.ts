@@ -55,6 +55,7 @@ async function closeSession(sessionId: string): Promise<void> {
     where: eq(schema.messages.sessionId, sessionId),
     orderBy: [schema.messages.createdAt],
     columns: { role: true, content: true },
+    limit: 30,
   });
 
   if (messages.length < 3) {

@@ -48,13 +48,18 @@ export async function runWeeklyInsights() {
             gte(schema.messages.createdAt, weekAgo),
           ),
         )
-        .orderBy(schema.messages.createdAt);
+        .orderBy(schema.messages.createdAt)
+        .limit(100);
 
       if (weekMessages.length === 0) continue;
 
-      const conversationText = weekMessages
+      const MAX_CONVERSATION_CHARS = 50_000;
+      let conversationText = weekMessages
         .map((m) => `[${m.role}] ${m.content}`)
         .join("\n");
+      if (conversationText.length > MAX_CONVERSATION_CHARS) {
+        conversationText = conversationText.slice(-MAX_CONVERSATION_CHARS);
+      }
 
       const { data } = await callClaudeStructured<WeeklyInsight>({
         system: `You are generating a weekly emotional insight report for a personal AI companion.
