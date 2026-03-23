@@ -24,6 +24,38 @@ export class AIError extends Error {
   }
 }
 
+/**
+ * Rough token estimate: ~4 chars per token for English text.
+ * Used as a pre-flight guard to prevent exceeding context limits.
+ */
+export function estimateTokens(text: string): number {
+  return Math.ceil(text.length / 4);
+}
+
+/**
+ * Estimate total tokens for an array of messages.
+ */
+export function estimateMessageTokens(
+  messages: Anthropic.MessageParam[],
+): number {
+  let total = 0;
+  for (const m of messages) {
+    if (typeof m.content === "string") {
+      total += estimateTokens(m.content);
+    } else if (Array.isArray(m.content)) {
+      for (const block of m.content) {
+        if ("text" in block && typeof block.text === "string") {
+          total += estimateTokens(block.text);
+        }
+      }
+    }
+  }
+  return total;
+}
+
+/** Hard ceiling for total input tokens (leaves room for output). */
+export const MAX_CONTEXT_TOKENS = 160_000;
+
 export async function callClaude(options: {
   system: string | Anthropic.Messages.TextBlockParam[];
   messages: Anthropic.MessageParam[];
@@ -74,7 +106,7 @@ export async function callClaudeWithTools(options: {
 }): Promise<{ text: string; tokensUsed: number }> {
   let messages = [...options.messages];
   let totalTokens = 0;
-  const maxLoops = 5;
+  const maxLoops = 3;
 
   for (let i = 0; i < maxLoops; i++) {
     try {
@@ -142,7 +174,7 @@ export async function callClaudeStreamingWithTools(options: {
   let messages = [...options.messages];
   let totalTokens = 0;
   let fullText = "";
-  const maxLoops = 5;
+  const maxLoops = 3;
 
   for (let i = 0; i < maxLoops; i++) {
     try {

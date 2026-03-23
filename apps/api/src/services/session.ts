@@ -4,7 +4,9 @@ import { callClaude } from "../ai/client";
 import type { MemoryProfile, MemoryFact } from "@ally/shared";
 
 const SESSION_GAP_MS = 30 * 60 * 1000;
-const MAX_ACTIVE_SESSION_MESSAGES = 30;
+const MAX_ACTIVE_SESSION_MESSAGES = 12;
+/** Force-rotate session once it exceeds this many messages to prevent context blowup. */
+const MAX_SESSION_MESSAGES_BEFORE_ROTATE = 40;
 
 interface SessionSummary {
   sessionId: string;
@@ -36,10 +38,19 @@ export async function resolveSession(
       : Infinity;
 
     if (gap < SESSION_GAP_MS) {
-      return activeSession.id;
+      // Auto-rotate if session has grown too large
+      const msgCount = await db
+        .select({ value: count() })
+        .from(schema.messages)
+        .where(eq(schema.messages.sessionId, activeSession.id));
+      if (Number(msgCount[0]?.value ?? 0) >= MAX_SESSION_MESSAGES_BEFORE_ROTATE) {
+        await closeSession(activeSession.id);
+      } else {
+        return activeSession.id;
+      }
+    } else {
+      await closeSession(activeSession.id);
     }
-
-    await closeSession(activeSession.id);
   }
 
   const [newSession] = await db
@@ -146,7 +157,7 @@ export async function buildSessionContext(
         sql`${schema.sessions.id} != ${activeSessionId}`,
       ),
       orderBy: [desc(schema.sessions.startedAt)],
-      limit: 5,
+      limit: 3,
       columns: { summary: true, startedAt: true },
     }),
 

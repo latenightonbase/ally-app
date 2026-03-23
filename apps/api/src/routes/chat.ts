@@ -4,7 +4,7 @@ import { rateLimitMiddleware } from "../middleware/rateLimit";
 import { db, schema } from "../db";
 import { eq, and, sql, desc } from "drizzle-orm";
 import { generateReply, generateReplyStreaming } from "../ai/conversation";
-import { AIError } from "../ai/client";
+import { AIError, estimateTokens, MAX_CONTEXT_TOKENS } from "../ai/client";
 import {
   retrieveRelevantFacts,
   loadMemoryProfile,
@@ -68,14 +68,21 @@ async function logConversationSignal(
 async function prepareContext(userId: string, conversationId: string, sessionId: string, message: string) {
   const [profile, relevantFacts, sessionContext] = await Promise.all([
     loadMemoryProfile(userId),
-    retrieveRelevantFacts({ userId, query: message, limit: 8 }).catch(() => []),
+    retrieveRelevantFacts({ userId, query: message, limit: 5 }).catch(() => []),
     buildSessionContext(userId, conversationId, sessionId),
   ]);
 
-  const history = sessionContext.history.slice(-20).map((m) => ({
+  let history = sessionContext.history.slice(-12).map((m) => ({
     role: m.role as "user" | "ally",
     content: m.content,
   }));
+
+  // Token budget guard: if history is too large, aggressively trim older messages
+  let historyTokens = history.reduce((sum, m) => sum + estimateTokens(m.content), 0);
+  while (history.length > 4 && historyTokens > 30_000) {
+    history = history.slice(1);
+    historyTokens = history.reduce((sum, m) => sum + estimateTokens(m.content), 0);
+  }
 
   return {
     profile,

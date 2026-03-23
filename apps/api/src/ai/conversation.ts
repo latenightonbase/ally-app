@@ -1,6 +1,9 @@
 import {
   callClaudeWithTools,
   callClaudeStreamingWithTools,
+  estimateTokens,
+  estimateMessageTokens,
+  MAX_CONTEXT_TOKENS,
   type ModelTier,
 } from "./client";
 import { buildAllySystemPrompt } from "./prompts";
@@ -25,13 +28,32 @@ interface ConversationInput {
 }
 
 function buildMessages(input: ConversationInput): Anthropic.MessageParam[] {
-  return [
+  const allMessages = [
     ...input.conversationHistory.map((m) => ({
       role: m.role === "ally" ? ("assistant" as const) : ("user" as const),
       content: m.content,
     })),
     { role: "user" as const, content: input.message },
   ];
+
+  // Estimate system prompt tokens for budget calculation
+  const systemText = buildAllySystemPrompt(
+    input.profile,
+    input.relevantFacts,
+    input.sessionSummaries,
+    input.sessionCount ?? 0,
+  );
+  const systemTokens = estimateTokens(systemText);
+  const outputBudget = 400; // reserved for response
+  const availableForHistory = MAX_CONTEXT_TOKENS - systemTokens - outputBudget;
+
+  // Trim oldest messages if over budget (always keep latest user message)
+  let messages = allMessages;
+  while (messages.length > 1 && estimateMessageTokens(messages) > availableForHistory) {
+    messages = messages.slice(1);
+  }
+
+  return messages;
 }
 
 function buildTools(input: ConversationInput): Anthropic.Messages.Tool[] {
@@ -89,7 +111,7 @@ export async function generateReply(input: ConversationInput): Promise<{
     system,
     messages,
     tools,
-    maxTokens: 512,
+    maxTokens: 400,
     modelTier,
     onToolCall: input.toolContext
       ? (name, toolInput) => executeToolCall(name, toolInput, input.toolContext!)
@@ -112,7 +134,7 @@ export async function generateReplyStreaming(
     system,
     messages,
     tools,
-    maxTokens: 512,
+    maxTokens: 400,
     modelTier,
     onToken,
     onToolCall: input.toolContext
