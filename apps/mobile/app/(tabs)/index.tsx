@@ -11,7 +11,6 @@ import {
   AppState,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { MotiView } from "moti";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { ChatHeader } from "../../components/chat/ChatHeader";
 import { MessageBubble } from "../../components/chat/MessageBubble";
@@ -29,6 +28,15 @@ import {
   type Message,
 } from "../../lib/api";
 import { useSession } from "../../lib/auth";
+
+const CHAT_SUGGESTIONS = [
+  "How are you feeling today?",
+  "Tell me something interesting",
+  "Help me plan my day",
+  "I need advice on something",
+  "What should I focus on?",
+  "I'm feeling stressed",
+];
 
 function toLocalMessage(m: Message): ChatMessage {
   return {
@@ -161,7 +169,6 @@ export default function ChatScreen() {
   const setMessages = useAppStore((s) => s.setMessages);
   const activeConversationId = useAppStore((s) => s.activeConversationId);
   const setActiveConversationId = useAppStore((s) => s.setActiveConversationId);
-  const userName = useAppStore((s) => s.user.name);
 
   const [isTyping, setIsTyping] = useState(false);
   const [isStreaming, setIsStreaming] = useState(false);
@@ -216,33 +223,7 @@ export default function ChatScreen() {
           conv.id,
           50,
         );
-        const localMessages = serverMessages.map(toLocalMessage);
-
-        // If the user has existing messages, add a warm re-entry greeting
-        // so the chat doesn't just pick up cold from the last message.
-        if (localMessages.length > 0) {
-          const last = localMessages[localMessages.length - 1];
-          const timeSinceLastMsg = Date.now() - new Date(last.timestamp).getTime();
-          const ONE_HOUR = 60 * 60 * 1000;
-
-          if (timeSinceLastMsg > ONE_HOUR) {
-            const name = userName || "friend";
-            const greetings = [
-              `Hey ${name}, welcome back. What's on your mind today?`,
-              `Hey ${name} 👋 I'm here whenever you're ready to talk.`,
-              `Welcome back, ${name}. What can I help with today?`,
-            ];
-            const greeting = greetings[Math.floor(Math.random() * greetings.length)];
-            localMessages.push({
-              id: `msg-reentry-${Date.now()}`,
-              text: greeting,
-              isUser: false,
-              timestamp: new Date(),
-            });
-          }
-        }
-
-        setMessages(localMessages);
+        setMessages(serverMessages.map(toLocalMessage));
         setActiveConversationId(conv.id);
       } catch {
         // Keep local state on network failure — hydration is best-effort
@@ -258,7 +239,7 @@ export default function ChatScreen() {
   const lastSeenAtRef = useRef<string | null>(null);
 
   useEffect(() => {
-    const POLL_INTERVAL_MS = 15_000;
+    const POLL_INTERVAL_MS = 30_000;
 
     const poll = async () => {
       const convId = useAppStore.getState().activeConversationId;
@@ -410,25 +391,11 @@ export default function ChatScreen() {
   const showSuggestions = messages.length <= 1;
 
   if (isHydrating) {
-    const displayName = userName || "there";
     return (
       <View className="flex-1 bg-background">
         <ChatHeader />
-        <View className="flex-1 items-center justify-center px-8">
-          <MotiView
-            from={{ opacity: 0, translateY: 12 }}
-            animate={{ opacity: 1, translateY: 0 }}
-            transition={{ type: "timing", duration: 500 }}
-            className="items-center"
-          >
-            <Text className="text-foreground text-2xl font-sans-bold text-center mb-2">
-              Welcome, {displayName}
-            </Text>
-            <Text className="text-muted text-base font-sans text-center mb-6">
-              Loading your conversation…
-            </Text>
-            <ActivityIndicator size="large" className="text-primary" />
-          </MotiView>
+        <View className="flex-1 items-center justify-center">
+          <ActivityIndicator size="large" className="text-primary" />
         </View>
       </View>
     );
@@ -481,7 +448,27 @@ export default function ChatScreen() {
           }}
           ListFooterComponent={
             <>
-              
+              {isTyping && <TypingIndicator />}
+              {showSuggestions && (
+                <View className="mt-4 mb-2">
+                  <Text className="text-muted text-sm font-sans-semibold mb-3 px-1">
+                    Suggestions
+                  </Text>
+                  <View className="flex-row flex-wrap gap-2">
+                    {CHAT_SUGGESTIONS.map((suggestion) => (
+                      <Pressable
+                        key={suggestion}
+                        onPress={() => handleSuggestionPress(suggestion)}
+                        className="bg-surface border border-primary-soft rounded-2xl px-4 py-2.5 active:opacity-70"
+                      >
+                        <Text className="text-foreground text-sm font-sans">
+                          {suggestion}
+                        </Text>
+                      </Pressable>
+                    ))}
+                  </View>
+                </View>
+              )}
             </>
           }
         />

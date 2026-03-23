@@ -37,11 +37,11 @@ const SCREEN_MENTAL_LOAD: DynamicOnboardingQuestion = {
   type: "choice",
   choices: [
     { label: "Work stuff", value: "work" },
-    { label: "Just life in general", value: "life" },
-    { label: "My relationship", value: "relationships" },
+    { label: "Relationship things", value: "relationships" },
     { label: "Health & body", value: "health" },
     { label: "Money & finances", value: "money" },
     { label: "Family", value: "family" },
+    { label: "Just life in general", value: "life" },
   ],
 };
 
@@ -62,10 +62,10 @@ const SCREEN_RELIEF: DynamicOnboardingQuestion = {
   title: "If I could help with one thing, what would matter most?",
   type: "choice",
   choices: [
-    { label: "Remember the stuff I forget", value: "remember" },
-    { label: "Help me stay on top of things", value: "organize" },
-    { label: "Just check in on me", value: "check_in" },
     { label: "Someone to vent to", value: "vent" },
+    { label: "Help me stay on top of things", value: "organize" },
+    { label: "Remember the stuff I forget", value: "remember" },
+    { label: "Just check in on me", value: "check_in" },
   ],
 };
 
@@ -82,16 +82,16 @@ const SCREEN_PROMISE: DynamicOnboardingQuestion = {
 const TIME_PICKER_QUESTION: DynamicOnboardingQuestion = {
   title: "When should I ping you every day?",
   subtitle:
-    "I'll reach out every day at this time. Just to check in.\nYou can always change it later.",
+    "I'll send you a little check-in at this time. You can always change it later!",
   type: "chips",
   options: ["6 AM", "9 AM", "12 PM", "3 PM", "6 PM", "9 PM"],
 };
 
 // Screen 7: Notification permission
 const SCREEN_NOTIFICATIONS: DynamicOnboardingQuestion = {
-  title: "One last thing",
+  title: "Stay in the loop 🔔",
   subtitle:
-    "Anzi needs permission to send you reminders, check-ins, and your daily briefing.\n\nYou can change this anytime in Settings.",
+    "I'll send you reminders, check-ins, and your daily briefing as push notifications.\n\nYou can change this anytime in Settings.",
   type: "text",
   placeholder: "",
 };
@@ -126,7 +126,7 @@ const INITIAL_STEPS: StepData[] = [
   { question: SCREEN_EMOTIONAL, answer: "", selectedOptions: [], selectedChoice: "", phase: "emotional" },
   { question: SCREEN_RELIEF, answer: "", selectedOptions: [], selectedChoice: "", phase: "relief" },
   { question: SCREEN_PROMISE, answer: "", selectedOptions: [], selectedChoice: "", phase: "promise" },
-  { question: TIME_PICKER_QUESTION, answer: "", selectedOptions: ["9 AM"], selectedChoice: "", phase: "time-picker" },
+  { question: TIME_PICKER_QUESTION, answer: "", selectedOptions: [], selectedChoice: "", phase: "time-picker" },
   { question: SCREEN_NOTIFICATIONS, answer: "", selectedOptions: [], selectedChoice: "", phase: "notifications" },
 ];
 
@@ -304,7 +304,7 @@ export default function OnboardingScreen() {
   // Determine button title
   const getButtonTitle = () => {
     if (submitting) return "Setting things up...";
-    if (isLastStep) return "Let's go!";
+    if (isLastStep) return "Let's go! 🚀";
     if (currentStepData.phase === "promise") return "I'm ready";
     if (currentStepData.phase === "time-picker") return "Continue";
     return "Continue";

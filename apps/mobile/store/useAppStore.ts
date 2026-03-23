@@ -53,19 +53,6 @@ export const useAppStore = create<AppState>()(
 
       completeOnboarding: (user, greeting) => {
         const allyName = user.allyName || "Anzi";
-
-        // When greeting is __SKIP_WELCOME__, this is a returning user
-        // syncing from the server — don't create a welcome message locally.
-        // The chat screen will add a warm re-entry greeting after hydration.
-        if (greeting === "__SKIP_WELCOME__") {
-          set({
-            isOnboarded: true,
-            user,
-            activeConversationId: null,
-          });
-          return;
-        }
-
         const welcomeText =
           greeting ??
           `Thanks for sharing that with me, ${user.name}. I'm really glad you're here.\n\nBefore we get started — tell me one thing you don't want to forget this week.`;

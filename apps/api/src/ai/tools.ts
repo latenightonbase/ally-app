@@ -126,7 +126,7 @@ export function getCustomTools(): Anthropic.Messages.Tool[] {
             description: "high: time-sensitive or emotional, medium: worth checking in, low: nice to remember",
           },
         },
-        required: ["topic", "context", "priority", "when"],
+        required: ["topic", "context", "priority"],
       },
     },
   ];
@@ -212,12 +212,8 @@ async function handleSetReminder(
     const remindAt = parseReminderTime(when, ctx.timezone);
 
     // Dedup: check if a pending reminder already exists for this user +
-    // conversation.  Two checks:
-    //  1. Any pending reminder in this conversation (covers the common
-    //     case of the AI calling set_reminder twice for the same topic).
-    //  2. Any pending reminder with remindAt within ±30 minutes (covers
-    //     slightly different time descriptions for the same event).
-    const DEDUP_WINDOW_MS = 30 * 60_000;
+    // conversation with a remind_at within ±5 minutes of the computed time.
+    const DEDUP_WINDOW_MS = 5 * 60_000;
     const existing = await db
       .select({ id: schema.reminders.id })
       .from(schema.reminders)
@@ -226,6 +222,8 @@ async function handleSetReminder(
           eq(schema.reminders.userId, ctx.userId),
           eq(schema.reminders.conversationId, ctx.conversationId),
           eq(schema.reminders.status, "pending"),
+          gte(schema.reminders.remindAt, new Date(remindAt.getTime() - DEDUP_WINDOW_MS)),
+          lte(schema.reminders.remindAt, new Date(remindAt.getTime() + DEDUP_WINDOW_MS)),
         ),
       )
       .limit(1);
@@ -235,29 +233,6 @@ async function handleSetReminder(
         already_set: true,
         topic,
         existingReminderId: existing[0].id,
-        message: "A reminder for this is already set.",
-      });
-    }
-
-    // Also check cross-conversation: same user, similar time
-    const timeOverlap = await db
-      .select({ id: schema.reminders.id })
-      .from(schema.reminders)
-      .where(
-        and(
-          eq(schema.reminders.userId, ctx.userId),
-          eq(schema.reminders.status, "pending"),
-          gte(schema.reminders.remindAt, new Date(remindAt.getTime() - DEDUP_WINDOW_MS)),
-          lte(schema.reminders.remindAt, new Date(remindAt.getTime() + DEDUP_WINDOW_MS)),
-        ),
-      )
-      .limit(1);
-
-    if (timeOverlap.length > 0) {
-      return JSON.stringify({
-        already_set: true,
-        topic,
-        existingReminderId: timeOverlap[0].id,
         message: "A reminder for this is already set.",
       });
     }
