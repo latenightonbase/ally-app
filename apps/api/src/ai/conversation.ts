@@ -82,6 +82,130 @@ function classifyMessageComplexity(message: string, sessionCount: number = 0): M
   return "fast";
 }
 
+/** Rough token estimate: ~4 characters per token (conservative for English text). */
+function estimateTokens(text: string): number {
+  return Math.ceil(text.length / 4);
+}
+
+const MAX_TOTAL_TOKENS = 150_000;
+
+/**
+ * Hard safety check: ensures system prompt + memory profile + conversation
+ * history never exceeds MAX_TOTAL_TOKENS. If it does:
+ *   1. Reduce conversation history to last 10 messages
+ *   2. If still too large, trim profile to critical fields only
+ */
+function enforceTokenBudget(input: ConversationInput): ConversationInput {
+  const systemText = buildAllySystemPrompt(
+    input.profile,
+    input.relevantFacts,
+    input.sessionSummaries,
+    input.sessionCount ?? 0,
+  );
+
+  const historyText = input.conversationHistory
+    .map((m) => m.content)
+    .join("\n");
+  const messageTokens = estimateTokens(input.message);
+
+  let totalTokens =
+    estimateTokens(systemText) + estimateTokens(historyText) + messageTokens;
+
+  if (totalTokens <= MAX_TOTAL_TOKENS) return input;
+
+  // Step 1: trim history to last 10 messages
+  let trimmedInput: ConversationInput = {
+    ...input,
+    conversationHistory: input.conversationHistory.slice(-10),
+  };
+
+  const trimmedHistoryText = trimmedInput.conversationHistory
+    .map((m) => m.content)
+    .join("\n");
+  totalTokens =
+    estimateTokens(systemText) +
+    estimateTokens(trimmedHistoryText) +
+    messageTokens;
+
+  if (totalTokens <= MAX_TOTAL_TOKENS) {
+    console.log(
+      `[token-budget] Trimmed history from ${input.conversationHistory.length} to 10 messages (estimated ${totalTokens} tokens)`,
+    );
+    return trimmedInput;
+  }
+
+  // Step 2: trim profile to critical fields only
+  const criticalProfile: ConversationInput["profile"] = input.profile
+    ? {
+        ...input.profile,
+        personalInfo: {
+          preferredName: input.profile.personalInfo?.preferredName ?? null,
+          fullName: null,
+          age: null,
+          birthday: null,
+          location: null,
+          livingSituation: null,
+          other: {},
+        },
+        relationships: input.profile.relationships?.slice(0, 5) ?? [],
+        work: {
+          role: null,
+          company: null,
+          companyType: null,
+          currentProjects: [],
+          currentGoals: [],
+          stressors: [],
+          colleagues: [],
+        },
+        health: {
+          fitnessGoals: [],
+          currentRoutine: null,
+          sleepNotes: null,
+          dietNotes: null,
+          mentalHealthNotes: null,
+          other: {},
+        },
+        interests: [],
+        goals: [],
+        emotionalPatterns: input.profile.emotionalPatterns ?? {
+          primaryStressors: [],
+          copingMechanisms: [],
+          moodTrends: [],
+          recurringThemes: [],
+          sensitivities: [],
+        },
+        pendingFollowups: input.profile.pendingFollowups?.filter(
+          (f) => !f.resolved,
+        ) ?? [],
+        dynamicAttributes: undefined,
+      }
+    : null;
+
+  trimmedInput = {
+    ...trimmedInput,
+    profile: criticalProfile,
+    relevantFacts: [],
+    sessionSummaries: undefined,
+  };
+
+  const reducedSystemText = buildAllySystemPrompt(
+    criticalProfile,
+    [],
+    undefined,
+    input.sessionCount ?? 0,
+  );
+  totalTokens =
+    estimateTokens(reducedSystemText) +
+    estimateTokens(trimmedHistoryText) +
+    messageTokens;
+
+  console.log(
+    `[token-budget] Trimmed profile to critical fields + history to 10 messages (estimated ${totalTokens} tokens)`,
+  );
+
+  return trimmedInput;
+}
+
 function buildCachedSystemPrompt(input: ConversationInput): Anthropic.Messages.TextBlockParam[] {
   const systemText = buildAllySystemPrompt(
     input.profile,
@@ -102,10 +226,11 @@ export async function generateReply(input: ConversationInput): Promise<{
   response: string;
   tokensUsed: number;
 }> {
-  const system = buildCachedSystemPrompt(input);
-  const messages = buildMessages(input);
-  const tools = buildTools(input);
-  const modelTier = input.modelTier ?? classifyMessageComplexity(input.message, input.sessionCount ?? 0);
+  const safeInput = enforceTokenBudget(input);
+  const system = buildCachedSystemPrompt(safeInput);
+  const messages = buildMessages(safeInput);
+  const tools = buildTools(safeInput);
+  const modelTier = safeInput.modelTier ?? classifyMessageComplexity(safeInput.message, safeInput.sessionCount ?? 0);
 
   const result = await callClaudeWithTools({
     system,
@@ -113,8 +238,8 @@ export async function generateReply(input: ConversationInput): Promise<{
     tools,
     maxTokens: 400,
     modelTier,
-    onToolCall: input.toolContext
-      ? (name, toolInput) => executeToolCall(name, toolInput, input.toolContext!)
+    onToolCall: safeInput.toolContext
+      ? (name, toolInput) => executeToolCall(name, toolInput, safeInput.toolContext!)
       : undefined,
   });
 
@@ -125,10 +250,11 @@ export async function generateReplyStreaming(
   input: ConversationInput,
   onToken: (token: string) => void,
 ): Promise<{ response: string; tokensUsed: number }> {
-  const system = buildCachedSystemPrompt(input);
-  const messages = buildMessages(input);
-  const tools = buildTools(input);
-  const modelTier = input.modelTier ?? classifyMessageComplexity(input.message, input.sessionCount ?? 0);
+  const safeInput = enforceTokenBudget(input);
+  const system = buildCachedSystemPrompt(safeInput);
+  const messages = buildMessages(safeInput);
+  const tools = buildTools(safeInput);
+  const modelTier = safeInput.modelTier ?? classifyMessageComplexity(safeInput.message, safeInput.sessionCount ?? 0);
 
   const result = await callClaudeStreamingWithTools({
     system,
@@ -137,8 +263,8 @@ export async function generateReplyStreaming(
     maxTokens: 400,
     modelTier,
     onToken,
-    onToolCall: input.toolContext
-      ? (name, toolInput) => executeToolCall(name, toolInput, input.toolContext!)
+    onToolCall: safeInput.toolContext
+      ? (name, toolInput) => executeToolCall(name, toolInput, safeInput.toolContext!)
       : undefined,
   });
 
