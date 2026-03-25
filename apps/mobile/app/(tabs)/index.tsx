@@ -6,12 +6,12 @@ import {
   Platform,
   Text,
   Pressable,
-  ActivityIndicator,
   Animated,
   AppState,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { MotiView } from "moti";
 import { ChatHeader } from "../../components/chat/ChatHeader";
 import { MessageBubble } from "../../components/chat/MessageBubble";
 import { ChatInput } from "../../components/chat/ChatInput";
@@ -391,11 +391,31 @@ export default function ChatScreen() {
   const showSuggestions = messages.length <= 1;
 
   if (isHydrating) {
+    const userName = useAppStore.getState().user?.name;
+    const isReturning = !!activeConversationId;
+    const greeting = isReturning ? "Welcome back" : "Welcome";
+    const displayName = userName ? `, ${userName}` : "";
+
     return (
       <View className="flex-1 bg-background">
         <ChatHeader />
-        <View className="flex-1 items-center justify-center">
-          <ActivityIndicator size="large" className="text-primary" />
+        <View className="flex-1 items-center justify-center px-8">
+          <Text className="text-foreground text-2xl font-sans-bold text-center mb-6">
+            {greeting}
+            {displayName} 👋
+          </Text>
+          <View className="w-48 h-1 rounded-full bg-surface overflow-hidden">
+            <MotiView
+              from={{ translateX: -192 }}
+              animate={{ translateX: 192 }}
+              transition={{
+                type: "timing",
+                duration: 1200,
+                loop: true,
+              }}
+              className="w-1/2 h-full rounded-full bg-primary"
+            />
+          </View>
         </View>
       </View>
     );
@@ -449,14 +469,14 @@ export default function ChatScreen() {
           ListFooterComponent={
             <>
               {isTyping && <TypingIndicator />}
-              {showSuggestions && (
+              {/* {showSuggestions && (
                 <View className="mt-4 mb-2">
                   <Text className="text-muted text-sm font-sans-semibold mb-3 px-1">
                     Suggestions
                   </Text>
 
                 </View>
-              )}
+              )} */}
             </>
           }
         />

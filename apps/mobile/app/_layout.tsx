@@ -1,5 +1,5 @@
 import "../global.css";
-import React, { useEffect, useMemo } from "react";
+import React, { useEffect, useMemo, useCallback } from "react";
 import { View } from "react-native";
 import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
@@ -9,6 +9,13 @@ import { ThemeProvider, useTheme } from "../context/ThemeContext";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { ErrorBoundary } from "../components/ui/ErrorBoundary";
 import { useNotifications } from "../lib/useNotifications";
+import {
+  useFonts,
+  PlusJakartaSans_400Regular,
+  PlusJakartaSans_500Medium,
+  PlusJakartaSans_600SemiBold,
+  PlusJakartaSans_700Bold,
+} from "@expo-google-fonts/plus-jakarta-sans";
 
 SplashScreen.preventAutoHideAsync();
 
@@ -16,11 +23,28 @@ function RootNavigation() {
   const { theme } = useTheme();
   useNotifications();
 
-  useEffect(() => {
-    SplashScreen.hideAsync();
-  }, []);
+  const [fontsLoaded, fontError] = useFonts({
+    PlusJakartaSans_400Regular,
+    PlusJakartaSans_500Medium,
+    PlusJakartaSans_600SemiBold,
+    PlusJakartaSans_700Bold,
+  });
+
+  const onLayoutRootView = useCallback(async () => {
+    if (fontsLoaded || fontError) {
+      await SplashScreen.hideAsync();
+    }
+  }, [fontsLoaded, fontError]);
 
   const themeVars = useMemo(() => vars(theme.colors), [theme.colors]);
+
+  useEffect(() => {
+    onLayoutRootView();
+  }, [onLayoutRootView]);
+
+  if (!fontsLoaded && !fontError) {
+    return null;
+  }
 
   return (
     <View style={[{ flex: 1 }, themeVars]}>

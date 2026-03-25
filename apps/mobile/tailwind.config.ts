@@ -10,10 +10,10 @@ const config: Config = {
   theme: {
     extend: {
       fontFamily: {
-        sans: ["PlusJakartaSans_400Regular"],
-        "sans-medium": ["PlusJakartaSans_500Medium"],
-        "sans-semibold": ["PlusJakartaSans_600SemiBold"],
-        "sans-bold": ["PlusJakartaSans_700Bold"],
+        sans: ["PlusJakartaSans_400Regular", "System"],
+        "sans-medium": ["PlusJakartaSans_500Medium", "System"],
+        "sans-semibold": ["PlusJakartaSans_600SemiBold", "System"],
+        "sans-bold": ["PlusJakartaSans_700Bold", "System"],
       },
       colors: {
         primary: "var(--color-primary)",

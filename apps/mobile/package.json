@@ -13,6 +13,7 @@
   "dependencies": {
     "@ally/shared": "workspace:*",
     "@better-auth/expo": "^1.5.4",
+    "@expo-google-fonts/plus-jakarta-sans": "^0.4.2",
     "@expo/vector-icons": "^15.1.1",
     "@react-native-async-storage/async-storage": "2.2.0",
     "better-auth": "^1.5.4",
