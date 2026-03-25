@@ -29,14 +29,14 @@ import {
 } from "../../lib/api";
 import { useSession } from "../../lib/auth";
 
-const CHAT_SUGGESTIONS = [
-  "How are you feeling today?",
-  "Tell me something interesting",
-  "Help me plan my day",
-  "I need advice on something",
-  "What should I focus on?",
-  "I'm feeling stressed",
-];
+// const CHAT_SUGGESTIONS = [
+//   "How are you feeling today?",
+//   "Tell me something interesting",
+//   "Help me plan my day",
+//   "I need advice on something",
+//   "What should I focus on?",
+//   "I'm feeling stressed",
+// ];
 
 function toLocalMessage(m: Message): ChatMessage {
   return {
@@ -454,19 +454,7 @@ export default function ChatScreen() {
                   <Text className="text-muted text-sm font-sans-semibold mb-3 px-1">
                     Suggestions
                   </Text>
-                  <View className="flex-row flex-wrap gap-2">
-                    {CHAT_SUGGESTIONS.map((suggestion) => (
-                      <Pressable
-                        key={suggestion}
-                        onPress={() => handleSuggestionPress(suggestion)}
-                        className="bg-surface border border-primary-soft rounded-2xl px-4 py-2.5 active:opacity-70"
-                      >
-                        <Text className="text-foreground text-sm font-sans">
-                          {suggestion}
-                        </Text>
-                      </Pressable>
-                    ))}
-                  </View>
+
                 </View>
               )}
             </>

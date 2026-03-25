@@ -1,8 +1,8 @@
 import { callClaude } from "./client";
-import { BRIEFING_SYSTEM_PROMPT } from "./prompts";
+import { buildBriefingSystemPrompt } from "./prompts";
 import { retrieveRelevantFacts, loadMemoryProfile } from "../services/retrieval";
 import { db, schema } from "../db";
-import { eq, and, gte, lte, isNull } from "drizzle-orm";
+import { eq, and, gte, lte, isNull, count } from "drizzle-orm";
 import type { MemoryProfile, PendingFollowup } from "@ally/shared";
 
 export async function generateBriefing(input: {
@@ -11,6 +11,7 @@ export async function generateBriefing(input: {
   upcomingEvents: { content: string; eventDate: string }[];
   pendingFollowups: PendingFollowup[];
   date: string;
+  sessionCount: number;
 }): Promise<{ content: string; tokensUsed: number }> {
   const name = input.profile.personalInfo.preferredName ?? "there";
 
@@ -42,7 +43,7 @@ export async function generateBriefing(input: {
   }
 
   const { text, tokensUsed } = await callClaude({
-    system: BRIEFING_SYSTEM_PROMPT,
+    system: buildBriefingSystemPrompt(input.sessionCount),
     messages: [{ role: "user", content: parts.join("\n") }],
     maxTokens: 512,
   });
@@ -121,6 +122,13 @@ export async function ensureBriefingForUser(userId: string): Promise<
     (f) => !f.resolved,
   );
 
+  // Get session count for relationship-stage-aware briefing
+  const [sessionCountResult] = await db
+    .select({ value: count() })
+    .from(schema.sessions)
+    .where(eq(schema.sessions.userId, userId));
+  const sessionCount = sessionCountResult?.value ?? 0;
+
   const { content } = await generateBriefing({
     profile,
     relevantFacts: relevantFacts.map((f) => ({
@@ -133,6 +141,7 @@ export async function ensureBriefingForUser(userId: string): Promise<
     })),
     pendingFollowups,
     date: today,
+    sessionCount,
   });
 
   const [inserted] = await db
