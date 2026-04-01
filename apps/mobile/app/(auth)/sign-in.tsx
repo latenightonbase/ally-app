@@ -104,6 +104,7 @@ export default function SignInScreen() {
 
               <View className="mt-4">
                 <Button
+                className="bg-blue-500"
                   title={loading ? "Signing in..." : "Sign In"}
                   onPress={handleSignIn}
                   disabled={loading}
