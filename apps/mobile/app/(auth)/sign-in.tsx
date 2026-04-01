@@ -135,6 +135,10 @@ export default function SignInScreen() {
                 </Text>
               </Pressable>
             </MotiView>
+
+            <Text className="text-muted text-xs font-sans text-center mt-4 opacity-50">
+              API: {process.env.EXPO_PUBLIC_API_URL ?? "undefined"}
+            </Text>
           </View>
         </KeyboardAvoidingView>
       </SafeAreaView>
