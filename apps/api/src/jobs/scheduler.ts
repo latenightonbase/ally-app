@@ -8,6 +8,7 @@ import { emit } from "../services/events";
 import { registerProactiveHandlers } from "../services/proactive";
 import { flushAllBatches } from "../services/memoryQueue";
 import { processReminders } from "../services/reminderService";
+import { processCheckins } from "../services/checkinService";
 
 interface ScheduledJob {
   name: string;
@@ -53,6 +54,13 @@ const jobs: ScheduledJob[] = [
     handler: async () => {
       flushAllBatches();
     },
+    enabled: true,
+    skipDedup: true,
+  },
+  {
+    name: "random_checkins",
+    cronExpression: "0,30 * * * *",
+    handler: processCheckins,
     enabled: true,
     skipDedup: true,
   },

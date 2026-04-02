@@ -100,7 +100,7 @@ export function useNotifications() {
    */
   const refreshChatFromNotification = useCallback(
     async (data: Record<string, unknown>) => {
-      if (data?.type !== "reminder") return;
+      if (data?.type !== "reminder" && data?.type !== "checkin" && data?.type !== "daily_ping") return;
 
       const convId =
         (data.conversationId as string) ??

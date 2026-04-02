@@ -4,6 +4,10 @@ import { pgTable, text, timestamp, boolean, index, jsonb } from "drizzle-orm/pg-
 export interface NotificationPreferences {
   dailyPingTime: string; // e.g. "9:00 AM"
   timezone: string; // e.g. "America/New_York"
+  proactiveCheckins?: boolean; // opt-in for random check-in messages
+  checkinFrequency?: "low" | "medium" | "high"; // low=1/day, medium=2/day, high=3/day
+  quietHoursStart?: string; // e.g. "21:00" (9pm) — no check-ins after this
+  quietHoursEnd?: string; // e.g. "09:00" (9am) — no check-ins before this
 }
 
 export const user = pgTable("user", {

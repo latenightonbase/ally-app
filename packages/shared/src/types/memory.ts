@@ -225,3 +225,18 @@ export interface CreateReminderInput {
   source?: ReminderSource;
   metadata?: Record<string, unknown>;
 }
+
+export type CheckinType = "casual" | "event_followup" | "goal_checkin" | "context_aware";
+export type CheckinFrequency = "low" | "medium" | "high";
+
+export interface Checkin {
+  id: string;
+  userId: string;
+  conversationId: string | null;
+  type: CheckinType;
+  content: string;
+  eventId: string | null;
+  metadata: Record<string, unknown>;
+  deliveredAt: string;
+  pushSent: boolean;
+}

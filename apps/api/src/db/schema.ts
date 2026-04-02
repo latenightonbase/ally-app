@@ -202,6 +202,7 @@ export const memoryEvents = pgTable(
     context: text("context"),
     notifiedAt: timestamp("notified_at", { withTimezone: true }),
     completedAt: timestamp("completed_at", { withTimezone: true }),
+    followedUpAt: timestamp("followed_up_at", { withTimezone: true }),
     sourceConversationId: uuid("source_conversation_id").references(
       () => conversations.id,
     ),
@@ -309,6 +310,46 @@ export const reminders = pgTable(
       table.userId,
       table.status,
       table.remindAt,
+    ),
+  }),
+);
+
+export const checkinTypeEnum = pgEnum("checkin_type", [
+  "casual",
+  "event_followup",
+  "goal_checkin",
+  "context_aware",
+]);
+
+export const checkins = pgTable(
+  "checkins",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    conversationId: uuid("conversation_id").references(() => conversations.id, {
+      onDelete: "set null",
+    }),
+    type: checkinTypeEnum("type").notNull().default("casual"),
+    content: text("content").notNull(),
+    eventId: uuid("event_id").references(() => memoryEvents.id, {
+      onDelete: "set null",
+    }),
+    metadata: jsonb("metadata").$type<Record<string, unknown>>().default({}),
+    deliveredAt: timestamp("delivered_at", { withTimezone: true }).defaultNow().notNull(),
+    pushSent: boolean("push_sent").notNull().default(false),
+  },
+  (table) => ({
+    userIdx: index("checkins_user_idx").on(table.userId),
+    userDeliveredIdx: index("checkins_user_delivered_idx").on(
+      table.userId,
+      table.deliveredAt,
+    ),
+    userTypeIdx: index("checkins_user_type_idx").on(
+      table.userId,
+      table.type,
+      table.deliveredAt,
     ),
   }),
 );

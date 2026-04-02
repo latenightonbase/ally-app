@@ -126,6 +126,10 @@ export const profileRoutes = new Elysia({ prefix: "/api/v1" })
       allyName: userRow.allyName ?? "Anzi",
       dailyPingTime: userRow.notificationPreferences?.dailyPingTime ?? null,
       timezone: userRow.notificationPreferences?.timezone ?? null,
+      proactiveCheckins: userRow.notificationPreferences?.proactiveCheckins ?? false,
+      checkinFrequency: userRow.notificationPreferences?.checkinFrequency ?? "medium",
+      quietHoursStart: userRow.notificationPreferences?.quietHoursStart ?? "21:00",
+      quietHoursEnd: userRow.notificationPreferences?.quietHoursEnd ?? "09:00",
       occupation: profile?.profile?.work?.role ?? null,
       tier: userRow.tier ?? user.tier,
     };
@@ -141,7 +145,7 @@ export const profileRoutes = new Elysia({ prefix: "/api/v1" })
   .patch(
     "/users/profile",
     async ({ user, body }) => {
-      const { name, allyName, dailyPingTime, timezone, occupation } = body;
+      const { name, allyName, dailyPingTime, timezone, occupation, proactiveCheckins, checkinFrequency, quietHoursStart, quietHoursEnd } = body;
 
       type UserUpdate = {
         name?: string;
@@ -154,7 +158,7 @@ export const profileRoutes = new Elysia({ prefix: "/api/v1" })
       if (allyName !== undefined) userFieldsToUpdate.allyName = allyName;
 
       // Merge notification preferences — don't overwrite unrelated fields
-      if (dailyPingTime !== undefined || timezone !== undefined) {
+      if (dailyPingTime !== undefined || timezone !== undefined || proactiveCheckins !== undefined || checkinFrequency !== undefined || quietHoursStart !== undefined || quietHoursEnd !== undefined) {
         const currentUser = await db.query.user.findFirst({
           where: eq(schema.user.id, user.id),
           columns: { notificationPreferences: true },
@@ -167,6 +171,10 @@ export const profileRoutes = new Elysia({ prefix: "/api/v1" })
         const merged: NotificationPreferences = {
           dailyPingTime: dailyPingTime ?? current.dailyPingTime,
           timezone: timezone ?? current.timezone,
+          proactiveCheckins: proactiveCheckins ?? current.proactiveCheckins,
+          checkinFrequency: checkinFrequency ?? current.checkinFrequency,
+          quietHoursStart: quietHoursStart ?? current.quietHoursStart,
+          quietHoursEnd: quietHoursEnd ?? current.quietHoursEnd,
         };
         userFieldsToUpdate.notificationPreferences = merged;
       }
@@ -220,6 +228,10 @@ export const profileRoutes = new Elysia({ prefix: "/api/v1" })
         dailyPingTime:
           updatedUser?.notificationPreferences?.dailyPingTime ?? null,
         timezone: updatedUser?.notificationPreferences?.timezone ?? null,
+        proactiveCheckins: updatedUser?.notificationPreferences?.proactiveCheckins ?? false,
+        checkinFrequency: updatedUser?.notificationPreferences?.checkinFrequency ?? "medium",
+        quietHoursStart: updatedUser?.notificationPreferences?.quietHoursStart ?? "21:00",
+        quietHoursEnd: updatedUser?.notificationPreferences?.quietHoursEnd ?? "09:00",
         occupation: updatedProfile?.profile?.work?.role ?? null,
         tier: updatedUser?.tier ?? user.tier,
       };
@@ -231,6 +243,10 @@ export const profileRoutes = new Elysia({ prefix: "/api/v1" })
         dailyPingTime: t.Optional(t.String()),
         timezone: t.Optional(t.String()),
         occupation: t.Optional(t.String({ maxLength: 100 })),
+        proactiveCheckins: t.Optional(t.Boolean()),
+        checkinFrequency: t.Optional(t.Union([t.Literal("low"), t.Literal("medium"), t.Literal("high")])),
+        quietHoursStart: t.Optional(t.String()),
+        quietHoursEnd: t.Optional(t.String()),
       }),
     },
   );
