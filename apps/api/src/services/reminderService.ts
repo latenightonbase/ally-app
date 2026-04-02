@@ -31,26 +31,87 @@ export async function createReminder(input: CreateReminderInput): Promise<string
   return row.id;
 }
 
-const ROTATE_CLOSINGS = ["just a nudge", "didn't want this to sneak up on you", "I've got you"];
-let rotateIndex = 0;
+// ── Reminder message templates ──────────────────────────────────────
+// Each category has multiple full-sentence templates so reminders feel
+// like texts from a friend, not a cron job. `{name}` and `{event}` are
+// replaced at runtime. Templates without `{name}` work for anonymous users too.
+
+const TEMPLATES_HIGH_STAKES: string[] = [
+  "hey {name} — {event} coming up. you've got this, seriously.",
+  "{name}! {event} is soon. deep breath — you're more ready than you think.",
+  "hey, quick heads up — {event}. go crush it 💪",
+  "psst {name}, {event} is coming up. you're gonna do great.",
+  "{event} is almost here. rooting for you {name} ❤️",
+];
+
+const TEMPLATES_LOGISTICS: string[] = [
+  "hey {name}, don't forget — {event}. just didn't want it to sneak up on you.",
+  "heads up — {event}. figured you'd want the nudge.",
+  "{name}! {event} — just making sure this doesn't slip by.",
+  "hey, friendly nudge about {event} 👋",
+  "oh hey — {event}. almost forgot to tell you lol",
+];
+
+const TEMPLATES_HEALTH: string[] = [
+  "hey {name} — {event} coming up. I've got you.",
+  "gentle reminder about {event}. you've got this {name} ❤️",
+  "{name}, {event} is soon — take care of yourself today.",
+  "hey, just a heads up — {event}. proud of you for staying on top of this.",
+];
+
+const TEMPLATES_SOCIAL: string[] = [
+  "hey {name}, just a nudge — {event}. don't leave them hanging 😄",
+  "oh wait — {event}. almost let that one slip for you.",
+  "{name}! {event}. go be a good human.",
+  "hey, quick reminder about {event} before it slips your mind.",
+];
+
+const TEMPLATES_GENERIC: string[] = [
+  "hey {name} — {event}. just a nudge.",
+  "oh hey, {event} — didn't want this to sneak up on you.",
+  "{name}, heads up — {event}.",
+  "friendly reminder about {event} 👋",
+  "hey, just popping in — {event}. I've got you.",
+  "{name}! almost forgot to bug you about {event} 😄",
+];
+
+let templateCounters: Record<string, number> = {};
+
+function pickTemplate(templates: string[]): string {
+  const key = templates[0]; // use first template as bucket key
+  const idx = (templateCounters[key] ?? 0) % templates.length;
+  templateCounters[key] = idx + 1;
+  return templates[idx];
+}
 
 function formatWarmReminder(event: string, userName: string | null): string {
   const lower = event.toLowerCase();
 
-  let closing: string;
-  if (/interview|presentation|exam|pitch/.test(lower)) {
-    closing = "you've got this";
-  } else if (/call|meeting|email|text/.test(lower)) {
-    closing = "just didn't want you to forget";
-  } else if (/doctor|dentist|appointment|checkup/.test(lower)) {
-    closing = "I've got you";
+  let template: string;
+  if (/interview|presentation|exam|pitch|test|final/.test(lower)) {
+    template = pickTemplate(TEMPLATES_HIGH_STAKES);
+  } else if (/call\b|meeting|email|text\b|send|reply|respond|follow.?up/.test(lower)) {
+    template = pickTemplate(TEMPLATES_LOGISTICS);
+  } else if (/doctor|dentist|appointment|checkup|therapy|meds|medicine|prescription|gym|workout/.test(lower)) {
+    template = pickTemplate(TEMPLATES_HEALTH);
+  } else if (/birthday|dinner|hangout|hang out|party|date|catch up|visit|plans with/.test(lower)) {
+    template = pickTemplate(TEMPLATES_SOCIAL);
   } else {
-    closing = ROTATE_CLOSINGS[rotateIndex % ROTATE_CLOSINGS.length];
-    rotateIndex++;
+    template = pickTemplate(TEMPLATES_GENERIC);
   }
 
-  const greeting = userName ? `hey ${userName}` : "hey";
-  return `${greeting} — ${event}. ${closing}.`;
+  const name = userName ?? "";
+  let message = template
+    .replace(/\{event\}/g, event)
+    .replace(/\{name\}/g, name);
+
+  // Clean up awkward whitespace if name was empty
+  message = message.replace(/\s{2,}/g, " ").replace(/^[\s,!—-]+/, "").trim();
+
+  // If name removal left a lowercase start, capitalize
+  message = message.charAt(0).toLowerCase() + message.slice(1);
+
+  return message;
 }
 
 /**
