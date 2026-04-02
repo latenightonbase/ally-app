@@ -3,6 +3,7 @@ import {
   View,
   FlatList,
   KeyboardAvoidingView,
+  Keyboard,
   Platform,
   Text,
   Pressable,
@@ -182,6 +183,14 @@ export default function ChatScreen() {
   const previousUserId = useRef<string | null>(null);
   const insets = useSafeAreaInsets();
   const { data: session } = useSession();
+
+  const [keyboardVisible, setKeyboardVisible] = useState(false);
+
+  useEffect(() => {
+    const showSub = Keyboard.addListener("keyboardWillShow", () => setKeyboardVisible(true));
+    const hideSub = Keyboard.addListener("keyboardWillHide", () => setKeyboardVisible(false));
+    return () => { showSub.remove(); hideSub.remove(); };
+  }, []);
 
   const tabBarHeight =
     64 + Math.max(insets.bottom, Platform.OS === "ios" ? 16 : 12) + 16;
@@ -481,7 +490,7 @@ export default function ChatScreen() {
           }
         />
 
-        <View style={{ paddingBottom: tabBarHeight }}>
+        <View style={{ paddingBottom: keyboardVisible ? 0 : tabBarHeight }}>
           <ChatInput onSend={handleSend} disabled={isTyping || isStreaming} />
         </View>
       </KeyboardAvoidingView>

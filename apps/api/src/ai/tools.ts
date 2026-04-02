@@ -103,7 +103,7 @@ export function getCustomTools(): Anthropic.Messages.Tool[] {
     {
       name: "set_reminder",
       description:
-        "Set a NEW reminder for the user that will trigger a push notification at the specified time. Use this ONLY when the user is making a NEW request to be reminded about something. Do NOT call this tool when the user is asking about, discussing, confirming, or referencing a reminder that was already set earlier in the conversation. If you already called set_reminder for a topic in this session, do not call it again for the same topic. Always try to extract a specific time for the reminder.",
+        "Set a NEW reminder for the user that will trigger a push notification at the specified time. ONLY call this tool when the user has EXPLICITLY asked or confirmed they want a reminder (e.g. 'remind me', 'yes please', 'yeah set a reminder'). NEVER call this tool proactively when the user merely mentions a future event — instead, offer to set a reminder in your message text and wait for their confirmation before calling this tool. Do NOT call this tool when the user is asking about, discussing, or referencing a reminder that was already set earlier in the conversation. If you already called set_reminder for a topic in this session, do not call it again for the same topic. Always try to extract a specific time for the reminder.",
       input_schema: {
         type: "object" as const,
         properties: {
