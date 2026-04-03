@@ -59,7 +59,7 @@ const jobs: ScheduledJob[] = [
   },
   {
     name: "random_checkins",
-    cronExpression: "0,30 * * * *",
+    cronExpression: "0,2 * * * *",
     handler: processCheckins,
     enabled: true,
     skipDedup: true,
