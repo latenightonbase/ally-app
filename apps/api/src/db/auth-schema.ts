@@ -2,7 +2,7 @@ import { relations } from "drizzle-orm";
 import { pgTable, text, timestamp, boolean, index, jsonb } from "drizzle-orm/pg-core";
 
 export interface NotificationPreferences {
-  dailyPingTime: string; // e.g. "9:00 AM"
+  dailyPingTime: string; // e.g. "09:00" (24h) or "9 AM" (12h from onboarding)
   timezone: string; // e.g. "America/New_York"
   proactiveCheckins?: boolean; // opt-in for random check-in messages
   checkinFrequency?: "low" | "medium" | "high"; // low=1/day, medium=2/day, high=3/day
@@ -19,6 +19,7 @@ export const user = pgTable("user", {
   allyName: text("ally_name").default("Anzi"),
   notificationPreferences: jsonb("notification_preferences").$type<NotificationPreferences>(),
   expoPushToken: text("expo_push_token"),
+  nextDailyPingAt: timestamp("next_daily_ping_at", { withTimezone: true }),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at")
     .defaultNow()

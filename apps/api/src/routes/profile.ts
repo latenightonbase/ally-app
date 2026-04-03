@@ -4,6 +4,7 @@ import { authMiddleware } from "../middleware/auth";
 import { getOrCreateProfile } from "../services/memory";
 import { db, schema } from "../db";
 import type { NotificationPreferences } from "../db/auth-schema";
+import { computeNextDailyPing } from "../jobs/dailyPing";
 
 /**
  * GET /api/v1/profile/you
@@ -151,6 +152,7 @@ export const profileRoutes = new Elysia({ prefix: "/api/v1" })
         name?: string;
         allyName?: string;
         notificationPreferences?: NotificationPreferences;
+        nextDailyPingAt?: Date;
       };
       const userFieldsToUpdate: UserUpdate = {};
 
@@ -177,6 +179,18 @@ export const profileRoutes = new Elysia({ prefix: "/api/v1" })
           quietHoursEnd: quietHoursEnd ?? current.quietHoursEnd,
         };
         userFieldsToUpdate.notificationPreferences = merged;
+
+        // Recompute the next daily ping absolute timestamp whenever
+        // the preferred time or timezone changes
+        if (dailyPingTime !== undefined || timezone !== undefined) {
+          const nextPing = computeNextDailyPing(
+            merged.dailyPingTime,
+            merged.timezone,
+          );
+          if (nextPing) {
+            userFieldsToUpdate.nextDailyPingAt = nextPing;
+          }
+        }
       }
 
       if (Object.keys(userFieldsToUpdate).length > 0) {

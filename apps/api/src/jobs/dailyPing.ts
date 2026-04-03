@@ -6,32 +6,186 @@ import { sendPushNotification } from "../services/notifications";
 import { getPendingReminders } from "../services/reminderService";
 import type { NotificationPreferences } from "../db/auth-schema";
 
+// ── Time parsing ────────────────────────────────────────────────────
+
 /**
- * Runs every minute. Checks which users have a dailyPingTime matching
- * the current time (in their timezone) and sends them a contextual
- * check-in message via their active conversation + an Expo push notification.
+ * Parse a dailyPingTime string in either 24h ("09:00", "15:00") or
+ * 12h ("9 AM", "3 PM", "9:00 AM") format into { hours, minutes }.
+ */
+function parsePingTime(raw: string): { hours: number; minutes: number } | null {
+  // 24h format: "09:00", "15:00"
+  const match24 = raw.match(/^(\d{1,2}):(\d{2})$/);
+  if (match24) {
+    return { hours: parseInt(match24[1], 10), minutes: parseInt(match24[2], 10) };
+  }
+
+  // 12h format: "9 AM", "9:00 AM", "12 PM"
+  const match12 = raw.match(/^(\d{1,2})(?::(\d{2}))?\s*(AM|PM)$/i);
+  if (match12) {
+    let hours = parseInt(match12[1], 10);
+    const minutes = parseInt(match12[2] ?? "0", 10);
+    const period = match12[3].toUpperCase();
+    if (period === "PM" && hours !== 12) hours += 12;
+    if (period === "AM" && hours === 12) hours = 0;
+    return { hours, minutes };
+  }
+
+  return null;
+}
+
+/**
+ * Compute the next UTC Date when the user's daily ping should fire,
+ * given their preferred local time and timezone.
+ *
+ * If the target time hasn't passed yet today (in their timezone), the
+ * next fire is today at that time. Otherwise it's tomorrow.
+ */
+export function computeNextDailyPing(
+  dailyPingTime: string,
+  timezone: string,
+): Date | null {
+  const parsed = parsePingTime(dailyPingTime);
+  if (!parsed) return null;
+  const { hours: targetH, minutes: targetM } = parsed;
+
+  try {
+    const now = new Date();
+
+    // Get today's date string in the user's timezone (YYYY-MM-DD via en-CA)
+    const dateFmt = new Intl.DateTimeFormat("en-CA", {
+      timeZone: timezone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    });
+
+    // Get current time in the user's timezone (24h)
+    const timeFmt = new Intl.DateTimeFormat("en-GB", {
+      timeZone: timezone,
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    });
+
+    const localDateStr = dateFmt.format(now);
+    const localTimeStr = timeFmt.format(now);
+    const [localH, localM] = localTimeStr.split(":").map(Number);
+
+    // Has today's target time already passed? (+1 min buffer)
+    const alreadyPassed =
+      localH * 60 + localM >= targetH * 60 + targetM + 1;
+
+    let targetDateStr = localDateStr;
+    if (alreadyPassed) {
+      const tomorrow = new Date(now.getTime() + 86_400_000);
+      targetDateStr = dateFmt.format(tomorrow);
+    }
+
+    // Construct a UTC guess at the target time
+    const hh = String(targetH).padStart(2, "0");
+    const mm = String(targetM).padStart(2, "0");
+    const guessUtc = new Date(`${targetDateStr}T${hh}:${mm}:00.000Z`);
+
+    // Check what local time this UTC instant actually maps to
+    const checkTimeStr = timeFmt.format(guessUtc);
+    const [checkH, checkM] = checkTimeStr.split(":").map(Number);
+
+    // Calculate the offset to correct our guess
+    let diffMinutes = checkH * 60 + checkM - (targetH * 60 + targetM);
+
+    // Handle day boundary wrapping (e.g., UTC 23:00 → Tokyo 08:00 next day)
+    if (diffMinutes > 720) diffMinutes -= 1440;
+    if (diffMinutes < -720) diffMinutes += 1440;
+
+    return new Date(guessUtc.getTime() - diffMinutes * 60_000);
+  } catch {
+    return null;
+  }
+}
+
+// ── Main job ────────────────────────────────────────────────────────
+
+/**
+ * Runs every minute. Checks which users have a nextDailyPingAt that has
+ * passed and sends them a contextual check-in message + push notification.
+ * After firing, reschedules the next ping exactly 24h from the planned
+ * time (not from now) to prevent drift.
+ *
+ * Also backfills nextDailyPingAt for existing users who have preferences
+ * but no scheduled timestamp yet (pre-migration users).
  */
 export async function runDailyPing() {
   const now = new Date();
 
-  const usersWithPrefs = await db
+  // ── Backfill: compute nextDailyPingAt for users who don't have one yet ──
+  const usersNeedingBackfill = await db
+    .select({
+      id: schema.user.id,
+      notificationPreferences: schema.user.notificationPreferences,
+    })
+    .from(schema.user)
+    .where(
+      and(
+        isNotNull(schema.user.notificationPreferences),
+        isNull(schema.user.nextDailyPingAt),
+      ),
+    )
+    .limit(50);
+
+  for (const u of usersNeedingBackfill) {
+    try {
+      const prefs = u.notificationPreferences as NotificationPreferences | null;
+      if (!prefs?.dailyPingTime || !prefs?.timezone) continue;
+
+      const nextPing = computeNextDailyPing(prefs.dailyPingTime, prefs.timezone);
+      if (nextPing) {
+        await db
+          .update(schema.user)
+          .set({ nextDailyPingAt: nextPing })
+          .where(eq(schema.user.id, u.id));
+        console.log(
+          `[daily_ping] Backfilled nextDailyPingAt for ${u.id}: ${nextPing.toISOString()}`,
+        );
+      }
+    } catch (err) {
+      console.error(`[daily_ping] Backfill failed for ${u.id}:`, err);
+    }
+  }
+
+  // ── Main loop: process users whose ping is due ────────────────────
+  const dueUsers = await db
     .select({
       id: schema.user.id,
       notificationPreferences: schema.user.notificationPreferences,
       expoPushToken: schema.user.expoPushToken,
       name: schema.user.name,
       allyName: schema.user.allyName,
+      nextDailyPingAt: schema.user.nextDailyPingAt,
     })
     .from(schema.user)
-    .where(isNotNull(schema.user.notificationPreferences));
+    .where(
+      and(
+        isNotNull(schema.user.nextDailyPingAt),
+        lte(schema.user.nextDailyPingAt, now),
+      ),
+    )
+    .limit(100);
 
-  for (const userRow of usersWithPrefs) {
+  if (dueUsers.length === 0) return;
+
+  console.log(`[daily_ping] ${dueUsers.length} user(s) due for daily ping`);
+
+  for (const userRow of dueUsers) {
     try {
-      const prefs = userRow.notificationPreferences as NotificationPreferences | null;
-      if (!prefs?.dailyPingTime || !prefs?.timezone) continue;
+      // Immediately reschedule 24h from the *planned* time (not from now)
+      // to prevent drift. If the ping fires late, the next one stays anchored.
+      const nextPing = new Date(userRow.nextDailyPingAt!.getTime() + 24 * 3_600_000);
+      await db
+        .update(schema.user)
+        .set({ nextDailyPingAt: nextPing })
+        .where(eq(schema.user.id, userRow.id));
 
-      if (!isTimeToNotify(now, prefs.dailyPingTime, prefs.timezone)) continue;
-
+      // Dedup: skip if we already sent a ping today for this user
       const todayStr = now.toISOString().split("T")[0];
       const alreadyPinged = await db.query.jobRuns.findFirst({
         where: sql`${schema.jobRuns.jobName} = 'daily_ping' AND ${schema.jobRuns.userId} = ${userRow.id} AND ${schema.jobRuns.startedAt}::date = ${todayStr}::date`,
@@ -163,29 +317,9 @@ export async function runDailyPing() {
         metadata: { message: text, conversationId },
       });
 
-      console.log(`[daily_ping] Sent to ${userRow.id}`);
+      console.log(`[daily_ping] Sent to ${userRow.id}, next at ${nextPing.toISOString()}`);
     } catch (err) {
       console.error(`[daily_ping] Failed for ${userRow.id}:`, err);
     }
-  }
-}
-
-/**
- * Check if the current UTC time matches the user's preferred ping time
- * in their timezone (within a 1-minute window).
- */
-function isTimeToNotify(now: Date, dailyPingTime: string, timezone: string): boolean {
-  try {
-    const formatter = new Intl.DateTimeFormat("en-US", {
-      timeZone: timezone,
-      hour: "numeric",
-      minute: "numeric",
-      hour12: true,
-    });
-    const userLocalTime = formatter.format(now);
-    const normalize = (t: string) => t.replace(/\s+/g, " ").trim().toUpperCase();
-    return normalize(userLocalTime) === normalize(dailyPingTime);
-  } catch {
-    return false;
   }
 }

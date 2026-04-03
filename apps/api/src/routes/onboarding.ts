@@ -4,6 +4,7 @@ import { generateOnboardingFollowups, processOnboardingConversation } from "../a
 import { AIError } from "../ai/client";
 import { updateProfile } from "../services/memory";
 import { createReminder } from "../services/reminderService";
+import { computeNextDailyPing } from "../jobs/dailyPing";
 import { db, schema } from "../db";
 import { eq } from "drizzle-orm";
 import type { MemoryProfile, DynamicAttribute, OnboardingQA } from "@ally/shared";
@@ -138,6 +139,9 @@ export const onboardingRoutes = new Elysia({ prefix: "/api/v1" })
         });
         await updateProfile(user.id, profile);
 
+        // Compute the absolute UTC timestamp for the first daily ping
+        const nextDailyPingAt = computeNextDailyPing(body.dailyPingTime, body.timezone);
+
         await db
           .update(schema.user)
           .set({
@@ -146,12 +150,13 @@ export const onboardingRoutes = new Elysia({ prefix: "/api/v1" })
               timezone: body.timezone,
             },
             allyName: body.allyName,
+            ...(nextDailyPingAt ? { nextDailyPingAt } : {}),
           })
           .where(eq(schema.user.id, user.id));
 
         // Schedule a welcome reminder for the user's first daily ping time
         try {
-          const welcomeRemindAt = getNextPingTime(body.dailyPingTime, body.timezone);
+          const welcomeRemindAt = computeNextDailyPing(body.dailyPingTime, body.timezone);
           if (welcomeRemindAt) {
             await createReminder({
               userId: user.id,
@@ -212,53 +217,3 @@ export const onboardingRoutes = new Elysia({ prefix: "/api/v1" })
       }),
     },
   );
-
-/**
- * Convert a user's preferred ping time (e.g. "9:00 AM") and timezone
- * into the next occurrence as a UTC Date.
- */
-function getNextPingTime(dailyPingTime: string, timezone: string): Date | null {
-  try {
-    const match = dailyPingTime.match(/(\d{1,2}):(\d{2})\s*(AM|PM)/i);
-    if (!match) return null;
-
-    let hours = parseInt(match[1]);
-    const minutes = parseInt(match[2]);
-    const period = match[3].toUpperCase();
-
-    if (period === "PM" && hours !== 12) hours += 12;
-    if (period === "AM" && hours === 12) hours = 0;
-
-    // Create a date in the user's timezone for tomorrow at their preferred time
-    const now = new Date();
-    const tomorrow = new Date(now);
-    tomorrow.setDate(tomorrow.getDate() + 1);
-
-    // Format as YYYY-MM-DD in the user's timezone
-    const formatter = new Intl.DateTimeFormat("en-CA", {
-      timeZone: timezone,
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-    });
-    const dateStr = formatter.format(tomorrow);
-
-    // Build an approximate UTC time by offsetting
-    const targetLocal = new Date(`${dateStr}T${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:00`);
-
-    // Approximate the timezone offset
-    const utcFormatter = new Intl.DateTimeFormat("en-US", {
-      timeZone: timezone,
-      hour: "numeric",
-      minute: "numeric",
-      hour12: false,
-    });
-    const localNow = utcFormatter.format(now);
-    const [localH, localM] = localNow.split(":").map(Number);
-    const offsetMs = (localH * 60 + localM - now.getUTCHours() * 60 - now.getUTCMinutes()) * 60_000;
-
-    return new Date(targetLocal.getTime() - offsetMs);
-  } catch {
-    return null;
-  }
-}
