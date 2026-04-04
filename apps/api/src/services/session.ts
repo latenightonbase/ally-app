@@ -4,7 +4,7 @@ import { callClaude } from "../ai/client";
 import type { MemoryProfile, MemoryFact } from "@ally/shared";
 
 const SESSION_GAP_MS = 30 * 60 * 1000;
-const MAX_ACTIVE_SESSION_MESSAGES = 12;
+const MAX_ACTIVE_SESSION_MESSAGES = 8;
 /** Force-rotate session once it exceeds this many messages to prevent context blowup. */
 const MAX_SESSION_MESSAGES_BEFORE_ROTATE = 40;
 
@@ -88,7 +88,7 @@ async function closeSession(sessionId: string): Promise<void> {
       maxTokens: 200,
     });
 
-    const tokenEstimate = Math.ceil(conversationText.length / 4);
+    const tokenEstimate = Math.ceil(conversationText.length / 3.2);
 
     await db
       .update(schema.sessions)

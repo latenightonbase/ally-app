@@ -82,12 +82,12 @@ function classifyMessageComplexity(message: string, sessionCount: number = 0): M
   return "fast";
 }
 
-/** Rough token estimate: ~4 characters per token (conservative for English text). */
-function estimateTokens(text: string): number {
-  return Math.ceil(text.length / 4);
+/** Conservative token estimate: ~3.2 chars per token to prevent undercounting. */
+function estimateTokensLocal(text: string): number {
+  return Math.ceil(text.length / 3.2);
 }
 
-const MAX_TOTAL_TOKENS = 150_000;
+const MAX_TOTAL_TOKENS = 130_000;
 
 /**
  * Hard safety check: ensures system prompt + memory profile + conversation
@@ -106,10 +106,10 @@ function enforceTokenBudget(input: ConversationInput): ConversationInput {
   const historyText = input.conversationHistory
     .map((m) => m.content)
     .join("\n");
-  const messageTokens = estimateTokens(input.message);
+  const messageTokens = estimateTokensLocal(input.message);
 
   let totalTokens =
-    estimateTokens(systemText) + estimateTokens(historyText) + messageTokens;
+    estimateTokensLocal(systemText) + estimateTokensLocal(historyText) + messageTokens;
 
   if (totalTokens <= MAX_TOTAL_TOKENS) return input;
 
@@ -123,8 +123,8 @@ function enforceTokenBudget(input: ConversationInput): ConversationInput {
     .map((m) => m.content)
     .join("\n");
   totalTokens =
-    estimateTokens(systemText) +
-    estimateTokens(trimmedHistoryText) +
+    estimateTokensLocal(systemText) +
+    estimateTokensLocal(trimmedHistoryText) +
     messageTokens;
 
   if (totalTokens <= MAX_TOTAL_TOKENS) {
@@ -195,8 +195,8 @@ function enforceTokenBudget(input: ConversationInput): ConversationInput {
     input.sessionCount ?? 0,
   );
   totalTokens =
-    estimateTokens(reducedSystemText) +
-    estimateTokens(trimmedHistoryText) +
+    estimateTokensLocal(reducedSystemText) +
+    estimateTokensLocal(trimmedHistoryText) +
     messageTokens;
 
   console.log(
@@ -204,6 +204,72 @@ function enforceTokenBudget(input: ConversationInput): ConversationInput {
   );
 
   return trimmedInput;
+}
+
+/**
+ * Hard pre-flight check: estimate the total payload size by serializing the
+ * full request (system prompt + messages + tools). This catches edge cases
+ * where individual estimates undercount due to JSON overhead, tool definitions,
+ * etc. If the serialized payload would exceed 180K tokens, aggressively trim.
+ * This runs AFTER enforceTokenBudget, as a final safety net before API call.
+ */
+const HARD_LIMIT_TOKENS = 180_000; // Absolute max before Claude's 200K rejects
+
+function preFlightTokenCheck(
+  system: Anthropic.Messages.TextBlockParam[],
+  messages: Anthropic.MessageParam[],
+  tools: Anthropic.Messages.Tool[],
+): { system: Anthropic.Messages.TextBlockParam[]; messages: Anthropic.MessageParam[] } {
+  // Estimate total by serializing everything
+  const systemJson = JSON.stringify(system);
+  const messagesJson = JSON.stringify(messages);
+  const toolsJson = JSON.stringify(tools);
+  const totalChars = systemJson.length + messagesJson.length + toolsJson.length;
+  const estimatedTokens = Math.ceil(totalChars / 3.2);
+
+  if (estimatedTokens <= HARD_LIMIT_TOKENS) {
+    return { system, messages };
+  }
+
+  console.warn(
+    `[pre-flight] Payload estimated at ${estimatedTokens} tokens (>${HARD_LIMIT_TOKENS}). Trimming aggressively.`,
+  );
+
+  // Step 1: Trim messages to last 6
+  let trimmedMessages = messages.length > 6 ? messages.slice(-6) : messages;
+  // Always ensure first message is from user
+  if (trimmedMessages.length > 0 && trimmedMessages[0].role === "assistant") {
+    trimmedMessages = trimmedMessages.slice(1);
+  }
+
+  // Re-check after message trim
+  const afterMsgTrim = Math.ceil(
+    (systemJson.length + JSON.stringify(trimmedMessages).length + toolsJson.length) / 3.2,
+  );
+
+  if (afterMsgTrim <= HARD_LIMIT_TOKENS) {
+    console.log(`[pre-flight] Resolved by trimming to ${trimmedMessages.length} messages (${afterMsgTrim} tokens).`);
+    return { system, messages: trimmedMessages };
+  }
+
+  // Step 2: Strip system prompt down to first 60% of its text (keeps personality, drops memory/examples)
+  const originalText = system[0]?.text ?? "";
+  const maxSystemChars = Math.floor(HARD_LIMIT_TOKENS * 3.2 * 0.6);
+  const truncatedText = originalText.slice(0, maxSystemChars) + "\n\n(context truncated for token limits)";
+  const truncatedSystem: Anthropic.Messages.TextBlockParam[] = [
+    {
+      type: "text" as const,
+      text: truncatedText,
+      cache_control: { type: "ephemeral" as const },
+    },
+  ];
+
+  const afterSystemTrim = Math.ceil(
+    (JSON.stringify(truncatedSystem).length + JSON.stringify(trimmedMessages).length + toolsJson.length) / 3.2,
+  );
+
+  console.log(`[pre-flight] After system+message trim: ${afterSystemTrim} tokens.`);
+  return { system: truncatedSystem, messages: trimmedMessages };
 }
 
 function buildCachedSystemPrompt(input: ConversationInput): Anthropic.Messages.TextBlockParam[] {
@@ -230,11 +296,12 @@ export async function generateReply(input: ConversationInput): Promise<{
   const system = buildCachedSystemPrompt(safeInput);
   const messages = buildMessages(safeInput);
   const tools = buildTools(safeInput);
+  const { system: safeSystem, messages: safeMessages } = preFlightTokenCheck(system, messages, tools);
   const modelTier = safeInput.modelTier ?? classifyMessageComplexity(safeInput.message, safeInput.sessionCount ?? 0);
 
   const result = await callClaudeWithTools({
-    system,
-    messages,
+    system: safeSystem,
+    messages: safeMessages,
     tools,
     maxTokens: 400,
     modelTier,
@@ -254,11 +321,12 @@ export async function generateReplyStreaming(
   const system = buildCachedSystemPrompt(safeInput);
   const messages = buildMessages(safeInput);
   const tools = buildTools(safeInput);
+  const { system: safeSystem, messages: safeMessages } = preFlightTokenCheck(system, messages, tools);
   const modelTier = safeInput.modelTier ?? classifyMessageComplexity(safeInput.message, safeInput.sessionCount ?? 0);
 
   const result = await callClaudeStreamingWithTools({
-    system,
-    messages,
+    system: safeSystem,
+    messages: safeMessages,
     tools,
     maxTokens: 400,
     modelTier,

@@ -25,11 +25,12 @@ export class AIError extends Error {
 }
 
 /**
- * Rough token estimate: ~4 chars per token for English text.
+ * Conservative token estimate: ~3.2 chars per token for English text.
+ * Using 3.2 instead of 4 prevents undercounting that caused 200K overflows.
  * Used as a pre-flight guard to prevent exceeding context limits.
  */
 export function estimateTokens(text: string): number {
-  return Math.ceil(text.length / 4);
+  return Math.ceil(text.length / 3.2);
 }
 
 /**
@@ -53,8 +54,8 @@ export function estimateMessageTokens(
   return total;
 }
 
-/** Hard ceiling for total input tokens (leaves room for output). */
-export const MAX_CONTEXT_TOKENS = 160_000;
+/** Hard ceiling for total input tokens (leaves room for output against 200K limit). */
+export const MAX_CONTEXT_TOKENS = 140_000;
 
 export async function callClaude(options: {
   system: string | Anthropic.Messages.TextBlockParam[];

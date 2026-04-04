@@ -68,18 +68,18 @@ async function logConversationSignal(
 async function prepareContext(userId: string, conversationId: string, sessionId: string, message: string) {
   const [profile, relevantFacts, sessionContext] = await Promise.all([
     loadMemoryProfile(userId),
-    retrieveRelevantFacts({ userId, query: message, limit: 5 }).catch(() => []),
+    retrieveRelevantFacts({ userId, query: message, limit: 3 }).catch(() => []),
     buildSessionContext(userId, conversationId, sessionId),
   ]);
 
-  let history = sessionContext.history.slice(-12).map((m) => ({
+  let history = sessionContext.history.slice(-8).map((m) => ({
     role: m.role as "user" | "ally",
     content: m.content,
   }));
 
   // Token budget guard: if history is too large, aggressively trim older messages
   let historyTokens = history.reduce((sum, m) => sum + estimateTokens(m.content), 0);
-  while (history.length > 4 && historyTokens > 30_000) {
+  while (history.length > 4 && historyTokens > 20_000) {
     history = history.slice(1);
     historyTokens = history.reduce((sum, m) => sum + estimateTokens(m.content), 0);
   }

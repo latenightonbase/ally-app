@@ -260,6 +260,7 @@ export async function retrieveRelevantFacts(
   }
 
   const results = Array.from(candidateMap.values())
+    .filter((r) => r.score >= 0.35) // Drop low-relevance matches to save prompt tokens
     .sort((a, b) => b.score - a.score)
     .slice(0, limit);
 
