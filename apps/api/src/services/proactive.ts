@@ -48,12 +48,16 @@ async function handleInactivity({
   if (!profile) return;
 
   const name = profile.personalInfo.preferredName ?? "there";
+
+  // Build a concise summary instead of dumping the entire profile
+  const profileSnippet = JSON.stringify(profile, null, 2).slice(0, 3_000);
+
   const { text } = await callClaude({
     system: `Write a brief, warm check-in message (1-2 sentences) from Ally to ${name}. Reference something specific from their memory profile if possible. Sound like a caring friend, not a notification.`,
     messages: [
       {
         role: "user",
-        content: `Memory profile:\n${JSON.stringify(profile, null, 2)}`,
+        content: `Memory profile (summary):\n${profileSnippet}`,
       },
     ],
     maxTokens: 256,

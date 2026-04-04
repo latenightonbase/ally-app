@@ -57,6 +57,64 @@ export function estimateMessageTokens(
 /** Hard ceiling for total input tokens (leaves room for output against 200K limit). */
 export const MAX_CONTEXT_TOKENS = 140_000;
 
+/**
+ * Truncate a string to approximately fit within a token budget.
+ * Cuts at the last newline within the budget to avoid mid-line breaks.
+ */
+function truncateToTokenBudget(text: string, maxTokens: number): string {
+  if (estimateTokens(text) <= maxTokens) return text;
+  const charLimit = Math.floor(maxTokens * 3.2);
+  const cut = text.slice(0, charLimit);
+  const lastNl = cut.lastIndexOf("\n");
+  return (lastNl > charLimit * 0.5 ? cut.slice(0, lastNl) : cut) + "\n…[truncated to fit context window]";
+}
+
+/**
+ * Pre-flight guard: ensure messages fit within the available token budget.
+ * Multi-turn: drops oldest messages first (keeps the last 2).
+ * Single / last message: truncates content string.
+ */
+function fitMessagesToBudget(
+  messages: Anthropic.MessageParam[],
+  tokenBudget: number,
+): Anthropic.MessageParam[] {
+  if (tokenBudget <= 0) return messages;
+  let est = estimateMessageTokens(messages);
+  if (est <= tokenBudget) return messages;
+
+  // Strategy 1: drop oldest turns, keeping at least 2
+  let trimmed = [...messages];
+  while (trimmed.length > 2 && estimateMessageTokens(trimmed) > tokenBudget) {
+    trimmed = trimmed.slice(1);
+  }
+  est = estimateMessageTokens(trimmed);
+  if (est <= tokenBudget) return trimmed;
+
+  // Strategy 2: truncate the last message's content
+  const last = trimmed[trimmed.length - 1];
+  if (typeof last.content === "string") {
+    const preceding = trimmed.slice(0, -1);
+    const remaining = tokenBudget - estimateMessageTokens(preceding);
+    return [
+      ...preceding,
+      { ...last, content: truncateToTokenBudget(last.content, Math.max(remaining, 500)) },
+    ];
+  }
+
+  return trimmed;
+}
+
+/** Compute the token budget available for messages given system + output reservation. */
+function computeMessageBudget(
+  system: string | Anthropic.Messages.TextBlockParam[],
+  maxOutputTokens: number,
+): number {
+  const systemStr = typeof system === "string"
+    ? system
+    : system.map((b) => b.text).join("\n");
+  return MAX_CONTEXT_TOKENS - estimateTokens(systemStr) - maxOutputTokens;
+}
+
 export async function callClaude(options: {
   system: string | Anthropic.Messages.TextBlockParam[];
   messages: Anthropic.MessageParam[];
@@ -64,12 +122,16 @@ export async function callClaude(options: {
   tools?: Anthropic.Messages.Tool[];
   modelTier?: ModelTier;
 }): Promise<{ text: string; tokensUsed: number }> {
+  // Pre-flight token guard
+  const msgBudget = computeMessageBudget(options.system, options.maxTokens ?? 1024);
+  const safeMessages = fitMessagesToBudget(options.messages, msgBudget);
+
   try {
     const response = await anthropic.messages.create({
       model: selectModel(options.modelTier),
       max_tokens: options.maxTokens ?? 1024,
       system: options.system,
-      messages: options.messages,
+      messages: safeMessages,
       ...(options.tools?.length && { tools: options.tools }),
     } as Anthropic.Messages.MessageCreateParamsNonStreaming);
 
@@ -105,7 +167,8 @@ export async function callClaudeWithTools(options: {
   modelTier?: ModelTier;
   onToolCall?: (name: string, input: Record<string, unknown>) => Promise<string>;
 }): Promise<{ text: string; tokensUsed: number }> {
-  let messages = [...options.messages];
+  const msgBudget = computeMessageBudget(options.system, options.maxTokens ?? 1024);
+  let messages = fitMessagesToBudget([...options.messages], msgBudget);
   let totalTokens = 0;
   const maxLoops = 3;
 
@@ -172,7 +235,8 @@ export async function callClaudeStreamingWithTools(options: {
   onToken: (token: string) => void;
   onToolCall?: (name: string, input: Record<string, unknown>) => Promise<string>;
 }): Promise<{ fullText: string; tokensUsed: number }> {
-  let messages = [...options.messages];
+  const msgBudget = computeMessageBudget(options.system, options.maxTokens ?? 1024);
+  let messages = fitMessagesToBudget([...options.messages], msgBudget);
   let totalTokens = 0;
   let fullText = "";
   const maxLoops = 3;
@@ -238,12 +302,15 @@ export async function callClaudeStreaming(options: {
   onToken: (token: string) => void;
   modelTier?: ModelTier;
 }): Promise<{ fullText: string; tokensUsed: number }> {
+  const msgBudget = computeMessageBudget(options.system, options.maxTokens ?? 1024);
+  const safeMessages = fitMessagesToBudget(options.messages, msgBudget);
+
   try {
     const stream = anthropic.messages.stream({
       model: selectModel(options.modelTier),
       max_tokens: options.maxTokens ?? 1024,
       system: options.system,
-      messages: options.messages,
+      messages: safeMessages,
     } as Anthropic.Messages.MessageStreamParams);
 
     let fullText = "";

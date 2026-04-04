@@ -1,9 +1,18 @@
-import { callClaude } from "./client";
+import { callClaude, estimateTokens } from "./client";
 import { buildBriefingSystemPrompt } from "./prompts";
 import { retrieveRelevantFacts, loadMemoryProfile } from "../services/retrieval";
 import { db, schema } from "../db";
 import { eq, and, gte, lte, isNull, count } from "drizzle-orm";
 import type { MemoryProfile, PendingFollowup } from "@ally/shared";
+
+/** Max tokens for the entire user-message portion of the briefing prompt. */
+const BRIEFING_USER_MSG_BUDGET = 6_000;
+/** Max pending follow-ups to include in a briefing. */
+const MAX_FOLLOWUPS = 10;
+/** Max characters per follow-up context string. */
+const MAX_FOLLOWUP_CONTEXT_CHARS = 300;
+/** Max characters per relevant-fact content string. */
+const MAX_FACT_CONTENT_CHARS = 500;
 
 export async function generateBriefing(input: {
   profile: MemoryProfile;
@@ -24,27 +33,35 @@ export async function generateBriefing(input: {
   }
 
   if (input.pendingFollowups.length > 0) {
+    const capped = input.pendingFollowups.slice(0, MAX_FOLLOWUPS);
     parts.push(
-      `\nPending follow-ups:\n${input.pendingFollowups.map((f) => `- [${f.priority}] ${f.topic}: ${f.context}`).join("\n")}`,
+      `\nPending follow-ups:\n${capped.map((f) => `- [${f.priority}] ${f.topic}: ${(f.context ?? "").slice(0, MAX_FOLLOWUP_CONTEXT_CHARS)}`).join("\n")}`,
     );
   }
 
   if (input.relevantFacts.length > 0) {
     parts.push(
-      `\nRelevant context:\n${input.relevantFacts.map((f) => `- [${f.category}] ${f.content}`).join("\n")}`,
+      `\nRelevant context:\n${input.relevantFacts.map((f) => `- [${f.category}] ${f.content.slice(0, MAX_FACT_CONTENT_CHARS)}`).join("\n")}`,
     );
   }
 
-  const activeGoals = input.profile.goals.filter((g) => g.status === "active");
+  const activeGoals = input.profile.goals.filter((g) => g.status === "active").slice(0, 10);
   if (activeGoals.length > 0) {
     parts.push(
       `\nActive goals:\n${activeGoals.map((g) => `- ${g.description} (${g.category})`).join("\n")}`,
     );
   }
 
+  // Final safety: truncate the user message if it still exceeds the budget
+  let userMessage = parts.join("\n");
+  if (estimateTokens(userMessage) > BRIEFING_USER_MSG_BUDGET) {
+    const charLimit = Math.floor(BRIEFING_USER_MSG_BUDGET * 3.2);
+    userMessage = userMessage.slice(0, charLimit) + "\n…[context trimmed]";
+  }
+
   const { text, tokensUsed } = await callClaude({
     system: buildBriefingSystemPrompt(input.sessionCount),
-    messages: [{ role: "user", content: parts.join("\n") }],
+    messages: [{ role: "user", content: userMessage }],
     maxTokens: 512,
   });
 
