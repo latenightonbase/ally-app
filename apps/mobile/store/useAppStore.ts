@@ -16,12 +16,22 @@ export interface ChatMessage {
   timestamp: Date;
 }
 
+export interface CalendarPromptData {
+  reminderId: string;
+  title: string;
+  startDate: string; // ISO string
+  body?: string;
+  timezone?: string;
+  durationMinutes: number;
+}
+
 interface AppState {
   isOnboarded: boolean;
   user: UserProfile;
   tier: string | null;
   activeConversationId: string | null;
   messages: ChatMessage[];
+  pendingCalendarPrompt: CalendarPromptData | null;
 
   completeOnboarding: (user: UserProfile, greeting?: string) => void;
   resetOnboarding: () => void;
@@ -33,6 +43,8 @@ interface AppState {
   replaceLastMessage: (text: string) => void;
   setMessages: (messages: ChatMessage[]) => void;
   setActiveConversationId: (id: string | null) => void;
+  setPendingCalendarPrompt: (data: CalendarPromptData) => void;
+  clearPendingCalendarPrompt: () => void;
 }
 
 const INITIAL_USER: UserProfile = {
@@ -50,6 +62,7 @@ export const useAppStore = create<AppState>()(
       tier: null,
       activeConversationId: null,
       messages: [],
+      pendingCalendarPrompt: null,
 
       completeOnboarding: (user, greeting) => {
         const allyName = user.allyName || "Anzi";
@@ -128,6 +141,14 @@ export const useAppStore = create<AppState>()(
 
       setActiveConversationId: (id) => {
         set({ activeConversationId: id });
+      },
+
+      setPendingCalendarPrompt: (data) => {
+        set({ pendingCalendarPrompt: data });
+      },
+
+      clearPendingCalendarPrompt: () => {
+        set({ pendingCalendarPrompt: null });
       },
     }),
     {

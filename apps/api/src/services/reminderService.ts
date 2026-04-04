@@ -194,6 +194,7 @@ export async function processReminders(): Promise<void> {
       if (userRow?.expoPushToken) {
         const allyName = userRow.allyName ?? "Anzi";
 
+        const meta = (reminder.metadata ?? {}) as Record<string, unknown>;
         await sendPushNotification(
           userRow.expoPushToken,
           allyName,
@@ -202,6 +203,13 @@ export async function processReminders(): Promise<void> {
             type: "reminder",
             reminderId: reminder.id,
             conversationId: reminder.conversationId,
+            reminderTitle: reminder.title,
+            remindAt: reminder.metadata && (reminder.metadata as Record<string, unknown>).remindAtISO
+              ? (reminder.metadata as Record<string, unknown>).remindAtISO as string
+              : new Date().toISOString(),
+            body: reminder.body ?? undefined,
+            timezone: meta.timezone as string | undefined,
+            durationMinutes: typeof meta.durationMinutes === "number" ? meta.durationMinutes : 30,
           },
         );
       } else {

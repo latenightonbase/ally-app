@@ -19,6 +19,7 @@
     "better-auth": "^1.5.4",
     "clsx": "^2.1.1",
     "expo": "~55.0.4",
+    "expo-calendar": "~55.0.12",
     "expo-constants": "~55.0.7",
     "expo-dev-client": "~55.0.10",
     "expo-device": "~55.0.9",

@@ -15,7 +15,9 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.anonymous.ally-app",
       "infoPlist": {
-        "ITSAppUsesNonExemptEncryption": false
+        "ITSAppUsesNonExemptEncryption": false,
+        "NSCalendarsUsageDescription": "Ally uses your calendar to add reminders as events so you never miss what matters.",
+        "NSCalendarsFullAccessUsageDescription": "Ally uses your calendar to add reminders as events so you never miss what matters."
       }
     },
     "android": {
@@ -35,7 +37,8 @@
     "plugins": [
       "expo-router",
       "expo-font",
-      "expo-notifications"
+      "expo-notifications",
+      "expo-calendar"
     ],
     "extra": {
       "router": {},

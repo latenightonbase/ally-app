@@ -125,6 +125,11 @@ export function getCustomTools(): Anthropic.Messages.Tool[] {
             enum: ["high", "medium", "low"],
             description: "high: time-sensitive or emotional, medium: worth checking in, low: nice to remember",
           },
+          durationMinutes: {
+            type: "number",
+            description:
+              "Optional estimated duration of the event in minutes. Defaults to 30 if not provided. Use 60 for meetings, 15 for quick tasks, etc.",
+          },
         },
         required: ["topic", "context", "priority"],
       },
@@ -248,7 +253,14 @@ async function handleSetReminder(
       timezone: ctx.timezone,
       conversationId: ctx.conversationId,
       source: "chat",
-      metadata: { priority, rawWhen: when },
+      metadata: {
+        priority,
+        rawWhen: when,
+        remindAtISO: remindAt.toISOString(),
+        durationMinutes: typeof (input as Record<string, unknown>).durationMinutes === "number"
+          ? (input as Record<string, unknown>).durationMinutes
+          : 30,
+      },
     });
 
     return JSON.stringify({

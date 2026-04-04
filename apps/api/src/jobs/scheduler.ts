@@ -8,6 +8,7 @@ import { emit } from "../services/events";
 import { registerProactiveHandlers } from "../services/proactive";
 import { flushAllBatches } from "../services/memoryQueue";
 import { processReminders } from "../services/reminderService";
+import { processCheckins } from "../services/checkinService";
 
 interface ScheduledJob {
   name: string;
@@ -29,6 +30,13 @@ const jobs: ScheduledJob[] = [
     name: "check_reminders",
     cronExpression: "* * * * *",
     handler: processReminders,
+    enabled: true,
+    skipDedup: true,
+  },
+  {
+    name: "proactive_checkins",
+    cronExpression: "0 */3 * * *",
+    handler: processCheckins,
     enabled: true,
     skipDedup: true,
   },

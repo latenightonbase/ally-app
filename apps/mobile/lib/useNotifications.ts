@@ -97,6 +97,7 @@ export function useNotifications() {
   /**
    * When a reminder notification arrives, refresh the chat messages so the
    * user sees the in-conversation reminder message immediately.
+   * For reminders, also show the "Add to Calendar?" prompt.
    */
   const refreshChatFromNotification = useCallback(
     async (data: Record<string, unknown>) => {
@@ -121,6 +122,25 @@ export function useNotifications() {
         useAppStore.getState().setMessages(localMessages);
       } catch {
         // Best-effort — user will see the message next time they open the chat
+      }
+
+      // Show "Add to Calendar?" popup for reminder notifications
+      if (
+        data.type === "reminder" &&
+        data.reminderTitle &&
+        data.remindAt
+      ) {
+        useAppStore.getState().setPendingCalendarPrompt({
+          reminderId: (data.reminderId as string) ?? "",
+          title: data.reminderTitle as string,
+          startDate: data.remindAt as string,
+          body: (data.body as string) ?? undefined,
+          timezone: (data.timezone as string) ?? undefined,
+          durationMinutes:
+            typeof data.durationMinutes === "number"
+              ? data.durationMinutes
+              : 30,
+        });
       }
     },
     [],

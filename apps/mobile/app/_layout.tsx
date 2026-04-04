@@ -8,6 +8,7 @@ import { vars } from "nativewind";
 import { ThemeProvider, useTheme } from "../context/ThemeContext";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { ErrorBoundary } from "../components/ui/ErrorBoundary";
+import { CalendarPromptModal } from "../components/ui/CalendarPromptModal";
 import { useNotifications } from "../lib/useNotifications";
 import {
   useFonts,
@@ -63,6 +64,7 @@ function RootNavigation() {
         <Stack.Screen name="(onboarding)" />
         <Stack.Screen name="(tabs)" />
       </Stack>
+      <CalendarPromptModal />
     </View>
   );
 }
