@@ -33,6 +33,11 @@ interface AppState {
   messages: ChatMessage[];
   pendingCalendarPrompt: CalendarPromptData | null;
 
+  /** Network connectivity — `null` means unknown (initial state). */
+  isConnected: boolean | null;
+  /** Message text the user tried to send while offline / that failed due to a network error. */
+  pendingRetryMessage: string | null;
+
   completeOnboarding: (user: UserProfile, greeting?: string) => void;
   resetOnboarding: () => void;
   setUser: (partial: Partial<UserProfile>) => void;
@@ -45,6 +50,9 @@ interface AppState {
   setActiveConversationId: (id: string | null) => void;
   setPendingCalendarPrompt: (data: CalendarPromptData) => void;
   clearPendingCalendarPrompt: () => void;
+
+  setIsConnected: (connected: boolean) => void;
+  setPendingRetryMessage: (text: string | null) => void;
 }
 
 const INITIAL_USER: UserProfile = {
@@ -63,6 +71,8 @@ export const useAppStore = create<AppState>()(
       activeConversationId: null,
       messages: [],
       pendingCalendarPrompt: null,
+      isConnected: null,
+      pendingRetryMessage: null,
 
       completeOnboarding: (user, greeting) => {
         const allyName = user.allyName || "Anzi";
@@ -150,10 +160,23 @@ export const useAppStore = create<AppState>()(
       clearPendingCalendarPrompt: () => {
         set({ pendingCalendarPrompt: null });
       },
+
+      setIsConnected: (connected) => {
+        set({ isConnected: connected });
+      },
+
+      setPendingRetryMessage: (text) => {
+        set({ pendingRetryMessage: text });
+      },
     }),
     {
       name: "ally-app-storage",
       storage: createJSONStorage(() => AsyncStorage),
+      partialize: (state) => {
+        // Exclude transient runtime state from persistence
+        const { isConnected, ...persisted } = state;
+        return persisted;
+      },
     },
   ),
 );

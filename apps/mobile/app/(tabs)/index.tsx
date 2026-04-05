@@ -26,6 +26,7 @@ import {
   getConversationMessages,
   getConversationStatus,
   ApiError,
+  OfflineError,
   type Message,
 } from "../../lib/api";
 import { useSession } from "../../lib/auth";
@@ -105,6 +106,41 @@ function RateLimitBanner({ visible, resetTime, onDismiss }: RateLimitBannerProps
   );
 }
 
+function OfflineBanner({ visible }: { visible: boolean }) {
+  const opacity = useRef(new Animated.Value(0)).current;
+  const { theme } = useTheme();
+
+  useEffect(() => {
+    Animated.timing(opacity, {
+      toValue: visible ? 1 : 0,
+      duration: 250,
+      useNativeDriver: true,
+    }).start();
+  }, [visible]);
+
+  if (!visible) return null;
+
+  return (
+    <Animated.View style={{ opacity }}>
+      <View
+        className="mx-4 mb-2 px-4 py-3 rounded-2xl flex-row items-center"
+        style={{ backgroundColor: theme.colors["--color-muted"] + "25" }}
+      >
+        <View className="flex-row items-center gap-2 flex-1">
+          <Ionicons
+            name="cloud-offline-outline"
+            size={16}
+            color={theme.colors["--color-muted"]}
+          />
+          <Text className="text-muted text-sm font-sans flex-1" numberOfLines={1}>
+            You're offline — messages will send when you reconnect
+          </Text>
+        </View>
+      </View>
+    </Animated.View>
+  );
+}
+
 interface FeedbackRowProps {
   messageId: string;
 }
@@ -170,6 +206,9 @@ export default function ChatScreen() {
   const setMessages = useAppStore((s) => s.setMessages);
   const activeConversationId = useAppStore((s) => s.activeConversationId);
   const setActiveConversationId = useAppStore((s) => s.setActiveConversationId);
+  const isConnected = useAppStore((s) => s.isConnected);
+  const pendingRetryMessage = useAppStore((s) => s.pendingRetryMessage);
+  const setPendingRetryMessage = useAppStore((s) => s.setPendingRetryMessage);
 
   const [isTyping, setIsTyping] = useState(false);
   const [isStreaming, setIsStreaming] = useState(false);
@@ -306,6 +345,24 @@ export default function ChatScreen() {
     };
   }, [isStreaming, isTyping]);
 
+  // Auto-retry the pending message once connectivity returns
+  useEffect(() => {
+    if (isConnected && pendingRetryMessage && !isStreaming && !isTyping) {
+      const text = pendingRetryMessage;
+      setPendingRetryMessage(null);
+      // Remove the "you're offline" placeholder bubble before retrying
+      const msgs = useAppStore.getState().messages;
+      if (
+        msgs.length > 0 &&
+        !msgs[msgs.length - 1].isUser &&
+        msgs[msgs.length - 1].text.includes("offline")
+      ) {
+        setMessages(msgs.slice(0, -1));
+      }
+      handleSend(text);
+    }
+  }, [isConnected, pendingRetryMessage, isStreaming, isTyping]);
+
   const handleSend = useCallback(
     async (text: string) => {
       setRateLimitVisible(false);
@@ -367,7 +424,14 @@ export default function ChatScreen() {
           activeConversationId ?? undefined,
         );
       } catch (e) {
-        if (e instanceof ApiError && e.status === 429) {
+        if (e instanceof OfflineError) {
+          // Stash the message so it auto-retries when connectivity returns
+          setPendingRetryMessage(text);
+          addMessage(
+            "You're offline — I'll send this as soon as you're back.",
+            false,
+          );
+        } else if (e instanceof ApiError && e.status === 429) {
           setRateLimitVisible(true);
           setRateLimitReset(e.rateLimitReset);
           addMessage(
@@ -440,6 +504,8 @@ export default function ChatScreen() {
         onDismiss={() => setRateLimitVisible(false)}
       />
 
+      <OfflineBanner visible={isConnected === false} />
+
       <KeyboardAvoidingView
         behavior={Platform.OS === "ios" ? "padding" : "height"}
         className="flex-1"
@@ -491,7 +557,7 @@ export default function ChatScreen() {
         />
 
         <View style={{ paddingBottom: keyboardVisible ? 0 : tabBarHeight }}>
-          <ChatInput onSend={handleSend} disabled={isTyping || isStreaming} />
+          <ChatInput onSend={handleSend} disabled={isTyping || isStreaming || isConnected === false} />
         </View>
       </KeyboardAvoidingView>
     </View>

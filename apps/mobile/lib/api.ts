@@ -13,6 +13,7 @@ import type {
   Message,
 } from "@ally/shared";
 import { authClient } from "./auth";
+import { useAppStore } from "../store/useAppStore";
 
 export type {
   ChatResponse,
@@ -80,6 +81,21 @@ export class ApiError extends Error {
   }
 }
 
+export class OfflineError extends Error {
+  constructor() {
+    super("You're offline — your message will be sent when you reconnect.");
+    this.name = "OfflineError";
+  }
+}
+
+/** Throws OfflineError if the device is currently disconnected. */
+function assertOnline() {
+  const connected = useAppStore.getState().isConnected;
+  if (connected === false) {
+    throw new OfflineError();
+  }
+}
+
 // --- Chat ---
 
 export interface StreamCallbacks {
@@ -107,6 +123,7 @@ export async function sendMessageStreaming(
   callbacks: StreamCallbacks,
   conversationId?: string,
 ): Promise<void> {
+  assertOnline();
   const headers = await getAuthHeaders();
 
   return new Promise<void>((resolve) => {

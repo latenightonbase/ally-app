@@ -10,6 +10,7 @@ import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { ErrorBoundary } from "../components/ui/ErrorBoundary";
 import { CalendarPromptModal } from "../components/ui/CalendarPromptModal";
 import { useNotifications } from "../lib/useNotifications";
+import { useNetworkListener } from "../lib/useNetworkListener";
 import {
   useFonts,
   PlusJakartaSans_400Regular,
@@ -23,6 +24,7 @@ SplashScreen.preventAutoHideAsync();
 function RootNavigation() {
   const { theme } = useTheme();
   useNotifications();
+  useNetworkListener();
 
   const [fontsLoaded, fontError] = useFonts({
     PlusJakartaSans_400Regular,
