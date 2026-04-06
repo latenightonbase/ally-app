@@ -450,6 +450,120 @@ export async function addFollowups(
   });
 }
 
+/**
+ * Resolve follow-ups that are addressed by newly extracted facts.
+ * Uses keyword overlap between the fact content/entities and follow-up
+ * topic/context to detect when a follow-up has been addressed.
+ *
+ * Also auto-expires follow-ups older than `maxAgeDays`.
+ */
+export async function resolveFollowups(
+  userId: string,
+  newFacts: ExtractedFact[],
+  maxAgeDays = 14,
+): Promise<number> {
+  const profile = await getOrCreateProfile(userId);
+  const followups = profile.pendingFollowups;
+  if (followups.length === 0) return 0;
+
+  const now = new Date();
+  const cutoff = new Date(now);
+  cutoff.setDate(cutoff.getDate() - maxAgeDays);
+
+  let resolvedCount = 0;
+
+  // Gather all keywords from new facts for matching
+  const factKeywords = new Set<string>();
+  for (const fact of newFacts) {
+    // Split fact content into lowercase words
+    for (const word of fact.content.toLowerCase().split(/\s+/)) {
+      if (word.length > 3) factKeywords.add(word);
+    }
+    // Include entity names
+    for (const entity of fact.entities) {
+      factKeywords.add(entity.toLowerCase());
+    }
+  }
+
+  const updatedFollowups = followups.map((f) => {
+    if (f.resolved) return f;
+
+    // Auto-expire old follow-ups
+    const detectedDate = new Date(f.detectedAt);
+    if (detectedDate < cutoff) {
+      resolvedCount++;
+      return { ...f, resolved: true };
+    }
+
+    // Check if any new facts address this follow-up
+    const topicWords = f.topic.toLowerCase().split(/\s+/).filter((w) => w.length > 3);
+    const contextWords = f.context.toLowerCase().split(/\s+/).filter((w) => w.length > 3);
+    const followupWords = [...topicWords, ...contextWords];
+
+    // If ≥2 keywords overlap between the follow-up and new facts, consider it resolved
+    const overlapCount = followupWords.filter((w) => factKeywords.has(w)).length;
+    if (overlapCount >= 2) {
+      resolvedCount++;
+      return { ...f, resolved: true };
+    }
+
+    return f;
+  });
+
+  if (resolvedCount > 0) {
+    await db
+      .update(schema.memoryProfiles)
+      .set({
+        profile: { ...profile, pendingFollowups: updatedFollowups, updatedAt: new Date().toISOString() },
+        updatedAt: new Date(),
+      })
+      .where(eq(schema.memoryProfiles.userId, userId));
+    console.log(`[memory] Resolved ${resolvedCount} follow-up(s) for user ${userId}`);
+  }
+
+  return resolvedCount;
+}
+
+/**
+ * Expire all follow-ups older than maxAgeDays for a given user.
+ * Called by the maintenance job to prevent stale follow-ups from
+ * polluting daily pings indefinitely.
+ */
+export async function expireOldFollowups(
+  userId: string,
+  maxAgeDays = 14,
+): Promise<number> {
+  const profile = await getOrCreateProfile(userId);
+  const followups = profile.pendingFollowups;
+  if (followups.length === 0) return 0;
+
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - maxAgeDays);
+
+  let expiredCount = 0;
+  const updatedFollowups = followups.map((f) => {
+    if (f.resolved) return f;
+    if (new Date(f.detectedAt) < cutoff) {
+      expiredCount++;
+      return { ...f, resolved: true };
+    }
+    return f;
+  });
+
+  if (expiredCount > 0) {
+    await db
+      .update(schema.memoryProfiles)
+      .set({
+        profile: { ...profile, pendingFollowups: updatedFollowups, updatedAt: new Date().toISOString() },
+        updatedAt: new Date(),
+      })
+      .where(eq(schema.memoryProfiles.userId, userId));
+    console.log(`[memory] Expired ${expiredCount} stale follow-up(s) for user ${userId}`);
+  }
+
+  return expiredCount;
+}
+
 export async function deleteProfile(userId: string): Promise<void> {
   await db
     .delete(schema.memoryProfiles)

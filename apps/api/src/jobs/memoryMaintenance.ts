@@ -1,7 +1,7 @@
 import { db, schema } from "../db";
 import { eq, and, lt, isNull, lte, sql } from "drizzle-orm";
 import { batchDeleteMemories, batchUpdateImportance } from "../services/vectorStore";
-import { storeExtractedEpisodes } from "../services/memory";
+import { storeExtractedEpisodes, expireOldFollowups } from "../services/memory";
 
 /**
  * Daily task 1: Promote past memory_events into episodic facts.
@@ -134,10 +134,36 @@ async function decayStaleSemanticFacts(): Promise<number> {
   return count;
 }
 
+/**
+ * Daily task 3: Expire stale unresolved follow-ups (older than 14 days).
+ * Prevents ancient follow-ups from polluting daily pings indefinitely.
+ */
+async function expireStaleFollowups(): Promise<number> {
+  // Find users who have non-null memoryProfiles (i.e., have follow-ups)
+  const usersWithProfiles = await db.query.memoryProfiles.findMany({
+    columns: { userId: true },
+    limit: 200,
+  });
+
+  let totalExpired = 0;
+  for (const { userId } of usersWithProfiles) {
+    const expired = await expireOldFollowups(userId, 14).catch((err) => {
+      console.error(`[maintenance] Follow-up expiry failed for ${userId}:`, err.message);
+      return 0;
+    });
+    totalExpired += expired;
+  }
+
+  if (totalExpired > 0) {
+    console.log(`[maintenance] Expired ${totalExpired} stale follow-ups across ${usersWithProfiles.length} users`);
+  }
+  return totalExpired;
+}
+
 export async function runDailyMaintenance(): Promise<void> {
   console.log("[maintenance] Starting daily memory maintenance");
 
-  const [promoted, purged] = await Promise.all([
+  const [promoted, purged, expiredFollowups] = await Promise.all([
     promoteExpiredEvents().catch((err) => {
       console.error("[maintenance] Event promotion failed:", err.message);
       return 0;
@@ -146,9 +172,13 @@ export async function runDailyMaintenance(): Promise<void> {
       console.error("[maintenance] Episode purge failed:", err.message);
       return 0;
     }),
+    expireStaleFollowups().catch((err) => {
+      console.error("[maintenance] Follow-up expiry failed:", err.message);
+      return 0;
+    }),
   ]);
 
-  console.log(`[maintenance] Daily done — promoted: ${promoted}, purged: ${purged}`);
+  console.log(`[maintenance] Daily done — promoted: ${promoted}, purged: ${purged}, followups expired: ${expiredFollowups}`);
 }
 
 export async function runMonthlyDecay(): Promise<void> {

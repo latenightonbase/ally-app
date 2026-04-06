@@ -8,6 +8,7 @@ import {
   updateProfile,
   storeEntities,
   mergeDynamicAttributes,
+  resolveFollowups,
 } from "./memory";
 import { loadMemoryProfile } from "./retrieval";
 import { createReminder } from "./reminderService";
@@ -202,6 +203,15 @@ async function processExtractionJob(job: Job<ExtractionJobData>): Promise<void> 
   }
 
   await Promise.all(storePromises);
+
+  // Resolve existing follow-ups that are addressed by the newly extracted facts.
+  // Run after storage so the fact data is committed.
+  const allNewFacts = [...semanticFacts, ...episodicFacts];
+  if (allNewFacts.length > 0) {
+    await resolveFollowups(userId, allNewFacts).catch((err) =>
+      console.error(`[memoryQueue] Follow-up resolution failed for ${userId}:`, err),
+    );
+  }
 
   if (data.dynamicAttributes && Object.keys(data.dynamicAttributes).length > 0) {
     await mergeDynamicAttributes(userId, data.dynamicAttributes, conversationId ?? undefined).catch((err) =>

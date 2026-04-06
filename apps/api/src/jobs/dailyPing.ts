@@ -1,10 +1,13 @@
 import { db, schema } from "../db";
 import { eq, isNotNull, sql, gte, lte, isNull, desc, and } from "drizzle-orm";
-import { loadMemoryProfile } from "../services/retrieval";
+import { loadMemoryProfile, retrieveRelevantFacts } from "../services/retrieval";
 import { callClaude } from "../ai/client";
 import { sendPushNotification } from "../services/notifications";
 import { getPendingReminders } from "../services/reminderService";
 import type { NotificationPreferences } from "../db/auth-schema";
+
+/** Max age (in days) for a follow-up to be considered relevant for daily pings. */
+const FOLLOWUP_MAX_AGE_DAYS = 14;
 
 // ── Time parsing ────────────────────────────────────────────────────
 
@@ -196,19 +199,28 @@ export async function runDailyPing() {
       const displayName = profile?.personalInfo.preferredName ?? userRow.name ?? "there";
       const allyName = userRow.allyName ?? "Anzi";
 
-      // Build prioritized context: followups → upcoming events → recent session → goals
+      // Build prioritized context using FRESH data from vector/graph DBs
       const contextParts: string[] = [];
 
-      const pendingFollowups = (profile?.pendingFollowups ?? []).filter((f) => !f.resolved);
+      // ── 1. Recent follow-ups (only those < FOLLOWUP_MAX_AGE_DAYS old) ──
+      const followupCutoff = new Date(now);
+      followupCutoff.setDate(followupCutoff.getDate() - FOLLOWUP_MAX_AGE_DAYS);
+      const pendingFollowups = (profile?.pendingFollowups ?? [])
+        .filter((f) => !f.resolved && new Date(f.detectedAt) >= followupCutoff)
+        .sort((a, b) => {
+          const priorityOrder = { high: 0, medium: 1, low: 2 };
+          return (priorityOrder[a.priority] ?? 2) - (priorityOrder[b.priority] ?? 2);
+        });
       if (pendingFollowups.length > 0) {
         contextParts.push(
-          `Unresolved follow-ups (highest priority — pick the most important one):\n${pendingFollowups
+          `Recent follow-ups (pick the most important one):\n${pendingFollowups
             .slice(0, 3)
-            .map((f) => `- [${f.priority}] ${f.topic}: ${f.context}`)
+            .map((f) => `- [${f.priority}] ${f.topic}: ${f.context} (detected ${f.detectedAt})`)
             .join("\n")}`,
         );
       }
 
+      // ── 2. Upcoming events (next 7 days) ──
       const sevenDaysOut = new Date(now);
       sevenDaysOut.setDate(sevenDaysOut.getDate() + 7);
       const upcomingEvents = await db.query.memoryEvents.findMany({
@@ -231,7 +243,7 @@ export async function runDailyPing() {
         );
       }
 
-      // Fetch upcoming reminders for additional context
+      // ── 3. Today's reminders ──
       const upcomingReminders = await getPendingReminders(userRow.id, 5).catch(() => []);
       const todayReminders = upcomingReminders.filter((r) => {
         const remindDate = new Date(r.remindAt);
@@ -245,6 +257,7 @@ export async function runDailyPing() {
         );
       }
 
+      // ── 4. Last session summary ──
       const lastSession = await db.query.sessions.findFirst({
         where: eq(schema.sessions.userId, userRow.id),
         orderBy: [desc(schema.sessions.startedAt)],
@@ -254,12 +267,44 @@ export async function runDailyPing() {
         contextParts.push(`What we last talked about:\n${lastSession.summary}`);
       }
 
-      const activeGoals = (profile?.goals ?? []).filter((g) => g.status === "active");
+      // ── 5. Fresh memories from vector + graph retrieval (recency-aware) ──
+      // This replaces the old static profile goals/interests with properly
+      // reranked facts that respect supersession and recency decay.
+      const retrievalQuery = lastSession?.summary
+        ? `Daily check-in context: ${lastSession.summary}`
+        : `Daily check-in for ${displayName} — recent life updates, goals, and current situation`;
+
+      const freshMemories = await retrieveRelevantFacts({
+        userId: userRow.id,
+        query: retrievalQuery,
+        limit: 8,
+        // Heavily weight recency so stale facts don't surface
+        semanticWeight: 0.3,
+        recencyWeight: 0.5,
+        importanceWeight: 0.2,
+      }).catch((err) => {
+        console.warn(`[daily_ping] Retrieval failed for ${userRow.id}:`, err);
+        return [];
+      });
+
+      if (freshMemories.length > 0) {
+        contextParts.push(
+          `Current memories about ${displayName} (most recent and relevant — these are the ground truth):\n${freshMemories
+            .map((m) => `- [${m.category}] ${m.content} (${m.createdAt.toISOString().split("T")[0]})`)
+            .join("\n")}`,
+        );
+      }
+
+      // ── 6. Active goals (only recently updated ones from profile) ──
+      const thirtyDaysAgo = new Date(now);
+      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+      const activeGoals = (profile?.goals ?? [])
+        .filter((g) => g.status === "active" && new Date(g.updatedAt) >= thirtyDaysAgo);
       if (activeGoals.length > 0) {
         contextParts.push(
-          `Active goals:\n${activeGoals
+          `Active goals (recently updated):\n${activeGoals
             .slice(0, 3)
-            .map((g) => `- ${g.description} (${g.category})`)
+            .map((g) => `- ${g.description} (${g.category}, updated ${g.updatedAt})`)
             .join("\n")}`,
         );
       }
@@ -270,7 +315,15 @@ export async function runDailyPing() {
           : "";
 
       const { text } = await callClaude({
-        system: `You are ${allyName}, a personal AI companion for ${displayName}. Write a single brief, warm check-in message (1-2 sentences). Sound like a caring friend sending a casual text — not a notification or reminder app. Pick ONE thread from the context and check in on it naturally. If there's a pending follow-up or upcoming event, that takes priority. Don't be generic. Don't list things. Don't use emojis excessively.${contextBlock}`,
+        system: `You are ${allyName}, a personal AI companion for ${displayName}. Write a single brief, warm check-in message (1-2 sentences). Sound like a caring friend sending a casual text — not a notification or reminder app.
+
+CRITICAL RULES:
+- Pick ONE thread from the context below and check in on it naturally.
+- ONLY reference things that are CURRENTLY true. Each memory has a date — if something is from weeks/months ago (like a trip or event), do NOT assume it's still happening. Past trips are OVER. Past events have PASSED. The person is back to their normal life unless a very recent memory says otherwise.
+- If there's an upcoming event or today's reminder, that takes priority.
+- If the most relevant recent memories show a change (e.g., came back from a trip, changed jobs), reference the CURRENT state, not the old one.
+- Don't be generic. Don't list things. Don't use emojis excessively.
+- When in doubt, reference the most RECENT memory or the last session summary.${contextBlock}`,
         messages: [{ role: "user", content: "Generate the daily check-in message." }],
         maxTokens: 200,
       });
