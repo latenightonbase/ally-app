@@ -476,11 +476,11 @@ export async function resolveFollowups(
   const factKeywords = new Set<string>();
   for (const fact of newFacts) {
     // Split fact content into lowercase words
-    for (const word of fact.content.toLowerCase().split(/\s+/)) {
+    for (const word of (fact.content ?? "").toLowerCase().split(/\s+/)) {
       if (word.length > 3) factKeywords.add(word);
     }
     // Include entity names
-    for (const entity of fact.entities) {
+    for (const entity of fact.entities ?? []) {
       factKeywords.add(entity.toLowerCase());
     }
   }

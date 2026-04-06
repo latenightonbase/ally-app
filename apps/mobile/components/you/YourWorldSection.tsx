@@ -41,7 +41,7 @@ export function YourWorldSection({
       <SectionHeader title="Your World" icon="people-outline" />
 
       {safeRelationships.map((rel, i) => {
-        const iconName = RELATION_ICONS[rel.relation.toLowerCase()] ?? "person-outline";
+        const iconName = RELATION_ICONS[rel.relation?.toLowerCase() ?? ""] ?? "person-outline";
         return (
           <View
             key={`${rel.name}-${i}`}

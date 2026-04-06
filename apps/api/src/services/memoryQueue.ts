@@ -178,9 +178,10 @@ async function processExtractionJob(job: Job<ExtractionJobData>): Promise<void> 
 
   const storePromises: Promise<void>[] = [];
 
-  const semanticFacts = data.facts.filter((f) => f.memoryType === "semantic");
-  const episodicFacts = data.facts.filter((f) => f.memoryType === "episodic");
-  const eventFacts = data.facts.filter((f) => f.memoryType === "event");
+  const allFacts = data.facts ?? [];
+  const semanticFacts = allFacts.filter((f) => f.memoryType === "semantic");
+  const episodicFacts = allFacts.filter((f) => f.memoryType === "episodic");
+  const eventFacts = allFacts.filter((f) => f.memoryType === "event");
 
   if (semanticFacts.length > 0) {
     storePromises.push(storeExtractedFacts(userId, semanticFacts, conversationId));

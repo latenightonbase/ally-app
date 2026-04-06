@@ -39,11 +39,12 @@ export function YourPatternsSection({
   const coping = Array.isArray(emotionalPatterns?.copingMechanisms) ? emotionalPatterns.copingMechanisms : [];
   const moodTrends = Array.isArray(emotionalPatterns?.moodTrends) ? emotionalPatterns.moodTrends : [];
 
+  const { theme } = useTheme();
+
   const hasContent = stressors.length > 0 || coping.length > 0 || moodTrends.length > 0;
 
   if (!hasContent && completeness !== "fuzzy") return null;
 
-  const { theme } = useTheme();
   const latestMood = moodTrends[moodTrends.length - 1];
 
   return (
