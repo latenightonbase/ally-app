@@ -195,6 +195,20 @@ export async function runDailyPing() {
       });
       if (alreadyPinged) continue;
 
+      // Fetch recent ping messages so Claude can avoid repeating itself
+      const recentPings = await db.query.jobRuns.findMany({
+        where: and(
+          eq(schema.jobRuns.jobName, "daily_ping"),
+          eq(schema.jobRuns.userId, userRow.id),
+        ),
+        orderBy: [desc(schema.jobRuns.startedAt)],
+        columns: { metadata: true },
+        limit: 5,
+      });
+      const previousMessages = recentPings
+        .map((r) => (r.metadata as Record<string, unknown> | null)?.message as string | undefined)
+        .filter(Boolean) as string[];
+
       const profile = await loadMemoryProfile(userRow.id);
       const displayName = profile?.personalInfo.preferredName ?? userRow.name ?? "there";
       const allyName = userRow.allyName ?? "Anzi";
@@ -314,6 +328,11 @@ export async function runDailyPing() {
           ? `\n\nContext to draw from (pick the most relevant thread — do NOT mention all of these):\n${contextParts.join("\n\n")}`
           : "";
 
+      const previousMessagesBlock =
+        previousMessages.length > 0
+          ? `\n\nYour recent messages (DO NOT repeat these — vary your topic, tone, and sentence structure):\n${previousMessages.map((m) => `- "${m}"`).join("\n")}`
+          : "";
+
       const { text } = await callClaude({
         system: `You are ${allyName}, a personal AI companion for ${displayName}. Write a single brief, warm check-in message (1-2 sentences). Sound like a caring friend sending a casual text — not a notification or reminder app.
 
@@ -323,7 +342,13 @@ CRITICAL RULES:
 - If there's an upcoming event or today's reminder, that takes priority.
 - If the most relevant recent memories show a change (e.g., came back from a trip, changed jobs), reference the CURRENT state, not the old one.
 - Don't be generic. Don't list things. Don't use emojis excessively.
-- When in doubt, reference the most RECENT memory or the last session summary.${contextBlock}`,
+- When in doubt, reference the most RECENT memory or the last session summary.
+
+VARIETY — this is critical:
+- Your recent messages are listed below. Do NOT reuse the same opening phrase, sentence structure, or topic as any of them.
+- Vary your style: sometimes ask a question, sometimes make a comment, sometimes be playful, sometimes be direct. Mix it up.
+- If you've already checked in about a topic recently, pick a DIFFERENT one.
+- Never start two messages in a row with similar phrasing like "I know..." or "Hey, just...".${contextBlock}${previousMessagesBlock}`,
         messages: [{ role: "user", content: "Generate the daily check-in message." }],
         maxTokens: 200,
       });
