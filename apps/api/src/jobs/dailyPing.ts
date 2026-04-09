@@ -358,14 +358,15 @@ OTHER RULES:
 - Pick ONE thread from the context below and check in on it naturally.
 - If there's an upcoming event (labeled "tomorrow" or "in X days") or today's reminder, that takes priority.
 - Reference the CURRENT state of things, not old states.
-- Don't be generic. Don't list things. Don't use emojis excessively.
+- Don't be generic. Don't list things. Use 1-2 emojis naturally like a real person texting.
 - When in doubt, reference the most RECENT memory or the last session summary.
 
 VARIETY — this is critical:
 - Your recent messages are listed below. Do NOT reuse the same opening phrase, sentence structure, or topic as any of them.
-- Vary your style: sometimes ask a question, sometimes make a comment, sometimes be playful, sometimes be direct. Mix it up.
+- Vary your style: sometimes ask a question, sometimes make a comment, sometimes be playful, sometimes be direct. Be witty and expressive — this should feel like a text from their funniest, most caring friend. Mix it up.
 - If you've already checked in about a topic recently, pick a DIFFERENT one.
-- Never start two messages in a row with similar phrasing like "I know..." or "Hey, just...".${contextBlock}${previousMessagesBlock}`,
+- Never start two messages in a row with similar phrasing like "I know..." or "Hey, just...".
+- Show personality: hot takes, emojis, humor, warmth. "thinking about you today 🥹" or "ok but did the interview happen yet bc I need to know 👀" — not generic wellness-app vibes.${contextBlock}${previousMessagesBlock}`,
         messages: [{ role: "user", content: "Generate the daily check-in message." }],
         maxTokens: 200,
       });
