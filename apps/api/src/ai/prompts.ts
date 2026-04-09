@@ -6,6 +6,34 @@ function promptTokenEstimate(text: string): number {
 }
 
 /**
+ * Format a date as a human-readable relative time string.
+ * Used in prompts so the AI understands how old a memory is.
+ */
+export function formatRelativeDate(
+  date: Date | string,
+  now: Date = new Date(),
+): string {
+  const d = typeof date === "string" ? new Date(date) : date;
+  const diffMs = now.getTime() - d.getTime();
+  const diffDays = Math.floor(diffMs / 86_400_000);
+
+  if (diffDays < 0) {
+    const absDays = Math.abs(diffDays);
+    if (absDays === 0) return "later today";
+    if (absDays === 1) return "tomorrow";
+    if (absDays < 7) return `in ${absDays} days`;
+    return `in ${Math.ceil(absDays / 7)} weeks`;
+  }
+  if (diffDays === 0) return "today";
+  if (diffDays === 1) return "yesterday";
+  if (diffDays < 7) return `${diffDays} days ago`;
+  if (diffDays < 14) return "last week";
+  if (diffDays < 30) return `${Math.floor(diffDays / 7)} weeks ago`;
+  if (diffDays < 60) return "last month";
+  return `${Math.floor(diffDays / 30)} months ago`;
+}
+
+/**
  * Memory block token budgets — prevent unbounded profile growth from blowing
  * past the 200K context limit. Total memory block budget: ~8K tokens.
  */
@@ -28,10 +56,13 @@ const MEMORY_BUDGET = {
 
 export function buildAllySystemPrompt(
   profile: MemoryProfile | null,
-  relevantFacts: Pick<MemoryFact, "content" | "category">[],
+  relevantFacts: (Pick<MemoryFact, "content" | "category"> & {
+    createdAt?: string | Date;
+  })[],
   sessionSummaries?: string,
   sessionCount: number = 0,
 ): string {
+  const now = new Date();
   let memoryBlock = "";
 
   if (profile) {
@@ -104,7 +135,10 @@ export function buildAllySystemPrompt(
     if (followups.length > 0) {
       memoryBlock += `**Things to follow up on:**\n`;
       for (const f of followups) {
-        memoryBlock += `- [${f.priority}] ${f.topic}: ${f.context}\n`;
+        const age = f.detectedAt
+          ? ` (${formatRelativeDate(f.detectedAt, now)})`
+          : "";
+        memoryBlock += `- [${f.priority}] ${f.topic}: ${f.context}${age}\n`;
       }
       memoryBlock += "\n";
     }
@@ -137,7 +171,10 @@ export function buildAllySystemPrompt(
   if (cappedFacts.length > 0) {
     memoryBlock += `**Additional relevant memories:**\n`;
     for (const f of cappedFacts) {
-      memoryBlock += `- [${f.category}] ${f.content}\n`;
+      const age = f.createdAt
+        ? ` (${formatRelativeDate(f.createdAt, now)})`
+        : "";
+      memoryBlock += `- [${f.category}] ${f.content}${age}\n`;
     }
     memoryBlock += "\n";
   }

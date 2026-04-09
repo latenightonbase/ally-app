@@ -2,6 +2,7 @@ import { db, schema } from "../db";
 import { eq, isNotNull, sql, gte, lte, isNull, desc, and } from "drizzle-orm";
 import { loadMemoryProfile, retrieveRelevantFacts } from "../services/retrieval";
 import { callClaude } from "../ai/client";
+import { formatRelativeDate } from "../ai/prompts";
 import { sendPushNotification } from "../services/notifications";
 import { getPendingReminders } from "../services/reminderService";
 import type { NotificationPreferences } from "../db/auth-schema";
@@ -229,7 +230,7 @@ export async function runDailyPing() {
         contextParts.push(
           `Recent follow-ups (pick the most important one):\n${pendingFollowups
             .slice(0, 3)
-            .map((f) => `- [${f.priority}] ${f.topic}: ${f.context} (detected ${f.detectedAt})`)
+            .map((f) => `- [${f.priority}] ${f.topic}: ${f.context} (${formatRelativeDate(f.detectedAt, now)})`)
             .join("\n")}`,
         );
       }
@@ -252,7 +253,7 @@ export async function runDailyPing() {
       if (upcomingEvents.length > 0) {
         contextParts.push(
           `Upcoming events:\n${upcomingEvents
-            .map((e) => `- ${e.content} (${e.eventDate.toISOString().split("T")[0]})`)
+            .map((e) => `- ${e.content} (${formatRelativeDate(e.eventDate, now)})`)
             .join("\n")}`,
         );
       }
@@ -304,7 +305,7 @@ export async function runDailyPing() {
       if (freshMemories.length > 0) {
         contextParts.push(
           `Current memories about ${displayName} (most recent and relevant — these are the ground truth):\n${freshMemories
-            .map((m) => `- [${m.category}] ${m.content} (${m.createdAt.toISOString().split("T")[0]})`)
+            .map((m) => `- [${m.category}] ${m.content} (${formatRelativeDate(m.createdAt, now)})`)
             .join("\n")}`,
         );
       }
@@ -318,7 +319,7 @@ export async function runDailyPing() {
         contextParts.push(
           `Active goals (recently updated):\n${activeGoals
             .slice(0, 3)
-            .map((g) => `- ${g.description} (${g.category}, updated ${g.updatedAt})`)
+            .map((g) => `- ${g.description} (${g.category}, updated ${formatRelativeDate(g.updatedAt, now)})`)
             .join("\n")}`,
         );
       }
@@ -333,14 +334,30 @@ export async function runDailyPing() {
           ? `\n\nYour recent messages (DO NOT repeat these — vary your topic, tone, and sentence structure):\n${previousMessages.map((m) => `- "${m}"`).join("\n")}`
           : "";
 
-      const { text } = await callClaude({
-        system: `You are ${allyName}, a personal AI companion for ${displayName}. Write a single brief, warm check-in message (1-2 sentences). Sound like a caring friend sending a casual text — not a notification or reminder app.
+      const todayFormatted = now.toLocaleDateString("en-US", {
+        weekday: "long",
+        year: "numeric",
+        month: "long",
+        day: "numeric",
+      });
 
-CRITICAL RULES:
+      const { text } = await callClaude({
+        system: `Today is ${todayFormatted}.
+
+You are ${allyName}, a personal AI companion for ${displayName}. Write a single brief, warm check-in message (1-2 sentences). Sound like a caring friend sending a casual text — not a notification or reminder app.
+
+CRITICAL — TEMPORAL AWARENESS:
+- Every piece of context below has a relative time label like "today", "yesterday", "3 days ago", "last week", "2 months ago".
+- USE these labels to understand what is current vs. past:
+  • "today" = happening now or very recently, safe to reference as ongoing
+  • "yesterday" = happened yesterday — it is OVER, ask how it went, don't assume it's happening now
+  • "3 days ago" or older = this is PAST. Do NOT treat it as current. A walk at 4PM from "yesterday" was YESTERDAY's walk. A trip from "2 weeks ago" means they are BACK.
+- When in doubt: if it's not labeled "today" or "tomorrow", treat it as something that already happened.
+
+OTHER RULES:
 - Pick ONE thread from the context below and check in on it naturally.
-- ONLY reference things that are CURRENTLY true. Each memory has a date — if something is from weeks/months ago (like a trip or event), do NOT assume it's still happening. Past trips are OVER. Past events have PASSED. The person is back to their normal life unless a very recent memory says otherwise.
-- If there's an upcoming event or today's reminder, that takes priority.
-- If the most relevant recent memories show a change (e.g., came back from a trip, changed jobs), reference the CURRENT state, not the old one.
+- If there's an upcoming event (labeled "tomorrow" or "in X days") or today's reminder, that takes priority.
+- Reference the CURRENT state of things, not old states.
 - Don't be generic. Don't list things. Don't use emojis excessively.
 - When in doubt, reference the most RECENT memory or the last session summary.
 

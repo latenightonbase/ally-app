@@ -19,7 +19,9 @@ import type Anthropic from "@anthropic-ai/sdk";
 interface ConversationInput {
   message: string;
   profile: MemoryProfile | null;
-  relevantFacts: Pick<MemoryFact, "content" | "category">[];
+  relevantFacts: (Pick<MemoryFact, "content" | "category"> & {
+    createdAt?: string | Date;
+  })[];
   conversationHistory: Pick<Message, "role" | "content">[];
   sessionSummaries?: string;
   sessionCount?: number;
