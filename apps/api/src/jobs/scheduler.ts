@@ -33,13 +33,13 @@ const jobs: ScheduledJob[] = [
     enabled: true,
     skipDedup: true,
   },
-  {
-    name: "proactive_checkins",
-    cronExpression: "0 */3 * * *",
-    handler: processCheckins,
-    enabled: true,
-    skipDedup: true,
-  },
+  // {
+  //   name: "proactive_checkins",
+  //   cronExpression: "0 */3 * * *",
+  //   handler: processCheckins,
+  //   enabled: true,
+  //   skipDedup: true,
+  // },
   {
     name: "weekly_insights",
     cronExpression: "0 20 * * 0",
