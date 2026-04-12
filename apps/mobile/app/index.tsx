@@ -8,6 +8,8 @@ import { getMemoryProfile, getUserProfile } from "../lib/api";
 export default function Index() {
   const { data: session, isPending } = useSession();
   const isOnboarded = useAppStore((s) => s.isOnboarded);
+  const guestOnboardingComplete = useAppStore((s) => s.guestOnboardingComplete);
+  const hasPaid = useAppStore((s) => s.hasPaid);
   const setTier = useAppStore((s) => s.setTier);
   const completeOnboardingStore = useAppStore((s) => s.completeOnboarding);
   const resetOnboarding = useAppStore((s) => s.resetOnboarding);
@@ -20,14 +22,12 @@ export default function Index() {
     const currentUserId = session?.user?.id ?? null;
 
     if (!currentUserId) {
-      // Logged out — reset so the next login re-initialises
       initialized.current = false;
       previousUserId.current = null;
       return;
     }
 
     if (previousUserId.current && previousUserId.current !== currentUserId) {
-      // Different user logged in — reset so we re-verify against server
       initialized.current = false;
     }
 
@@ -53,7 +53,6 @@ export default function Index() {
             undefined,
           );
         } else if (!profile && isOnboarded) {
-          // Server says this user has no profile — local state is stale
           resetOnboarding();
         }
       } catch {
@@ -61,7 +60,6 @@ export default function Index() {
       }
 
       try {
-        // Load server-side tier and profile preferences into store
         const serverProfile = await getUserProfile();
         setTier(serverProfile.tier);
       } catch {
@@ -78,13 +76,16 @@ export default function Index() {
     );
   }
 
-  if (!session) {
-    return <Redirect href="/(auth)/sign-in" />;
+  // Fully onboarded with account → go to app
+  if (session && isOnboarded) {
+    return <Redirect href="/(tabs)" />;
   }
 
-  if (!isOnboarded) {
-    return <Redirect href="/(onboarding)" />;
+  // Has account but not onboarded yet (edge case / new device)
+  if (session && !isOnboarded) {
+    return <Redirect href="/(onboarding)/welcome" />;
   }
 
-  return <Redirect href="/(tabs)" />;
+  // No account — show welcome screen to start the guest flow
+  return <Redirect href="/(onboarding)/welcome" />;
 }

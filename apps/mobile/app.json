@@ -17,7 +17,8 @@
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
         "NSCalendarsUsageDescription": "Ally uses your calendar to add reminders as events so you never miss what matters.",
-        "NSCalendarsFullAccessUsageDescription": "Ally uses your calendar to add reminders as events so you never miss what matters."
+        "NSCalendarsFullAccessUsageDescription": "Ally uses your calendar to add reminders as events so you never miss what matters.",
+        "NSCalendarsWriteOnlyAccessUsageDescription": "Ally uses your calendar to add reminders as events so you never miss what matters."
       }
     },
     "android": {
@@ -38,7 +39,15 @@
       "expo-router",
       "expo-font",
       "expo-notifications",
-      "expo-calendar"
+      "expo-calendar",
+      "expo-apple-authentication",
+      [
+        "@stripe/stripe-react-native",
+        {
+          "merchantIdentifier": "merchant.com.allyapp",
+          "enableGooglePay": false
+        }
+      ]
     ],
     "extra": {
       "router": {},

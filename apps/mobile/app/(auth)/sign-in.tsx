@@ -11,6 +11,8 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { MotiView } from "moti";
 import { router } from "expo-router";
+import * as AppleAuthentication from "expo-apple-authentication";
+import * as Haptics from "expo-haptics";
 import { TextInput } from "../../components/ui/TextInput";
 import { Button } from "../../components/ui/Button";
 import { useTheme } from "../../context/ThemeContext";
@@ -21,6 +23,7 @@ export default function SignInScreen() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
+  const [appleLoading, setAppleLoading] = useState(false);
 
   const handleSignIn = async () => {
     if (!email.trim() || !password.trim()) {
@@ -48,6 +51,40 @@ export default function SignInScreen() {
       );
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleAppleSignIn = async () => {
+    setAppleLoading(true);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    try {
+      const credential = await AppleAuthentication.signInAsync({
+        requestedScopes: [
+          AppleAuthentication.AppleAuthenticationScope.FULL_NAME,
+          AppleAuthentication.AppleAuthenticationScope.EMAIL,
+        ],
+      });
+
+      const { error } = await authClient.signIn.social({
+        provider: "apple",
+        idToken: {
+          token: credential.identityToken!,
+          nonce: credential.authorizationCode ?? undefined,
+        },
+      });
+
+      if (error) {
+        Alert.alert("Apple Sign In failed", error.message ?? "Please try again.");
+        return;
+      }
+
+      router.replace("/");
+    } catch (e: any) {
+      if (e?.code !== "ERR_REQUEST_CANCELED") {
+        Alert.alert("Error", e instanceof Error ? e.message : "Apple Sign In failed.");
+      }
+    } finally {
+      setAppleLoading(false);
     }
   };
 
@@ -82,6 +119,26 @@ export default function SignInScreen() {
               transition={{ type: "timing", duration: 500, delay: 200 }}
               className="gap-4"
             >
+              {/* Sign in with Apple */}
+              <AppleAuthentication.AppleAuthenticationButton
+                buttonType={AppleAuthentication.AppleAuthenticationButtonType.SIGN_IN}
+                buttonStyle={AppleAuthentication.AppleAuthenticationButtonStyle.BLACK}
+                cornerRadius={16}
+                style={{ width: "100%", height: 54 }}
+                onPress={handleAppleSignIn}
+              />
+
+              {appleLoading && (
+                <ActivityIndicator size="small" color={theme.colors["--color-primary"]} />
+              )}
+
+              {/* Divider */}
+              <View className="flex-row items-center gap-4">
+                <View className="flex-1 h-px bg-muted/20" />
+                <Text className="text-muted text-sm font-sans">or</Text>
+                <View className="flex-1 h-px bg-muted/20" />
+              </View>
+
               <TextInput
                 label="Email"
                 placeholder="you@example.com"
@@ -104,7 +161,6 @@ export default function SignInScreen() {
 
               <View className="mt-4">
                 <Button
-                className="bg-blue-500"
                   title={loading ? "Signing in..." : "Sign In"}
                   onPress={handleSignIn}
                   disabled={loading}
@@ -125,13 +181,13 @@ export default function SignInScreen() {
               from={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               transition={{ type: "timing", duration: 400, delay: 400 }}
-              className="mt-8 items-center"
+              className="mt-8 items-center gap-3"
             >
-              <Pressable onPress={() => router.push("/(auth)/sign-up")}>
+              <Pressable onPress={() => router.back()}>
                 <Text className="text-muted text-base font-sans">
-                  Don't have an account?{" "}
+                  New here?{" "}
                   <Text className="text-primary font-sans-semibold">
-                    Sign Up
+                    Get started free
                   </Text>
                 </Text>
               </Pressable>

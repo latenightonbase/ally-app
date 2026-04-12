@@ -11,6 +11,7 @@ import { insightRoutes } from "./routes/insights";
 import { webhookRoutes } from "./routes/webhooks";
 import { userRoutes } from "./routes/users";
 import { profileRoutes } from "./routes/profile";
+import { billingRoutes } from "./routes/billing";
 import { startScheduler } from "./jobs/scheduler";
 import { startMemoryWorker } from "./services/memoryQueue";
 import { ensureCollection } from "./services/vectorStore";
@@ -70,6 +71,7 @@ const app = new Elysia()
   .use(webhookRoutes)
   .use(userRoutes)
   .use(profileRoutes)
+  .use(billingRoutes)
   .listen(process.env.PORT ?? 3000);
 
 if (process.env.NODE_ENV !== "test") {

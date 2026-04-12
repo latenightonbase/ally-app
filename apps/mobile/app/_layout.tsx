@@ -5,6 +5,7 @@ import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import * as SplashScreen from "expo-splash-screen";
 import { vars } from "nativewind";
+import { StripeProvider } from "@stripe/stripe-react-native";
 import { ThemeProvider, useTheme } from "../context/ThemeContext";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { ErrorBoundary } from "../components/ui/ErrorBoundary";
@@ -20,6 +21,8 @@ import {
 } from "@expo-google-fonts/plus-jakarta-sans";
 
 SplashScreen.preventAutoHideAsync();
+
+const STRIPE_PUBLISHABLE_KEY = process.env.EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY ?? "";
 
 function RootNavigation() {
   const { theme } = useTheme();
@@ -75,9 +78,11 @@ export default function RootLayout() {
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <ErrorBoundary>
-        <ThemeProvider>
-          <RootNavigation />
-        </ThemeProvider>
+        <StripeProvider publishableKey={STRIPE_PUBLISHABLE_KEY} merchantIdentifier="merchant.com.allyapp">
+          <ThemeProvider>
+            <RootNavigation />
+          </ThemeProvider>
+        </StripeProvider>
       </ErrorBoundary>
     </GestureHandlerRootView>
   );
