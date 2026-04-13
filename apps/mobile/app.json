@@ -16,6 +16,7 @@
       "bundleIdentifier": "com.anonymous.ally-app",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
+        "NSCameraUsageDescription": "Allow Ally to access your camera to take photos and videos.",
         "NSCalendarsUsageDescription": "Ally uses your calendar to add reminders as events so you never miss what matters.",
         "NSCalendarsFullAccessUsageDescription": "Ally uses your calendar to add reminders as events so you never miss what matters.",
         "NSCalendarsWriteOnlyAccessUsageDescription": "Ally uses your calendar to add reminders as events so you never miss what matters."
