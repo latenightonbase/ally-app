@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { View, ActivityIndicator } from "react-native";
 import { Redirect } from "expo-router";
 import { useAppStore } from "../store/useAppStore";
@@ -8,14 +8,14 @@ import { getMemoryProfile, getUserProfile } from "../lib/api";
 export default function Index() {
   const { data: session, isPending } = useSession();
   const isOnboarded = useAppStore((s) => s.isOnboarded);
-  const guestOnboardingComplete = useAppStore((s) => s.guestOnboardingComplete);
-  const hasPaid = useAppStore((s) => s.hasPaid);
   const setTier = useAppStore((s) => s.setTier);
   const completeOnboardingStore = useAppStore((s) => s.completeOnboarding);
   const resetOnboarding = useAppStore((s) => s.resetOnboarding);
 
   const initialized = useRef(false);
   const previousUserId = useRef<string | null>(null);
+  // Prevent premature redirect while we verify onboarding state server-side
+  const [resolving, setResolving] = useState(false);
 
   // Reset guards when the user changes (logout or switch account)
   useEffect(() => {
@@ -28,7 +28,9 @@ export default function Index() {
     }
 
     if (previousUserId.current && previousUserId.current !== currentUserId) {
+      // New user — reset so we re-verify
       initialized.current = false;
+      resetOnboarding();
     }
 
     previousUserId.current = currentUserId;
@@ -37,10 +39,11 @@ export default function Index() {
   useEffect(() => {
     if (!session || initialized.current) return;
     initialized.current = true;
+    setResolving(true);
 
     (async () => {
       try {
-        // Verify onboarding state server-side (handles new-device login)
+        // Verify onboarding state server-side (handles new-device login & account switches)
         const { profile } = await getMemoryProfile();
         if (profile && !isOnboarded) {
           completeOnboardingStore(
@@ -65,10 +68,12 @@ export default function Index() {
       } catch {
         // Best-effort
       }
+
+      setResolving(false);
     })();
   }, [session]);
 
-  if (isPending) {
+  if (isPending || resolving) {
     return (
       <View className="flex-1 bg-background items-center justify-center">
         <ActivityIndicator size="large" />

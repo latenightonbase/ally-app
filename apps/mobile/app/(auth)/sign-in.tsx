@@ -43,7 +43,7 @@ export default function SignInScreen() {
         return;
       }
 
-      router.replace("/");
+      router.replace("/(tabs)");
     } catch (e) {
       Alert.alert(
         "Error",
@@ -77,7 +77,7 @@ export default function SignInScreen() {
         return;
       }
 
-      router.replace("/");
+      router.replace("/(tabs)");
     } catch (e: any) {
       if (e?.code !== "ERR_REQUEST_CANCELED") {
         Alert.alert("Error", e instanceof Error ? e.message : "Apple Sign In failed.");

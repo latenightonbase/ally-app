@@ -18,7 +18,7 @@ import { Button } from "../../components/ui/Button";
 import { useTheme } from "../../context/ThemeContext";
 import { authClient } from "../../lib/auth";
 import { useAppStore } from "../../store/useAppStore";
-import { completeOnboardingDynamic } from "../../lib/api";
+import { completeOnboardingDynamic, type OnboardingQA } from "../../lib/api";
 import { ProgressBackground } from "../../components/onboarding/ProgressBackground";
 
 export default function CreateAccountScreen() {
@@ -32,14 +32,30 @@ export default function CreateAccountScreen() {
   const onboardingGreeting = useAppStore((s) => s.onboardingGreeting);
   const completeOnboarding = useAppStore((s) => s.completeOnboarding);
 
-  const finalizeOnboarding = (name?: string) => {
+  // Persists the memory profile to the DB, then marks onboarding complete locally.
+  // Must be called after authentication so the API request is authorized.
+  const finalizeOnboarding = async (name?: string) => {
     const profile = guestProfile ?? {
       name: name ?? "Friend",
       allyName: "Anzi",
       dailyPingTime: "9 AM",
       timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
     };
-    completeOnboarding(profile, onboardingGreeting);
+
+    try {
+      const { greeting: serverGreeting } = await completeOnboardingDynamic({
+        userName: profile.name,
+        allyName: profile.allyName,
+        conversation: [] as OnboardingQA[],
+        dailyPingTime: profile.dailyPingTime,
+        timezone: profile.timezone,
+      });
+      completeOnboarding(profile, serverGreeting ?? onboardingGreeting);
+    } catch {
+      // Fall back to local-only so the user is never blocked
+      completeOnboarding(profile, onboardingGreeting);
+    }
+
     router.replace("/(tabs)");
   };
 
@@ -69,9 +85,15 @@ export default function CreateAccountScreen() {
         return;
       }
 
+      // Derive the name from Apple credential or the guest profile
+      const firstName =
+        credential.fullName?.givenName ??
+        guestProfile?.name ??
+        "Friend";
+
+      // Persist memory profile and mark onboarding complete (authorized now)
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      const firstName = credential.fullName?.givenName ?? undefined;
-      finalizeOnboarding(firstName);
+      await finalizeOnboarding(firstName);
     } catch (e: any) {
       if (e?.code === "ERR_REQUEST_CANCELED") {
         // User cancelled — no-op
@@ -125,7 +147,7 @@ export default function CreateAccountScreen() {
       }
 
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      finalizeOnboarding();
+      await finalizeOnboarding();
     } catch (e) {
       Alert.alert(
         "Error",
