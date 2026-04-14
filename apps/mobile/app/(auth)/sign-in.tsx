@@ -69,7 +69,6 @@ export default function SignInScreen() {
         provider: "apple",
         idToken: {
           token: credential.identityToken!,
-          nonce: credential.authorizationCode ?? undefined,
         },
       });
 

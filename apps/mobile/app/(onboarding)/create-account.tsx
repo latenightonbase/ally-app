@@ -61,7 +61,6 @@ export default function CreateAccountScreen() {
         provider: "apple",
         idToken: {
           token: credential.identityToken!,
-          nonce: credential.authorizationCode ?? undefined,
         },
       });
 
