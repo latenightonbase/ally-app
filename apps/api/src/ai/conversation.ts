@@ -69,16 +69,17 @@ function buildTools(input: ConversationInput): Anthropic.Messages.Tool[] {
 }
 
 function classifyMessageComplexity(message: string, sessionCount: number = 0): ModelTier {
-  const emotionalPatterns = [
-    /\b(feel|feeling|felt|sad|happy|angry|anxious|depressed|stressed|overwhelmed|lonely|scared|worried|hurt|frustrated|confused|lost|stuck)\b/i,
-    /\b(advice|help me|what should i|how do i deal|cope|struggling|breaking down)\b/i,
-    /\b(relationship|breakup|divorce|death|loss|grief|trauma)\b/i,
+  const complexPatterns = [
+    /\b(schedule|calendar|conflict|overlap|reschedule|plan|organize|coordinate)\b/i,
+    /\b(advice|help me|what should i|how do i deal|struggling|overwhelmed)\b/i,
+    /\b(meal plan|grocery|shopping list|budget|weekly plan)\b/i,
+    /\b(everyone|whole family|all the kids|coordinate|carpool)\b/i,
   ];
 
   // Deep relationships require nuanced reasoning — always use quality model
   if (sessionCount >= 20) return "quality";
 
-  if (message.length > 200 || emotionalPatterns.some((p) => p.test(message))) {
+  if (message.length > 200 || complexPatterns.some((p) => p.test(message))) {
     return "quality";
   }
   return "fast";

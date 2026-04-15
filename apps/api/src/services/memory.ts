@@ -39,6 +39,9 @@ export async function getOrCreateProfile(
       goals: p.goals ?? [],
       emotionalPatterns: { ...defaultEmotional, ...p.emotionalPatterns },
       pendingFollowups: p.pendingFollowups ?? [],
+      familyMembers: p.familyMembers ?? [],
+      familyRoutines: p.familyRoutines ?? [],
+      familyId: p.familyId ?? undefined,
     };
   }
 
@@ -82,6 +85,8 @@ export async function getOrCreateProfile(
       sensitivities: [],
     },
     pendingFollowups: [],
+    familyMembers: [],
+    familyRoutines: [],
     updatedAt: new Date().toISOString(),
   };
 

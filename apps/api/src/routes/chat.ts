@@ -93,12 +93,12 @@ async function prepareContext(userId: string, conversationId: string, sessionId:
   };
 }
 
-async function ensureConversation(userId: string, message: string, existingId?: string) {
+async function ensureConversation(userId: string, message: string, existingId?: string, familyId?: string) {
   if (existingId) return existingId;
 
   const [conv] = await db
     .insert(schema.conversations)
-    .values({ userId, preview: message.slice(0, 100) })
+    .values({ userId, preview: message.slice(0, 100), ...(familyId ? { familyId } : {}) })
     .returning({ id: schema.conversations.id });
   return conv.id;
 }
@@ -133,7 +133,14 @@ export const chatRoutes = new Elysia({ prefix: "/api/v1" })
 
       const { message, conversationId: existingConvId, stream } = body;
 
-      const conversationId = await ensureConversation(user.id, message, existingConvId);
+      // Look up user's familyId for family-scoped tools
+      const userRecord = await db.query.user.findFirst({
+        where: eq(schema.user.id, user.id),
+        columns: { familyId: true },
+      });
+      const familyId = userRecord?.familyId ?? undefined;
+
+      const conversationId = await ensureConversation(user.id, message, existingConvId, familyId);
       const sessionId = await resolveSession(user.id, conversationId);
 
       await db.insert(schema.messages).values({
@@ -153,6 +160,7 @@ export const chatRoutes = new Elysia({ prefix: "/api/v1" })
       const toolContext = {
         userId: user.id,
         conversationId,
+        familyId,
         timezone: profile?.personalInfo?.other?.timezone as string | undefined,
         location: profile?.personalInfo?.location
           ? { city: profile.personalInfo.location }

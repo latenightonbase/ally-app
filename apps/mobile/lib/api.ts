@@ -1,33 +1,43 @@
 import type {
   ChatResponse,
-  OnboardingAnswers,
-  OnboardingResponse,
-  OnboardingQA,
-  DynamicOnboardingQuestion,
-  OnboardingFollowupResponse,
   MemoryProfile,
   MemoryFact,
   Briefing,
   WeeklyInsight,
   Conversation,
   Message,
+  Family,
+  FamilyMember,
+  CalendarEvent,
+  Task,
+  ShoppingList,
+  ShoppingListItem,
+  FamilyDashboard,
+  CreateCalendarEventInput,
+  CreateTaskInput,
+  AddShoppingItemInput,
 } from "@ally/shared";
 import { authClient } from "./auth";
 import { useAppStore } from "../store/useAppStore";
 
 export type {
   ChatResponse,
-  OnboardingAnswers,
-  OnboardingResponse,
-  OnboardingQA,
-  DynamicOnboardingQuestion,
-  OnboardingFollowupResponse,
   MemoryProfile,
   MemoryFact,
   Briefing,
   WeeklyInsight,
   Conversation,
   Message,
+  Family,
+  FamilyMember,
+  CalendarEvent,
+  Task,
+  ShoppingList,
+  ShoppingListItem,
+  FamilyDashboard,
+  CreateCalendarEventInput,
+  CreateTaskInput,
+  AddShoppingItemInput,
 };
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL ?? "http://localhost:3000";
@@ -207,33 +217,6 @@ export async function sendMessageFeedback(
   await apiRequest("/api/v1/chat/feedback", {
     method: "POST",
     body: JSON.stringify({ messageId, feedback }),
-  });
-}
-
-// --- Onboarding ---
-
-export async function getOnboardingFollowups(input: {
-  userName: string;
-  allyName: string;
-  conversation: OnboardingQA[];
-  dynamicRound: number;
-}): Promise<OnboardingFollowupResponse> {
-  return apiRequest<OnboardingFollowupResponse>("/api/v1/onboarding/followup", {
-    method: "POST",
-    body: JSON.stringify(input),
-  });
-}
-
-export async function completeOnboardingDynamic(input: {
-  userName: string;
-  allyName: string;
-  conversation: OnboardingQA[];
-  dailyPingTime: string;
-  timezone: string;
-}): Promise<OnboardingResponse> {
-  return apiRequest<OnboardingResponse>("/api/v1/onboarding/complete", {
-    method: "POST",
-    body: JSON.stringify(input),
   });
 }
 
@@ -450,6 +433,170 @@ export async function getWeeklyInsights(
     if (err instanceof ApiError && err.status === 403) return null;
     throw err;
   }
+}
+
+// --- Family ---
+
+export async function getFamily(): Promise<{
+  family: Family;
+  members: FamilyMember[];
+}> {
+  return apiRequest("/api/v1/family/");
+}
+
+export async function createFamily(data: {
+  name: string;
+  timezone: string;
+  members?: Array<{ name: string; role: string; age?: number }>;
+}): Promise<{ family: Family; members: FamilyMember[] }> {
+  return apiRequest("/api/v1/family/", {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
+export async function addFamilyMember(data: {
+  name: string;
+  role: string;
+  age?: number;
+  birthday?: string;
+  school?: string;
+  allergies?: string[];
+  dietaryPreferences?: string[];
+  notes?: string;
+}): Promise<{ member: FamilyMember }> {
+  return apiRequest("/api/v1/family/members", {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
+export async function getFamilyDashboard(): Promise<FamilyDashboard> {
+  return apiRequest("/api/v1/family/dashboard");
+}
+
+export async function inviteFamilyMember(data: {
+  email: string;
+  role: string;
+}): Promise<{ invite: { id: string; email: string; token: string; expiresAt: string } }> {
+  return apiRequest("/api/v1/family/invite", {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
+// --- Calendar ---
+
+export async function getCalendarEvents(
+  start: string,
+  end: string,
+): Promise<{ events: CalendarEvent[] }> {
+  const params = new URLSearchParams({ start, end });
+  return apiRequest(`/api/v1/calendar/events?${params}`);
+}
+
+export async function createCalendarEvent(
+  data: CreateCalendarEventInput,
+): Promise<{ event: CalendarEvent }> {
+  return apiRequest("/api/v1/calendar/events", {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
+export async function updateCalendarEvent(
+  eventId: string,
+  data: Partial<CreateCalendarEventInput>,
+): Promise<{ event: CalendarEvent }> {
+  return apiRequest(`/api/v1/calendar/events/${eventId}`, {
+    method: "PATCH",
+    body: JSON.stringify(data),
+  });
+}
+
+export async function deleteCalendarEvent(eventId: string): Promise<{ deleted: boolean }> {
+  return apiRequest(`/api/v1/calendar/events/${eventId}`, { method: "DELETE" });
+}
+
+// --- Tasks ---
+
+export async function getTasks(
+  status?: string,
+): Promise<{ tasks: Task[] }> {
+  const params = status ? `?status=${status}` : "";
+  return apiRequest(`/api/v1/tasks${params}`);
+}
+
+export async function createTask(
+  data: CreateTaskInput,
+): Promise<{ task: Task }> {
+  return apiRequest("/api/v1/tasks", {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
+export async function updateTask(
+  taskId: string,
+  data: Partial<CreateTaskInput & { status: string }>,
+): Promise<{ task: Task }> {
+  return apiRequest(`/api/v1/tasks/${taskId}`, {
+    method: "PATCH",
+    body: JSON.stringify(data),
+  });
+}
+
+export async function deleteTask(taskId: string): Promise<{ deleted: boolean }> {
+  return apiRequest(`/api/v1/tasks/${taskId}`, { method: "DELETE" });
+}
+
+// --- Shopping ---
+
+export async function getShoppingLists(): Promise<{
+  lists: (ShoppingList & { items: ShoppingListItem[] })[];
+}> {
+  return apiRequest("/api/v1/shopping/lists");
+}
+
+export async function createShoppingList(
+  name: string,
+): Promise<{ list: ShoppingList }> {
+  return apiRequest("/api/v1/shopping/lists", {
+    method: "POST",
+    body: JSON.stringify({ name }),
+  });
+}
+
+export async function addShoppingItems(
+  listId: string,
+  items: AddShoppingItemInput[],
+): Promise<{ items: ShoppingListItem[] }> {
+  return apiRequest(`/api/v1/shopping/lists/${listId}/items`, {
+    method: "POST",
+    body: JSON.stringify({ items }),
+  });
+}
+
+export async function toggleShoppingItem(
+  itemId: string,
+): Promise<{ item: ShoppingListItem }> {
+  return apiRequest(`/api/v1/shopping/items/${itemId}/toggle`, {
+    method: "PATCH",
+  });
+}
+
+export async function deleteShoppingItem(
+  itemId: string,
+): Promise<{ deleted: boolean }> {
+  return apiRequest(`/api/v1/shopping/items/${itemId}`, { method: "DELETE" });
+}
+
+export async function clearCheckedItems(
+  listId: string,
+): Promise<{ cleared: number }> {
+  return apiRequest(`/api/v1/shopping/lists/${listId}/checked`, {
+    method: "DELETE",
+  });
 }
 
 // --- Health ---

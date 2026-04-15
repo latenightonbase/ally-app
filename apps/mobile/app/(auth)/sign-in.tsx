@@ -182,11 +182,11 @@ export default function SignInScreen() {
               transition={{ type: "timing", duration: 400, delay: 400 }}
               className="mt-8 items-center gap-3"
             >
-              <Pressable onPress={() => router.back()}>
+              <Pressable onPress={() => router.push("/(auth)/sign-up")}>
                 <Text className="text-muted text-base font-sans">
                   New here?{" "}
                   <Text className="text-primary font-sans-semibold">
-                    Get started free
+                    Create an account
                   </Text>
                 </Text>
               </Pressable>

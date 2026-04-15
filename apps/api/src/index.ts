@@ -12,6 +12,10 @@ import { webhookRoutes } from "./routes/webhooks";
 import { userRoutes } from "./routes/users";
 import { profileRoutes } from "./routes/profile";
 import { billingRoutes } from "./routes/billing";
+import { familyRoutes } from "./routes/family";
+import { calendarRoutes } from "./routes/calendar";
+import { taskRoutes } from "./routes/tasks";
+import { shoppingRoutes } from "./routes/shopping";
 import { startScheduler } from "./jobs/scheduler";
 import { startMemoryWorker } from "./services/memoryQueue";
 import { ensureCollection } from "./services/vectorStore";
@@ -72,6 +76,10 @@ const app = new Elysia()
   .use(userRoutes)
   .use(profileRoutes)
   .use(billingRoutes)
+  .use(familyRoutes)
+  .use(calendarRoutes)
+  .use(taskRoutes)
+  .use(shoppingRoutes)
   .listen(process.env.PORT ?? 3000);
 
 if (process.env.NODE_ENV !== "test") {

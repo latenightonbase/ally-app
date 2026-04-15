@@ -6,10 +6,23 @@ import type {
   DynamicOnboardingQuestion,
 } from "@ally/shared";
 
+interface FamilyMemberSetup {
+  name: string;
+  role: string;
+  age?: number;
+  birthday?: string;
+  school?: string;
+  allergies?: string[];
+  dietaryPreferences?: string[];
+  notes?: string;
+}
+
 interface OnboardingResult {
   greeting: string;
   memoryProfile: Partial<MemoryProfile>;
   briefingTime: string;
+  familyName?: string;
+  familyMembers?: FamilyMemberSetup[];
 }
 
 interface FollowupResult {
@@ -42,7 +55,7 @@ ${conversationText}`;
   });
 }
 
-/** Dynamic: process the full onboarding conversation into a memory profile + greeting */
+/** Dynamic: process the full onboarding conversation into a memory profile + greeting + family setup */
 export async function processOnboardingConversation(input: {
   userName: string;
   allyName: string;
@@ -61,6 +74,6 @@ ${conversationText}`;
   return callClaudeStructured<OnboardingResult>({
     system: ONBOARDING_COMPLETE_PROMPT,
     messages: [{ role: "user", content: userMessage }],
-    maxTokens: 1536,
+    maxTokens: 2048,
   });
 }

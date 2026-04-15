@@ -221,7 +221,7 @@ export default function SettingsScreen() {
   const { themeId, setTheme } = useTheme();
   const user = useAppStore((s) => s.user);
   const tier = useAppStore((s) => s.tier);
-  const resetOnboarding = useAppStore((s) => s.resetOnboarding);
+  const resetStore = useAppStore((s) => s.reset);
   const setUser = useAppStore((s) => s.setUser);
   const setTier = useAppStore((s) => s.setTier);
   const { data: session } = useSession();
@@ -348,7 +348,7 @@ export default function SettingsScreen() {
         text: "Sign Out",
         onPress: async () => {
           await authClient.signOut();
-          resetOnboarding();
+          resetStore();
           await clearPersistedStorage();
           router.replace("/");
         },
@@ -356,7 +356,7 @@ export default function SettingsScreen() {
     ]);
   };
 
-  const handleResetOnboarding = () => {
+  const handleResetAnzi = () => {
     const allyNameLabel = user.allyName || "Anzi";
     Alert.alert(
       `Reset ${allyNameLabel}`,
@@ -372,7 +372,9 @@ export default function SettingsScreen() {
             } catch {
               // Profile deletion failure shouldn't block local reset
             }
-            resetOnboarding();
+            await authClient.signOut();
+            resetStore();
+            await clearPersistedStorage();
             router.replace("/");
           },
         },
@@ -506,7 +508,7 @@ export default function SettingsScreen() {
           <SettingsRow
             icon="refresh-outline"
             label={`Reset ${displayAllyName}`}
-            onPress={handleResetOnboarding}
+            onPress={handleResetAnzi}
             danger
           />
           <SettingsRow

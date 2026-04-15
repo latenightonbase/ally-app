@@ -69,10 +69,10 @@ export default function TabLayout() {
       <Tabs.Screen
         name="memory"
         options={{
-          title: "You",
+          title: "Family",
           tabBarIcon: ({ color, focused }) => (
             <Ionicons
-              name={focused ? "person-circle" : "person-circle-outline"}
+              name={focused ? "people" : "people-outline"}
               size={22}
               color={color}
             />

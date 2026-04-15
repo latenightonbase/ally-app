@@ -26,15 +26,6 @@ export interface CalendarPromptData {
 }
 
 interface AppState {
-  isOnboarded: boolean;
-  /** Guest questions completed (Screens 2-7) — no account yet */
-  guestOnboardingComplete: boolean;
-  /** User has paid via Stripe */
-  hasPaid: boolean;
-  /** Guest profile data collected before account creation */
-  guestProfile: UserProfile | null;
-  /** Anzi's personalized greeting generated during onboarding */
-  onboardingGreeting: string | undefined;
   user: UserProfile;
   tier: string | null;
   activeConversationId: string | null;
@@ -46,10 +37,6 @@ interface AppState {
   /** Message text the user tried to send while offline / that failed due to a network error. */
   pendingRetryMessage: string | null;
 
-  completeOnboarding: (user: UserProfile, greeting?: string) => void;
-  completeGuestOnboarding: (profile: UserProfile, greeting?: string) => void;
-  setHasPaid: (paid: boolean) => void;
-  resetOnboarding: () => void;
   setUser: (partial: Partial<UserProfile>) => void;
   setTier: (tier: string | null) => void;
 
@@ -63,6 +50,8 @@ interface AppState {
 
   setIsConnected: (connected: boolean) => void;
   setPendingRetryMessage: (text: string | null) => void;
+
+  reset: () => void;
 }
 
 const INITIAL_USER: UserProfile = {
@@ -75,11 +64,6 @@ const INITIAL_USER: UserProfile = {
 export const useAppStore = create<AppState>()(
   persist(
     (set, get) => ({
-      isOnboarded: false,
-      guestOnboardingComplete: false,
-      hasPaid: false,
-      guestProfile: null,
-      onboardingGreeting: undefined,
       user: INITIAL_USER,
       tier: null,
       activeConversationId: null,
@@ -87,56 +71,6 @@ export const useAppStore = create<AppState>()(
       pendingCalendarPrompt: null,
       isConnected: null,
       pendingRetryMessage: null,
-
-      completeOnboarding: (user, greeting) => {
-        const allyName = user.allyName || "Anzi";
-        const welcomeText =
-          greeting ??
-          `Thanks for sharing that with me, ${user.name}. I'm really glad you're here.\n\nBefore we get started — tell me one thing you don't want to forget this week.`;
-
-        const welcomeMessage: ChatMessage = {
-          id: `msg-welcome-${Date.now()}`,
-          text: welcomeText,
-          isUser: false,
-          timestamp: new Date(),
-        };
-        set({
-          isOnboarded: true,
-          guestOnboardingComplete: true,
-          hasPaid: true,
-          user,
-          guestProfile: null,
-          messages: [welcomeMessage],
-          activeConversationId: null,
-        });
-      },
-
-      /** Called after guest questions done — saves profile, does NOT mark fully onboarded yet */
-      completeGuestOnboarding: (profile, greeting) => {
-        set({
-          guestOnboardingComplete: true,
-          guestProfile: profile,
-          onboardingGreeting: greeting,
-        });
-      },
-
-      setHasPaid: (paid) => {
-        set({ hasPaid: paid });
-      },
-
-      resetOnboarding: () => {
-        set({
-          isOnboarded: false,
-          guestOnboardingComplete: false,
-          hasPaid: false,
-          guestProfile: null,
-          onboardingGreeting: undefined,
-          user: INITIAL_USER,
-          tier: null,
-          messages: [],
-          activeConversationId: null,
-        });
-      },
 
       setUser: (partial) => {
         set((state) => ({ user: { ...state.user, ...partial } }));
@@ -202,12 +136,22 @@ export const useAppStore = create<AppState>()(
       setPendingRetryMessage: (text) => {
         set({ pendingRetryMessage: text });
       },
+
+      reset: () => {
+        set({
+          user: INITIAL_USER,
+          tier: null,
+          messages: [],
+          activeConversationId: null,
+          pendingCalendarPrompt: null,
+          pendingRetryMessage: null,
+        });
+      },
     }),
     {
-      name: "ally-app-storage",
+      name: "anzi-app-storage",
       storage: createJSONStorage(() => AsyncStorage),
       partialize: (state) => {
-        // Exclude transient runtime state from persistence
         const { isConnected, ...persisted } = state;
         return persisted;
       },
@@ -218,8 +162,7 @@ export const useAppStore = create<AppState>()(
 /**
  * Explicitly remove the persisted Zustand store from AsyncStorage.
  * Call this on sign-out to guarantee no stale data survives across accounts.
- * The in-memory Zustand state should also be reset via `resetOnboarding()`.
  */
 export async function clearPersistedStorage() {
-  await AsyncStorage.removeItem("ally-app-storage");
+  await AsyncStorage.removeItem("anzi-app-storage");
 }

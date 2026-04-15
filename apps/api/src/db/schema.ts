@@ -10,6 +10,7 @@ import {
   index,
   uniqueIndex,
   pgEnum,
+  date,
 } from "drizzle-orm/pg-core";
 import type { MemoryProfile } from "@ally/shared";
 import { user } from "./auth-schema";
@@ -22,6 +23,244 @@ export const tierEnum = pgEnum("tier", [
   "premium",
 ]);
 
+export const familyRoleEnum = pgEnum("family_role", ["admin", "member"]);
+
+export const inviteStatusEnum = pgEnum("invite_status", [
+  "pending",
+  "accepted",
+  "declined",
+  "expired",
+]);
+
+export const taskStatusEnum = pgEnum("task_status", [
+  "pending",
+  "in_progress",
+  "completed",
+  "skipped",
+]);
+
+export const taskRecurrenceEnum = pgEnum("task_recurrence", [
+  "none",
+  "daily",
+  "weekly",
+  "biweekly",
+  "monthly",
+]);
+
+// ─── Family tables ───────────────────────────────────────────────
+
+export const families = pgTable("families", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  name: text("name").notNull(),
+  createdBy: text("created_by")
+    .notNull()
+    .references(() => user.id, { onDelete: "cascade" }),
+  timezone: text("timezone").default("America/New_York"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+/**
+ * Family members who don't have their own app account (e.g. kids).
+ * They still get reminders (via parent relay or push to a linked device).
+ */
+export const familyMembers = pgTable(
+  "family_members",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    familyId: uuid("family_id")
+      .notNull()
+      .references(() => families.id, { onDelete: "cascade" }),
+    /** If linked to an actual user account */
+    userId: text("user_id").references(() => user.id, { onDelete: "set null" }),
+    name: text("name").notNull(),
+    role: text("role").default("child"), // "parent" | "child" | "other"
+    age: integer("age"),
+    birthday: text("birthday"), // ISO date string
+    school: text("school"),
+    allergies: jsonb("allergies").$type<string[]>().default([]),
+    dietaryPreferences: jsonb("dietary_preferences").$type<string[]>().default([]),
+    notes: text("notes"),
+    color: text("color").default("#4F46E5"), // UI color for calendar
+    expoPushToken: text("expo_push_token"),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => ({
+    familyIdx: index("family_members_family_idx").on(table.familyId),
+    userIdx: index("family_members_user_idx").on(table.userId),
+  }),
+);
+
+export const familyInvites = pgTable(
+  "family_invites",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    familyId: uuid("family_id")
+      .notNull()
+      .references(() => families.id, { onDelete: "cascade" }),
+    invitedBy: text("invited_by")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    email: text("email").notNull(),
+    role: familyRoleEnum("role").notNull().default("member"),
+    status: inviteStatusEnum("status").notNull().default("pending"),
+    token: text("token").notNull().unique(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => ({
+    familyIdx: index("family_invites_family_idx").on(table.familyId),
+    emailIdx: index("family_invites_email_idx").on(table.email),
+    tokenIdx: uniqueIndex("family_invites_token_idx").on(table.token),
+  }),
+);
+
+export const calendarEvents = pgTable(
+  "calendar_events",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    familyId: uuid("family_id")
+      .notNull()
+      .references(() => families.id, { onDelete: "cascade" }),
+    createdBy: text("created_by")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    title: text("title").notNull(),
+    description: text("description"),
+    startTime: timestamp("start_time", { withTimezone: true }).notNull(),
+    endTime: timestamp("end_time", { withTimezone: true }),
+    allDay: boolean("all_day").notNull().default(false),
+    location: text("location"),
+    recurrence: taskRecurrenceEnum("recurrence").notNull().default("none"),
+    /** Which family member(s) this event is for */
+    assignedTo: jsonb("assigned_to").$type<string[]>().notNull().default([]),
+    /** Auto-generated reminder config */
+    remindBefore: integer("remind_before").default(30), // minutes
+    color: text("color"),
+    sourceConversationId: uuid("source_conversation_id").references(
+      () => conversations.id,
+    ),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => ({
+    familyIdx: index("calendar_events_family_idx").on(table.familyId),
+    familyTimeIdx: index("calendar_events_family_time_idx").on(
+      table.familyId,
+      table.startTime,
+    ),
+    createdByIdx: index("calendar_events_created_by_idx").on(table.createdBy),
+  }),
+);
+
+export const tasks = pgTable(
+  "tasks",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    familyId: uuid("family_id")
+      .notNull()
+      .references(() => families.id, { onDelete: "cascade" }),
+    createdBy: text("created_by")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    title: text("title").notNull(),
+    description: text("description"),
+    /** Family member ID this is assigned to */
+    assignedTo: uuid("assigned_to").references(() => familyMembers.id, {
+      onDelete: "set null",
+    }),
+    dueDate: timestamp("due_date", { withTimezone: true }),
+    status: taskStatusEnum("status").notNull().default("pending"),
+    recurrence: taskRecurrenceEnum("recurrence").notNull().default("none"),
+    priority: text("priority").default("medium"), // "high" | "medium" | "low"
+    category: text("category"), // "chore" | "errand" | "school" | "health" | "other"
+    sourceConversationId: uuid("source_conversation_id").references(
+      () => conversations.id,
+    ),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => ({
+    familyIdx: index("tasks_family_idx").on(table.familyId),
+    assignedIdx: index("tasks_assigned_idx").on(table.assignedTo),
+    familyStatusIdx: index("tasks_family_status_idx").on(
+      table.familyId,
+      table.status,
+    ),
+  }),
+);
+
+export const shoppingLists = pgTable(
+  "shopping_lists",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    familyId: uuid("family_id")
+      .notNull()
+      .references(() => families.id, { onDelete: "cascade" }),
+    name: text("name").notNull().default("Groceries"),
+    createdBy: text("created_by")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => ({
+    familyIdx: index("shopping_lists_family_idx").on(table.familyId),
+  }),
+);
+
+export const shoppingListItems = pgTable(
+  "shopping_list_items",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    listId: uuid("list_id")
+      .notNull()
+      .references(() => shoppingLists.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    quantity: text("quantity"),
+    category: text("category"), // "produce" | "dairy" | "meat" | "pantry" | "frozen" | "other"
+    checked: boolean("checked").notNull().default(false),
+    addedBy: text("added_by").references(() => user.id),
+    sourceConversationId: uuid("source_conversation_id").references(
+      () => conversations.id,
+    ),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => ({
+    listIdx: index("shopping_list_items_list_idx").on(table.listId),
+    listCheckedIdx: index("shopping_list_items_list_checked_idx").on(
+      table.listId,
+      table.checked,
+    ),
+  }),
+);
+
+// ─── Meal planning ───────────────────────────────────────────────
+
+export const mealPlans = pgTable(
+  "meal_plans",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    familyId: uuid("family_id")
+      .notNull()
+      .references(() => families.id, { onDelete: "cascade" }),
+    date: date("date").notNull(),
+    mealType: text("meal_type").notNull(), // "breakfast" | "lunch" | "dinner" | "snack"
+    title: text("title").notNull(),
+    notes: text("notes"),
+    createdBy: text("created_by").references(() => user.id),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => ({
+    familyDateIdx: index("meal_plans_family_date_idx").on(
+      table.familyId,
+      table.date,
+    ),
+  }),
+);
+
 export const messageRoleEnum = pgEnum("message_role", ["user", "ally"]);
 
 export const memoryCategoryEnum = pgEnum("memory_category", [
@@ -32,6 +271,10 @@ export const memoryCategoryEnum = pgEnum("memory_category", [
   "interests",
   "goals",
   "emotional_patterns",
+  "school",
+  "activities",
+  "dietary",
+  "family_routines",
 ]);
 
 export const memorySourceTypeEnum = pgEnum("memory_source_type", [
@@ -56,6 +299,7 @@ export const conversations = pgTable(
     userId: text("user_id")
       .notNull()
       .references(() => user.id, { onDelete: "cascade" }),
+    familyId: uuid("family_id").references(() => families.id, { onDelete: "cascade" }),
     preview: text("preview"),
     messageCount: integer("message_count").notNull().default(0),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
@@ -131,6 +375,7 @@ export const memoryFacts = pgTable(
     userId: text("user_id")
       .notNull()
       .references(() => user.id, { onDelete: "cascade" }),
+    familyId: uuid("family_id").references(() => families.id, { onDelete: "cascade" }),
     content: text("content").notNull(),
     category: memoryCategoryEnum("category").notNull(),
     importance: real("importance").notNull().default(0.5),
@@ -197,6 +442,7 @@ export const memoryEvents = pgTable(
     userId: text("user_id")
       .notNull()
       .references(() => user.id, { onDelete: "cascade" }),
+    familyId: uuid("family_id").references(() => families.id, { onDelete: "cascade" }),
     content: text("content").notNull(),
     eventDate: timestamp("event_date", { withTimezone: true }).notNull(),
     context: text("context"),
@@ -289,6 +535,11 @@ export const reminders = pgTable(
     userId: text("user_id")
       .notNull()
       .references(() => user.id, { onDelete: "cascade" }),
+    familyId: uuid("family_id").references(() => families.id, { onDelete: "cascade" }),
+    /** Which family member this reminder targets */
+    targetMemberId: uuid("target_member_id").references(() => familyMembers.id, {
+      onDelete: "set null",
+    }),
     conversationId: uuid("conversation_id").references(() => conversations.id, {
       onDelete: "set null",
     }),

@@ -82,12 +82,15 @@ function shouldExtract(userMessage: string, allyResponse: string): boolean {
 
   const signalPatterns = [
     /\b(my|i'm|i am|i have|i got|i've|i was|i went|i feel|i think|i want|i need|i like|i love|i hate)\b/i,
-    /\b(mom|dad|brother|sister|wife|husband|partner|friend|boss|colleague)\b/i,
-    /\b(job|work|school|college|interview|meeting|project|deadline)\b/i,
-    /\b(doctor|health|sick|anxiety|stress|therapy|workout|diet|sleep)\b/i,
-    /\b(goal|plan|want to|going to|trying to|hope to|dream)\b/i,
-    /\b(birthday|anniversary|wedding|holiday|vacation|trip)\b/i,
-    /\b(moved|started|quit|broke up|got together|engaged|pregnant|born)\b/i,
+    /\b(mom|dad|brother|sister|wife|husband|partner|son|daughter|kid|kids|child|children|baby|toddler|teen)\b/i,
+    /\b(school|practice|game|recital|pickup|dropoff|carpool|daycare|camp|class|lesson|tutoring)\b/i,
+    /\b(doctor|dentist|appointment|checkup|allergies|allergy|medication|sick|fever)\b/i,
+    /\b(grocery|groceries|shopping|meal|dinner|lunch|breakfast|recipe|snack|diet|vegetarian|vegan|gluten)\b/i,
+    /\b(schedule|calendar|event|birthday|anniversary|holiday|vacation|trip|deadline)\b/i,
+    /\b(task|chore|homework|laundry|clean|mow|fix|repair)\b/i,
+    /\b(job|work|meeting|project|deadline|commute)\b/i,
+    /\b(goal|plan|want to|going to|trying to|hope to|need to|remind|remember)\b/i,
+    /\b(moved|started|quit|signed up|enrolled|registered|joined)\b/i,
   ];
 
   return signalPatterns.some((p) => p.test(combined));

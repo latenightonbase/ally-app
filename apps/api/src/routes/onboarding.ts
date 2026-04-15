@@ -12,7 +12,7 @@ import type { MemoryProfile, DynamicAttribute, OnboardingQA } from "@ally/shared
 function buildProfile(
   userId: string,
   data: Partial<MemoryProfile>,
-  overrides: { userName: string },
+  overrides: { userName: string; familyId?: string },
 ): MemoryProfile {
   return {
     userId,
@@ -54,6 +54,9 @@ function buildProfile(
       sensitivities: data.emotionalPatterns?.sensitivities ?? [],
     },
     pendingFollowups: [],
+    familyMembers: data.familyMembers ?? [],
+    familyRoutines: data.familyRoutines ?? [],
+    familyId: overrides.familyId,
     dynamicAttributes: normaliseDynamicAttributes(data.dynamicAttributes),
     updatedAt: new Date().toISOString(),
   };
@@ -76,6 +79,12 @@ function normaliseDynamicAttributes(
   }
   return Object.keys(result).length > 0 ? result : undefined;
 }
+
+/** Assign a color to each family member for calendar/UI display */
+const MEMBER_COLORS = [
+  "#4F46E5", "#059669", "#D97706", "#DC2626", "#7C3AED",
+  "#DB2777", "#0891B2", "#65A30D", "#EA580C", "#6366F1",
+];
 
 export const onboardingRoutes = new Elysia({ prefix: "/api/v1" })
   .use(authMiddleware)
@@ -134,8 +143,70 @@ export const onboardingRoutes = new Elysia({ prefix: "/api/v1" })
           conversation: body.conversation as OnboardingQA[],
         });
 
+        // --- Create family if the AI extracted family info ---
+        let familyId: string | undefined;
+        let familyCreated = false;
+
+        const familyName = data.familyName || `${body.userName}'s Family`;
+        const familyMembers = data.familyMembers ?? [];
+
+        if (familyMembers.length > 0 || familyName) {
+          const [family] = await db
+            .insert(schema.families)
+            .values({
+              name: familyName,
+              createdBy: user.id,
+              timezone: body.timezone,
+            })
+            .returning({ id: schema.families.id });
+
+          familyId = family.id;
+          familyCreated = true;
+
+          // Add the user as the first family member (admin)
+          await db.insert(schema.familyMembers).values({
+            familyId,
+            userId: user.id,
+            name: body.userName,
+            role: "parent",
+            color: MEMBER_COLORS[0],
+          });
+
+          // Add other family members from onboarding
+          for (let i = 0; i < familyMembers.length; i++) {
+            const member = familyMembers[i];
+            await db.insert(schema.familyMembers).values({
+              familyId,
+              name: member.name,
+              role: member.role || "child",
+              age: member.age ?? null,
+              birthday: member.birthday ?? null,
+              school: member.school ?? null,
+              allergies: member.allergies ?? [],
+              dietaryPreferences: member.dietaryPreferences ?? [],
+              notes: member.notes ?? null,
+              color: MEMBER_COLORS[(i + 1) % MEMBER_COLORS.length],
+            });
+          }
+
+          // Create a default grocery list
+          await db.insert(schema.shoppingLists).values({
+            familyId,
+            name: "Groceries",
+            createdBy: user.id,
+          });
+
+          // Link user to family
+          await db
+            .update(schema.user)
+            .set({ familyId, familyRole: "admin" })
+            .where(eq(schema.user.id, user.id));
+        }
+
+        // --- Build and save memory profile ---
         const profile = buildProfile(user.id, data.memoryProfile, {
           userName: body.userName,
+          familyId,
         });
         await updateProfile(user.id, profile);
 
@@ -154,35 +225,19 @@ export const onboardingRoutes = new Elysia({ prefix: "/api/v1" })
           })
           .where(eq(schema.user.id, user.id));
 
-        // Schedule a welcome reminder for the user's first daily ping time
+        // Schedule a welcome reminder
         try {
           const welcomeRemindAt = computeNextDailyPing(body.dailyPingTime, body.timezone);
           if (welcomeRemindAt) {
             await createReminder({
               userId: user.id,
-              title: `${body.allyName} is ready for you`,
-              body: `Hey ${body.userName}! I'm all set up and ready to chat whenever you are. Just wanted to say hi 👋`,
+              title: "Anzi is ready for your family",
+              body: `Hey ${body.userName}! I'm all set up and ready to help keep your family organized. Just tell me about upcoming events, tasks, or anything you need to remember 👋`,
               remindAt: welcomeRemindAt,
               timezone: body.timezone,
               source: "onboarding",
               metadata: { type: "welcome", allyName: body.allyName },
-            });
-          }
-
-          // If any goals were mentioned during onboarding, create reminders
-          const goals = data.memoryProfile?.goals ?? [];
-          for (const goal of goals.filter((g) => g.status === "active").slice(0, 2)) {
-            const goalRemindAt = new Date(Date.now() + 3 * 86400_000); // 3 days from now
-            goalRemindAt.setHours(10, 0, 0, 0);
-
-            await createReminder({
-              userId: user.id,
-              title: `How's the goal going?`,
-              body: `You mentioned wanting to: ${goal.description}. Just checking in — how's that going?`,
-              remindAt: goalRemindAt,
-              timezone: body.timezone,
-              source: "onboarding",
-              metadata: { type: "goal_followup", goal: goal.description },
+              ...(familyId ? { familyId } : {}),
             });
           }
         } catch (err) {
@@ -193,6 +248,8 @@ export const onboardingRoutes = new Elysia({ prefix: "/api/v1" })
         return {
           greeting: data.greeting,
           memoryProfileCreated: true,
+          familyCreated,
+          familyId,
         };
       } catch (e) {
         if (e instanceof AIError) {

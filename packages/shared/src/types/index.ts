@@ -3,3 +3,4 @@ export * from "./memory";
 export * from "./conversation";
 export * from "./briefing";
 export * from "./onboarding";
+export * from "./family";

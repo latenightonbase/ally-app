@@ -1,0 +1,36 @@
+What Cozi does today:
+Cozi is a shared family calendar and organizer. The core features are a shared calendar everyone in the family can see, shopping lists, to-do lists, meal planning, and a family journal.
+The idea is simple — one place where the whole family sees what's happening. Dad can check if there's a soccer game Saturday. Mom can add groceries. Kids can see their schedule.
+It's been around since 2007. It has millions of users. It charges around $29.99/year for premium. It was acquired by Info.com and has barely been updated in years.
+The reviews tell the whole story. Moms love the concept and hate the execution. Common complaints:
+
+Family members don't actually use it
+No reminders that push to the right person
+No intelligence — it's just a calendar
+Feels outdated and clunky
+Has to manually enter everything
+No way to capture things quickly
+
+That last gap is the biggest one. The capture problem. Moms think of things at the worst moments and Cozi requires you to open the app, navigate to the right section, type everything out. By then the thought is gone.
+
+What the AI version does better — specifically:
+Problem 1 Cozi has: Family members don't use it.
+Cozi requires everyone to opt in and actively check the app. Nobody does. Mom ends up being the one who updates it and then has to tell everyone anyway.
+AI version fix: Anzi automatically pushes reminders to each family member at the right time without them having to check anything. Dad gets a push notification the morning of the soccer game. Kid gets a reminder about the permission slip the night before it's due. Nobody has to remember to check the app. The app comes to them.
+Problem 2 Cozi has: No intelligence.
+Cozi is a dumb container. You put things in, they sit there. Nothing learns. Nothing anticipates. Nothing connects dots.
+AI version fix: The AI learns your family's patterns. It knows soccer practice is every Tuesday and Thursday so it automatically blocks that time and reminds dad to leave work early. It knows your kid's school sends permission slips 2 weeks before events so it flags when one hasn't arrived yet. It connects information across the whole family calendar and surfaces things before they become problems.
+Problem 3 Cozi has: Painful capture.
+Getting things into Cozi requires too many taps. Moms give up.
+AI version fix: Voice capture. While driving just say "Ethan has a dentist appointment Thursday at 3, remind me and remind him Wednesday night." Done. The AI parses it, adds it to the calendar, and sets two reminders automatically. No taps. No navigation. Just talk.
+Problem 4 Cozi has: No proactive intelligence.
+Cozi never tells you anything you didn't already put in. It's purely reactive.
+AI version fix: Proactive suggestions. "You have 4 things happening next week and no meals planned — want me to add a grocery list?" "Emma has a birthday party Saturday but I don't see a gift on your to-do list." "You haven't scheduled a dentist appointment for Jake in 8 months." This is the AI layer Cozi completely lacks.
+Problem 5 Cozi has: Mom is still the bottleneck.
+Everything still flows through mom. She enters it. She reminds people. She follows up.
+AI version fix: Once something is in the system the AI takes over. Mom enters the soccer game once. The AI reminds dad, reminds the kid, adds snacks to the grocery list if it's mom's turn to bring them, and confirms everything is handled. Mom is removed from the reminder chain entirely.
+
+The positioning difference:
+Cozi: "A place to organize your family."
+AI version: "The family assistant that makes sure nothing falls through the cracks — for everyone, not just mom."
+That second positioning is completely different. It's not selling organization. It's selling relief from being the family's human notification system.

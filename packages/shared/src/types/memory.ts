@@ -5,7 +5,11 @@ export type MemoryCategory =
   | "health"
   | "interests"
   | "goals"
-  | "emotional_patterns";
+  | "emotional_patterns"
+  | "school"
+  | "activities"
+  | "dietary"
+  | "family_routines";
 
 export type MemoryType = "semantic" | "episodic" | "event";
 export type EntityType = "person" | "place" | "org" | "topic" | "goal";
@@ -52,7 +56,36 @@ export interface PendingFollowup {
 }
 
 /**
- * A dynamic attribute is something Ally learned about this specific person
+ * A family member profile within the memory system.
+ * Tracks per-member details that Anzi learns from conversations.
+ */
+export interface FamilyMemberProfile {
+  name: string;
+  role: "parent" | "child" | "other";
+  age: number | null;
+  birthday: string | null;
+  school: string | null;
+  activities: string[];
+  allergies: string[];
+  dietaryPreferences: string[];
+  notes: string;
+  /** Reference to family_members table ID */
+  memberId?: string;
+}
+
+/**
+ * A recurring family routine or pattern that Anzi has learned.
+ */
+export interface FamilyRoutine {
+  description: string;
+  schedule: string; // "every Tuesday and Thursday", "weekday mornings", etc.
+  involvedMembers: string[];
+  notes: string | null;
+  learnedAt: string;
+}
+
+/**
+ * A dynamic attribute is something Anzi learned about this specific person
  * that doesn't fit any fixed category — communication style, relationship with
  * failure, humor, values, creative identity, etc. These are promoted from
  * recurring high-confidence cold-tier patterns and injected into every AI call.
@@ -66,6 +99,7 @@ export interface DynamicAttribute {
 
 export interface MemoryProfile {
   userId: string;
+  familyId?: string;
   version: number;
   personalInfo: {
     preferredName: string | null;
@@ -77,6 +111,8 @@ export interface MemoryProfile {
     other: Record<string, unknown>;
   };
   relationships: Relationship[];
+  /** Family members tracked by Anzi */
+  familyMembers: FamilyMemberProfile[];
   work: {
     role: string | null;
     company: string | null;
@@ -96,6 +132,8 @@ export interface MemoryProfile {
   };
   interests: Interest[];
   goals: Goal[];
+  /** Family-level routines and patterns */
+  familyRoutines: FamilyRoutine[];
   emotionalPatterns: {
     primaryStressors: string[];
     copingMechanisms: string[];
@@ -105,7 +143,7 @@ export interface MemoryProfile {
   };
   pendingFollowups: PendingFollowup[];
   /**
-   * Open-ended personality/behavioral traits Ally has learned from patterns.
+   * Open-ended personality/behavioral traits Anzi has learned from patterns.
    * Keys are snake_case descriptors (e.g. "communication_style", "relationship_with_failure").
    * Populated by consolidation and extraction; injected into every system prompt.
    */

@@ -17,6 +17,8 @@ export const user = pgTable("user", {
   emailVerified: boolean("email_verified").default(false).notNull(),
   image: text("image"),
   allyName: text("ally_name").default("Anzi"),
+  familyId: text("family_id"),
+  familyRole: text("family_role").default("member"), // "admin" | "member"
   notificationPreferences: jsonb("notification_preferences").$type<NotificationPreferences>(),
   expoPushToken: text("expo_push_token"),
   nextDailyPingAt: timestamp("next_daily_ping_at", { withTimezone: true }),
