@@ -3,19 +3,29 @@ import { View, ActivityIndicator } from "react-native";
 import { Redirect } from "expo-router";
 import { useSession } from "../lib/auth";
 import { useAppStore } from "../store/useAppStore";
-import { getUserProfile } from "../lib/api";
+import { getUserProfile, getFamily } from "../lib/api";
 
 export default function Index() {
   const { data: session, isPending } = useSession();
   const setTier = useAppStore((s) => s.setTier);
   const setUser = useAppStore((s) => s.setUser);
-  const initialized = useRef(false);
+  const lastUserId = useRef<string | null>(null);
   const [resolving, setResolving] = useState(false);
+  const [needsOnboarding, setNeedsOnboarding] = useState(false);
 
   useEffect(() => {
-    if (!session || initialized.current) return;
-    initialized.current = true;
+    const userId = session?.user?.id ?? null;
+
+    if (!userId) {
+      lastUserId.current = null;
+      return;
+    }
+
+    if (lastUserId.current === userId) return;
+    lastUserId.current = userId;
+
     setResolving(true);
+    setNeedsOnboarding(false);
 
     (async () => {
       try {
@@ -23,6 +33,11 @@ export default function Index() {
         setTier(serverProfile.tier);
         if (serverProfile.name) {
           setUser({ name: serverProfile.name });
+        }
+
+        const familyData = await getFamily().catch(() => null);
+        if (!familyData?.family) {
+          setNeedsOnboarding(true);
         }
       } catch {
         // Best-effort
@@ -39,11 +54,12 @@ export default function Index() {
     );
   }
 
-  // Authenticated → go to app
   if (session) {
+    if (needsOnboarding) {
+      return <Redirect href="/(onboarding)" />;
+    }
     return <Redirect href="/(tabs)" />;
   }
 
-  // Not authenticated → sign in
   return <Redirect href="/(auth)/sign-in" />;
 }

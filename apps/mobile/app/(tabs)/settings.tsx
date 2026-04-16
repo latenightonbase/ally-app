@@ -18,6 +18,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import { useTheme } from "../../context/ThemeContext";
 import { useAppStore, clearPersistedStorage } from "../../store/useAppStore";
+import { useFamilyStore, clearFamilyPersistedStorage } from "../../store/useFamilyStore";
 import { ThemePicker } from "../../components/settings/ThemePicker";
 import { SubscriptionCard } from "../../components/settings/SubscriptionCard";
 import { SettingsRow } from "../../components/settings/SettingsRow";
@@ -349,7 +350,11 @@ export default function SettingsScreen() {
         onPress: async () => {
           await authClient.signOut();
           resetStore();
-          await clearPersistedStorage();
+          useFamilyStore.getState().reset();
+          await Promise.all([
+            clearPersistedStorage(),
+            clearFamilyPersistedStorage(),
+          ]);
           router.replace("/");
         },
       },

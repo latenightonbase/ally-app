@@ -1,6 +1,7 @@
 import { retrieveRelevantFacts } from "../services/retrieval";
 import { storeExtractedFacts, addFollowups } from "../services/memory";
 import { createReminder, parseReminderTime } from "../services/reminderService";
+import { notifyFamilyMembers } from "../services/notificationRouter";
 import { db, schema } from "../db";
 import { and, eq, gte, lte, between, isNull } from "drizzle-orm";
 import type { ExtractedFact, MemoryCategory } from "@ally/shared";
@@ -411,13 +412,13 @@ async function handleSetFamilyReminder(
       timezone: ctx.timezone,
       conversationId: ctx.conversationId,
       source: "chat",
+      familyId: ctx.familyId,
+      targetMemberId,
       metadata: {
         priority,
         rawWhen: when,
         remindAtISO: remindAt.toISOString(),
         targetMember,
-        targetMemberId,
-        familyId: ctx.familyId,
       },
     });
 
@@ -502,6 +503,27 @@ async function handleAddCalendarEvent(
     })
     .returning({ id: schema.calendarEvents.id });
 
+  // Notify assigned family members about the new event
+  if (assignedToIds.length > 0) {
+    const dateStr = startTime.toLocaleDateString("en-US", {
+      weekday: "short",
+      month: "short",
+      day: "numeric",
+    });
+    const timeStr = allDay
+      ? "all day"
+      : startTime.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+
+    notifyFamilyMembers(
+      assignedToIds,
+      "New event added",
+      `${title} — ${dateStr} at ${timeStr}`,
+      { type: "calendar_event", eventId: event.id },
+    ).catch((err) =>
+      console.warn("[tools/add_calendar_event] Push notification failed:", err),
+    );
+  }
+
   return JSON.stringify({
     created: true,
     eventId: event.id,
@@ -560,6 +582,24 @@ async function handleAssignTask(
       sourceConversationId: ctx.conversationId,
     })
     .returning({ id: schema.tasks.id });
+
+  // Notify the assigned family member
+  if (assignedToId) {
+    const creatorName = await db
+      .select({ name: schema.user.name })
+      .from(schema.user)
+      .where(eq(schema.user.id, ctx.userId))
+      .then((rows) => rows[0]?.name ?? "Someone");
+
+    notifyFamilyMembers(
+      [assignedToId],
+      "New task assigned",
+      `${creatorName} assigned you: ${title}`,
+      { type: "task_assigned", taskId: task.id },
+    ).catch((err) =>
+      console.warn("[tools/assign_task] Push notification failed:", err),
+    );
+  }
 
   return JSON.stringify({
     created: true,

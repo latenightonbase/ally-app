@@ -6,13 +6,10 @@ import * as Haptics from "expo-haptics";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useTheme } from "../../context/ThemeContext";
 
-type IoniconsName = React.ComponentProps<typeof Ionicons>["name"];
-
 export default function TabLayout() {
   const { theme } = useTheme();
   const colors = theme.colors;
   const insets = useSafeAreaInsets();
-  const horizontalPadding = Math.max(insets.left, insets.right, 16) + 24;
 
   return (
     <Tabs
@@ -21,7 +18,7 @@ export default function TabLayout() {
         tabBarStyle: {
           position: "absolute",
           bottom: Math.max(insets.bottom, Platform.OS === "ios" ? 16 : 12),
-          marginHorizontal: 24,
+          marginHorizontal: 20,
           height: 64,
           borderRadius: 24,
           paddingBottom: 0,
@@ -38,7 +35,7 @@ export default function TabLayout() {
         tabBarInactiveTintColor: colors["--color-muted"],
         tabBarShowLabel: true,
         tabBarLabelStyle: {
-          fontSize: 11,
+          fontSize: 10,
           fontWeight: "600",
           marginTop: 2,
         },
@@ -51,6 +48,19 @@ export default function TabLayout() {
     >
       <Tabs.Screen
         name="index"
+        options={{
+          title: "Home",
+          tabBarIcon: ({ color, focused }) => (
+            <Ionicons
+              name={focused ? "home" : "home-outline"}
+              size={22}
+              color={color}
+            />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="chat"
         options={{
           title: "Chat",
           tabBarIcon: ({ color, focused }) => (
@@ -67,7 +77,7 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
-        name="memory"
+        name="family"
         options={{
           title: "Family",
           tabBarIcon: ({ color, focused }) => (

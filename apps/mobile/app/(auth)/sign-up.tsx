@@ -18,8 +18,14 @@ import { TextInput } from "../../components/ui/TextInput";
 import { Button } from "../../components/ui/Button";
 import { useTheme } from "../../context/ThemeContext";
 import { authClient } from "../../lib/auth";
-import { useAppStore } from "../../store/useAppStore";
-import { createFamily } from "../../lib/api";
+import { useAppStore, clearPersistedStorage } from "../../store/useAppStore";
+import { useFamilyStore, clearFamilyPersistedStorage } from "../../store/useFamilyStore";
+
+async function clearStaleStores() {
+  useAppStore.getState().reset();
+  useFamilyStore.getState().reset();
+  await Promise.all([clearPersistedStorage(), clearFamilyPersistedStorage()]);
+}
 
 export default function SignUpScreen() {
   const { theme } = useTheme();
@@ -30,18 +36,6 @@ export default function SignUpScreen() {
   const [loading, setLoading] = useState(false);
   const [appleLoading, setAppleLoading] = useState(false);
   const setUser = useAppStore((s) => s.setUser);
-
-  /** After auth succeeds, create a default family for the user */
-  const setupFamily = async (userName: string) => {
-    try {
-      await createFamily({
-        name: `${userName}'s Family`,
-        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-      });
-    } catch {
-      // Non-fatal — they can create a family later
-    }
-  };
 
   const handleAppleSignUp = async () => {
     setAppleLoading(true);
@@ -66,11 +60,11 @@ export default function SignUpScreen() {
         return;
       }
 
+      await clearStaleStores();
       const firstName = credential.fullName?.givenName ?? "Friend";
       setUser({ name: firstName });
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      await setupFamily(firstName);
-      router.replace("/(tabs)");
+      router.replace("/(onboarding)");
     } catch (e: any) {
       if (e?.code !== "ERR_REQUEST_CANCELED") {
         Alert.alert("Error", e instanceof Error ? e.message : "Apple Sign In failed.");
@@ -115,10 +109,10 @@ export default function SignUpScreen() {
         return;
       }
 
+      await clearStaleStores();
       setUser({ name: name.trim() });
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      await setupFamily(name.trim());
-      router.replace("/(tabs)");
+      router.replace("/(onboarding)");
     } catch (e) {
       Alert.alert(
         "Error",

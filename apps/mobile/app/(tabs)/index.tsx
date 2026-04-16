@@ -1,565 +1,357 @@
-import React, { useRef, useState, useCallback, useEffect } from "react";
+import React, { useEffect, useCallback, useMemo, useState } from "react";
 import {
+  ScrollView,
   View,
-  FlatList,
-  KeyboardAvoidingView,
-  Keyboard,
-  Platform,
   Text,
+  ActivityIndicator,
+  RefreshControl,
   Pressable,
-  Animated,
-  AppState,
 } from "react-native";
-import { Ionicons } from "@expo/vector-icons";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { MotiView } from "moti";
-import { ChatHeader } from "../../components/chat/ChatHeader";
-import { MessageBubble } from "../../components/chat/MessageBubble";
-import { ChatInput } from "../../components/chat/ChatInput";
-import { TypingIndicator } from "../../components/chat/TypingIndicator";
-import { useAppStore, type ChatMessage } from "../../store/useAppStore";
-import { useTheme } from "../../context/ThemeContext";
+import { Ionicons } from "@expo/vector-icons";
+import { router } from "expo-router";
+import { useAppStore } from "../../store/useAppStore";
+import { useFamilyStore } from "../../store/useFamilyStore";
 import {
-  sendMessageStreaming,
-  sendMessageFeedback,
-  getConversations,
-  getConversationMessages,
-  getConversationStatus,
-  ApiError,
-  OfflineError,
-  type Message,
+  getFamilyDashboard,
+  getTodayBriefing,
+  getTasks,
+  getShoppingLists,
 } from "../../lib/api";
-import { useSession } from "../../lib/auth";
+import { useTheme } from "../../context/ThemeContext";
+import type { CalendarEvent, Task } from "@ally/shared";
 
-// const CHAT_SUGGESTIONS = [
-//   "How are you feeling today?",
-//   "Tell me something interesting",
-//   "Help me plan my day",
-//   "I need advice on something",
-//   "What should I focus on?",
-//   "I'm feeling stressed",
-// ];
-
-function toLocalMessage(m: Message): ChatMessage {
-  return {
-    id: m.id,
-    text: m.content,
-    isUser: m.role === "user",
-    timestamp: new Date(m.createdAt),
-  };
-}
-
-interface RateLimitBannerProps {
-  visible: boolean;
-  resetTime?: string;
-  onDismiss: () => void;
-}
-
-function RateLimitBanner({ visible, resetTime, onDismiss }: RateLimitBannerProps) {
-  const opacity = useRef(new Animated.Value(0)).current;
+function ScheduleItem({ event }: { event: CalendarEvent }) {
   const { theme } = useTheme();
-
-  useEffect(() => {
-    Animated.timing(opacity, {
-      toValue: visible ? 1 : 0,
-      duration: 250,
-      useNativeDriver: true,
-    }).start();
-  }, [visible]);
-
-  if (!visible) return null;
-
-  const resetLabel = resetTime
-    ? (() => {
-        const ms = parseInt(resetTime, 10) * 1000 - Date.now();
-        if (ms <= 0) return null;
-        const secs = Math.ceil(ms / 1000);
-        return secs < 60 ? `${secs}s` : `${Math.ceil(secs / 60)}m`;
-      })()
-    : null;
+  const time = event.allDay
+    ? "All day"
+    : new Date(event.startTime).toLocaleTimeString("en-US", {
+        hour: "numeric",
+        minute: "2-digit",
+      });
 
   return (
-    <Animated.View style={{ opacity }}>
+    <View className="flex-row items-center py-3 border-b border-border/20">
       <View
-        className="mx-4 mb-2 px-4 py-3 rounded-2xl flex-row items-center justify-between"
-        style={{ backgroundColor: theme.colors["--color-danger"] + "20" }}
-      >
-        <View className="flex-row items-center gap-2 flex-1">
-          <Ionicons
-            name="time-outline"
-            size={16}
-            color={theme.colors["--color-danger"]}
-          />
-          <Text className="text-danger text-sm font-sans flex-1" numberOfLines={1}>
-            Rate limit reached{resetLabel ? ` — resets in ${resetLabel}` : ""}
-          </Text>
-        </View>
-        <Pressable onPress={onDismiss} hitSlop={8}>
-          <Ionicons
-            name="close"
-            size={16}
-            color={theme.colors["--color-danger"]}
-          />
-        </Pressable>
+        className="w-1 h-10 rounded-full mr-3"
+        style={{ backgroundColor: event.color ?? theme.colors["--color-primary"] }}
+      />
+      <View className="flex-1">
+        <Text className="text-foreground font-sans-semibold text-sm">
+          {event.title}
+        </Text>
+        <Text className="text-muted text-xs font-sans mt-0.5">
+          {time}
+          {event.location ? ` · ${event.location}` : ""}
+        </Text>
       </View>
-    </Animated.View>
-  );
-}
-
-function OfflineBanner({ visible }: { visible: boolean }) {
-  const opacity = useRef(new Animated.Value(0)).current;
-  const { theme } = useTheme();
-
-  useEffect(() => {
-    Animated.timing(opacity, {
-      toValue: visible ? 1 : 0,
-      duration: 250,
-      useNativeDriver: true,
-    }).start();
-  }, [visible]);
-
-  if (!visible) return null;
-
-  return (
-    <Animated.View style={{ opacity }}>
-      <View
-        className="mx-4 mb-2 px-4 py-3 rounded-2xl flex-row items-center"
-        style={{ backgroundColor: theme.colors["--color-muted"] + "25" }}
-      >
-        <View className="flex-row items-center gap-2 flex-1">
-          <Ionicons
-            name="cloud-offline-outline"
-            size={16}
-            color={theme.colors["--color-muted"]}
-          />
-          <Text className="text-muted text-sm font-sans flex-1" numberOfLines={1}>
-            You're offline — messages will send when you reconnect
-          </Text>
-        </View>
-      </View>
-    </Animated.View>
-  );
-}
-
-interface FeedbackRowProps {
-  messageId: string;
-}
-
-function FeedbackRow({ messageId }: FeedbackRowProps) {
-  const { theme } = useTheme();
-  const [vote, setVote] = useState<1 | -1 | null>(null);
-
-  const handleVote = useCallback(
-    async (value: 1 | -1) => {
-      if (vote !== null) return;
-      setVote(value);
-      try {
-        await sendMessageFeedback(messageId, value);
-      } catch {
-        // Non-critical — feedback is best-effort
-      }
-    },
-    [messageId, vote],
-  );
-
-  return (
-    <View className="flex-row gap-3 px-4 pb-1">
-      <Pressable
-        onPress={() => handleVote(1)}
-        hitSlop={8}
-        className="opacity-70 active:opacity-100"
-      >
-        <Ionicons
-          name={vote === 1 ? "thumbs-up" : "thumbs-up-outline"}
-          size={15}
-          color={
-            vote === 1
-              ? theme.colors["--color-primary"]
-              : theme.colors["--color-muted"]
-          }
-        />
-      </Pressable>
-      <Pressable
-        onPress={() => handleVote(-1)}
-        hitSlop={8}
-        className="opacity-70 active:opacity-100"
-      >
-        <Ionicons
-          name={vote === -1 ? "thumbs-down" : "thumbs-down-outline"}
-          size={15}
-          color={
-            vote === -1
-              ? theme.colors["--color-danger"]
-              : theme.colors["--color-muted"]
-          }
-        />
-      </Pressable>
     </View>
   );
 }
 
-export default function ChatScreen() {
-  const messages = useAppStore((s) => s.messages);
-  const addMessage = useAppStore((s) => s.addMessage);
-  const updateLastMessage = useAppStore((s) => s.updateLastMessage);
-  const replaceLastMessage = useAppStore((s) => s.replaceLastMessage);
-  const setMessages = useAppStore((s) => s.setMessages);
-  const activeConversationId = useAppStore((s) => s.activeConversationId);
-  const setActiveConversationId = useAppStore((s) => s.setActiveConversationId);
-  const isConnected = useAppStore((s) => s.isConnected);
-  const pendingRetryMessage = useAppStore((s) => s.pendingRetryMessage);
-  const setPendingRetryMessage = useAppStore((s) => s.setPendingRetryMessage);
+function QuickAction({
+  icon,
+  label,
+  onPress,
+}: {
+  icon: React.ComponentProps<typeof Ionicons>["name"];
+  label: string;
+  onPress: () => void;
+}) {
+  const { theme } = useTheme();
+  return (
+    <Pressable
+      onPress={onPress}
+      className="flex-1 bg-surface rounded-2xl py-4 items-center border border-border/30 active:opacity-70"
+    >
+      <Ionicons name={icon} size={22} color={theme.colors["--color-primary"]} />
+      <Text className="text-foreground text-xs font-sans-semibold mt-1.5">
+        {label}
+      </Text>
+    </Pressable>
+  );
+}
 
-  const [isTyping, setIsTyping] = useState(false);
-  const [isStreaming, setIsStreaming] = useState(false);
-  const [isHydrating, setIsHydrating] = useState(true);
-  const [rateLimitVisible, setRateLimitVisible] = useState(false);
-  const [rateLimitReset, setRateLimitReset] = useState<string | undefined>();
-  const [lastAIMessageId, setLastAIMessageId] = useState<string | null>(null);
+function TaskQuickView({ tasks }: { tasks: Task[] }) {
+  const { theme } = useTheme();
+  if (tasks.length === 0) return null;
 
-  const flatListRef = useRef<FlatList>(null);
-  const hasHydrated = useRef(false);
-  const previousUserId = useRef<string | null>(null);
-  const insets = useSafeAreaInsets();
-  const { data: session } = useSession();
+  return (
+    <View className="mt-1">
+      {tasks.slice(0, 3).map((task) => (
+        <View key={task.id} className="flex-row items-center py-2">
+          <Ionicons
+            name="ellipse-outline"
+            size={16}
+            color={theme.colors["--color-muted"]}
+          />
+          <Text className="text-foreground text-sm font-sans ml-2 flex-1" numberOfLines={1}>
+            {task.title}
+          </Text>
+          {task.priority === "high" && (
+            <Ionicons
+              name="alert-circle"
+              size={14}
+              color={theme.colors["--color-error"] ?? "#DC2626"}
+            />
+          )}
+        </View>
+      ))}
+      {tasks.length > 3 && (
+        <Text className="text-muted text-xs font-sans mt-1">
+          +{tasks.length - 3} more
+        </Text>
+      )}
+    </View>
+  );
+}
 
-  const [keyboardVisible, setKeyboardVisible] = useState(false);
+export default function HomeScreen() {
+  const userName = useAppStore((s) => s.user.name);
+  const {
+    dashboard,
+    dashboardLoading,
+    setDashboard,
+    setDashboardLoading,
+    setTasks,
+    tasks,
+    setShoppingLists,
+    shoppingLists,
+  } = useFamilyStore();
+  const { theme } = useTheme();
+
+  const [refreshing, setRefreshing] = useState(false);
+  const [briefingText, setBriefingText] = useState<string | null>(null);
+  const [briefingLoading, setBriefingLoading] = useState(true);
+
+  const load = useCallback(
+    async (isRefresh = false) => {
+      if (isRefresh) setRefreshing(true);
+      else setDashboardLoading(true);
+
+      try {
+        const [dashData, taskData, shopData, briefData] = await Promise.all([
+          getFamilyDashboard().catch(() => null),
+          getTasks().catch(() => ({ tasks: [] })),
+          getShoppingLists().catch(() => ({ lists: [] })),
+          getTodayBriefing().catch(() => ({ briefing: null })),
+        ]);
+
+        if (dashData) setDashboard(dashData);
+        setTasks(taskData.tasks);
+        setShoppingLists(shopData.lists);
+        setBriefingText(briefData?.briefing?.content ?? null);
+      } catch {
+        // best-effort
+      } finally {
+        setDashboardLoading(false);
+        setRefreshing(false);
+        setBriefingLoading(false);
+      }
+    },
+    [setDashboard, setDashboardLoading, setTasks, setShoppingLists],
+  );
 
   useEffect(() => {
-    const showSub = Keyboard.addListener("keyboardWillShow", () => setKeyboardVisible(true));
-    const hideSub = Keyboard.addListener("keyboardWillHide", () => setKeyboardVisible(false));
-    return () => { showSub.remove(); hideSub.remove(); };
+    load();
+  }, [load]);
+
+  const todayEvents = useMemo(
+    () => dashboard?.todayEvents ?? [],
+    [dashboard],
+  );
+
+  const pendingTasks = useMemo(
+    () => tasks.filter((t) => t.status !== "completed").slice(0, 5),
+    [tasks],
+  );
+
+  const groceryCount = useMemo(() => {
+    if (!shoppingLists.length) return 0;
+    return shoppingLists[0].items.filter((i) => !i.checked).length;
+  }, [shoppingLists]);
+
+  const greeting = useMemo(() => {
+    const hour = new Date().getHours();
+    if (hour < 12) return "Good morning";
+    if (hour < 17) return "Good afternoon";
+    return "Good evening";
   }, []);
 
-  const tabBarHeight =
-    64 + Math.max(insets.bottom, Platform.OS === "ios" ? 16 : 12) + 16;
-
-  // Reset hydration guard when the authenticated user changes
-  useEffect(() => {
-    const currentUserId = session?.user?.id ?? null;
-
-    if (!currentUserId) {
-      // Logged out — reset so next login re-fetches
-      hasHydrated.current = false;
-      previousUserId.current = null;
-      return;
-    }
-
-    if (previousUserId.current && previousUserId.current !== currentUserId) {
-      // Different user — force re-hydration
-      hasHydrated.current = false;
-      setMessages([]);
-      setActiveConversationId(null);
-      setIsHydrating(true);
-    }
-
-    previousUserId.current = currentUserId;
-  }, [session]);
-
-  // Hydrate chat from server on mount or after user switch
-  useEffect(() => {
-    if (hasHydrated.current) return;
-    hasHydrated.current = true;
-
-    (async () => {
-      try {
-        const { conversations } = await getConversations(1, 0);
-        if (conversations.length === 0) return;
-
-        const conv = conversations[0];
-        const { messages: serverMessages } = await getConversationMessages(
-          conv.id,
-          50,
-        );
-        setMessages(serverMessages.map(toLocalMessage));
-        setActiveConversationId(conv.id);
-      } catch {
-        // Keep local state on network failure — hydration is best-effort
-      } finally {
-        setIsHydrating(false);
-      }
-    })();
-  }, [session]);
-
-  // Lightweight poll for server-side messages (reminders, daily pings, etc.)
-  // Checks a cheap status endpoint every 30s; only fetches full messages when
-  // the conversation has been updated since we last checked.
-  const lastSeenAtRef = useRef<string | null>(null);
-
-  useEffect(() => {
-    const POLL_INTERVAL_MS = 30_000;
-
-    const poll = async () => {
-      const convId = useAppStore.getState().activeConversationId;
-      if (!convId) return;
-      // Don't poll while the user is actively sending / receiving a stream
-      if (isStreaming || isTyping) return;
-
-      try {
-        // Cheap call — returns just { messageCount, lastMessageAt }
-        const status = await getConversationStatus(convId);
-
-        // Only do a full fetch when the conversation has new activity
-        if (lastSeenAtRef.current && status.lastMessageAt !== lastSeenAtRef.current) {
-          const { messages: serverMessages } = await getConversationMessages(
-            convId,
-            50,
-          );
-          const prevCount = useAppStore.getState().messages.length;
-          setMessages(serverMessages.map(toLocalMessage));
-          if (serverMessages.length > prevCount) {
-            setTimeout(() => {
-              flatListRef.current?.scrollToEnd({ animated: true });
-            }, 100);
-          }
-        }
-
-        // Always track the latest timestamp we've seen
-        lastSeenAtRef.current = status.lastMessageAt;
-      } catch {
-        // Polling is best-effort — don't disturb the user on failure
-      }
-    };
-
-    // Seed the ref immediately so the first real poll can detect changes
-    const seed = async () => {
-      const convId = useAppStore.getState().activeConversationId;
-      if (!convId) return;
-      try {
-        const status = await getConversationStatus(convId);
-        lastSeenAtRef.current = status.lastMessageAt;
-      } catch {}
-    };
-    seed();
-
-    const interval = setInterval(poll, POLL_INTERVAL_MS);
-
-    // Also check when the app comes back to the foreground
-    const subscription = AppState.addEventListener("change", (state) => {
-      if (state === "active") poll();
-    });
-
-    return () => {
-      clearInterval(interval);
-      subscription.remove();
-    };
-  }, [isStreaming, isTyping]);
-
-  // Auto-retry the pending message once connectivity returns
-  useEffect(() => {
-    if (isConnected && pendingRetryMessage && !isStreaming && !isTyping) {
-      const text = pendingRetryMessage;
-      setPendingRetryMessage(null);
-      // Remove the "you're offline" placeholder bubble before retrying
-      const msgs = useAppStore.getState().messages;
-      if (
-        msgs.length > 0 &&
-        !msgs[msgs.length - 1].isUser &&
-        msgs[msgs.length - 1].text.includes("offline")
-      ) {
-        setMessages(msgs.slice(0, -1));
-      }
-      handleSend(text);
-    }
-  }, [isConnected, pendingRetryMessage, isStreaming, isTyping]);
-
-  const handleSend = useCallback(
-    async (text: string) => {
-      setRateLimitVisible(false);
-      addMessage(text, true);
-
-      setTimeout(() => {
-        flatListRef.current?.scrollToEnd({ animated: true });
-      }, 100);
-
-      setIsTyping(true);
-
-      try {
-        let streamStarted = false;
-
-        await sendMessageStreaming(
-          text,
-          {
-            onToken: (token) => {
-              if (!streamStarted) {
-                streamStarted = true;
-                setIsTyping(false);
-                setIsStreaming(true);
-                addMessage(token, false);
-              } else {
-                updateLastMessage(token);
-              }
-              flatListRef.current?.scrollToEnd({ animated: false });
-            },
-            onDone: (data) => {
-              if (!activeConversationId) {
-                setActiveConversationId(data.conversationId);
-              }
-              setLastAIMessageId(data.messageId);
-              // Authoritative final text from server — corrects any token-accumulation bugs
-              if (data.fullResponse) {
-                replaceLastMessage(data.fullResponse);
-              }
-              setIsStreaming(false);
-            },
-            onError: (errMsg, status) => {
-              if (status === 429) {
-                setRateLimitVisible(true);
-                if (!streamStarted) {
-                  addMessage(
-                    "You've reached the rate limit. Please wait a moment and try again.",
-                    false,
-                  );
-                }
-              } else if (!streamStarted) {
-                addMessage(
-                  `Sorry, I couldn't respond right now. ${errMsg}`,
-                  false,
-                );
-              }
-              setIsStreaming(false);
-              setIsTyping(false);
-            },
-          },
-          activeConversationId ?? undefined,
-        );
-      } catch (e) {
-        if (e instanceof OfflineError) {
-          // Stash the message so it auto-retries when connectivity returns
-          setPendingRetryMessage(text);
-          addMessage(
-            "You're offline — I'll send this as soon as you're back.",
-            false,
-          );
-        } else if (e instanceof ApiError && e.status === 429) {
-          setRateLimitVisible(true);
-          setRateLimitReset(e.rateLimitReset);
-          addMessage(
-            "You've reached the rate limit. Please wait a moment and try again.",
-            false,
-          );
-        } else {
-          const errMsg =
-            e instanceof Error ? e.message : "Something went wrong";
-          addMessage(`Sorry, I couldn't respond right now. ${errMsg}`, false);
-        }
-      } finally {
-        setIsTyping(false);
-        setIsStreaming(false);
-        setTimeout(() => {
-          flatListRef.current?.scrollToEnd({ animated: true });
-        }, 100);
-      }
-    },
-    [addMessage, updateLastMessage, activeConversationId, setActiveConversationId],
-  );
-
-  const handleSuggestionPress = useCallback(
-    (suggestion: string) => {
-      handleSend(suggestion);
-    },
-    [handleSend],
-  );
-
-  const showSuggestions = messages.length <= 1;
-
-  if (isHydrating) {
-    const userName = useAppStore.getState().user?.name;
-    const isReturning = !!activeConversationId;
-    const greeting = isReturning ? "Welcome back" : "Welcome";
-    const displayName = userName ? `, ${userName}` : "";
-
+  if (dashboardLoading && !dashboard) {
     return (
-      <View className="flex-1 bg-background">
-        <ChatHeader />
-        <View className="flex-1 items-center justify-center px-8">
-          <Text className="text-foreground text-2xl font-sans-bold text-center mb-6">
-            {greeting}
-            {displayName} 👋
-          </Text>
-          <View className="w-48 h-1 rounded-full bg-surface overflow-hidden">
-            <MotiView
-              from={{ translateX: -192 }}
-              animate={{ translateX: 192 }}
-              transition={{
-                type: "timing",
-                duration: 1200,
-                loop: true,
-              }}
-              className="w-1/2 h-full rounded-full bg-primary"
-            />
-          </View>
-        </View>
+      <View className="flex-1 bg-background items-center justify-center">
+        <ActivityIndicator size="large" className="text-primary" />
       </View>
     );
   }
 
   return (
     <View className="flex-1 bg-background">
-      <ChatHeader />
-
-      <RateLimitBanner
-        visible={rateLimitVisible}
-        resetTime={rateLimitReset}
-        onDismiss={() => setRateLimitVisible(false)}
-      />
-
-      <OfflineBanner visible={isConnected === false} />
-
-      <KeyboardAvoidingView
-        behavior={Platform.OS === "ios" ? "padding" : "height"}
-        className="flex-1"
-        keyboardVerticalOffset={0}
-      >
-        <FlatList
-          ref={flatListRef}
-          data={messages}
-          keyExtractor={(item) => item.id}
-          renderItem={({ item, index }) => {
-            const isLatest = index === messages.length - 1;
-            const showFeedback =
-              !item.isUser &&
-              !isStreaming &&
-              lastAIMessageId !== null &&
-              isLatest;
-
-            return (
-              <>
-                <MessageBubble message={item} isLatest={isLatest} />
-                {showFeedback && lastAIMessageId && (
-                  <FeedbackRow messageId={lastAIMessageId} />
-                )}
-              </>
-            );
-          }}
-          contentContainerStyle={{
-            padding: 16,
-            paddingBottom: 8,
-            flexGrow: 1,
-          }}
+      <SafeAreaView edges={["top"]} className="flex-1">
+        <ScrollView
+          className="flex-1 px-5 pt-2"
+          contentContainerStyle={{ paddingBottom: 120 }}
           showsVerticalScrollIndicator={false}
-          onContentSizeChange={() => {
-            flatListRef.current?.scrollToEnd({ animated: false });
-          }}
-          ListFooterComponent={
-            <>
-              {isTyping && <TypingIndicator />}
-              {/* {showSuggestions && (
-                <View className="mt-4 mb-2">
-                  <Text className="text-muted text-sm font-sans-semibold mb-3 px-1">
-                    Suggestions
-                  </Text>
-
-                </View>
-              )} */}
-            </>
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={() => load(true)}
+            />
           }
-        />
+        >
+          <MotiView
+            from={{ opacity: 0, translateY: 12 }}
+            animate={{ opacity: 1, translateY: 0 }}
+            transition={{ type: "timing", duration: 400 }}
+          >
+            {/* Greeting */}
+            <View className="mb-5 mt-2">
+              <Text className="text-foreground text-2xl font-sans-bold">
+                {greeting}, {userName || "there"}
+              </Text>
+              <Text className="text-muted text-sm font-sans mt-1">
+                {new Date().toLocaleDateString("en-US", {
+                  weekday: "long",
+                  month: "long",
+                  day: "numeric",
+                })}
+              </Text>
+            </View>
 
-        <View style={{ paddingBottom: keyboardVisible ? 0 : tabBarHeight }}>
-          <ChatInput onSend={handleSend} disabled={isTyping || isStreaming || isConnected === false} />
-        </View>
-      </KeyboardAvoidingView>
+            {/* AI Briefing */}
+            {briefingText && (
+              <View className="bg-primary/10 rounded-2xl p-4 mb-5 border border-primary/20">
+                <View className="flex-row items-center mb-2">
+                  <Text className="text-lg mr-2">📋</Text>
+                  <Text className="text-primary font-sans-bold text-sm">
+                    Anzi's Morning Briefing
+                  </Text>
+                </View>
+                <Text className="text-foreground text-sm font-sans leading-5">
+                  {briefingText.length > 500
+                    ? briefingText.slice(0, 500) + "..."
+                    : briefingText}
+                </Text>
+              </View>
+            )}
+
+            {/* Quick Actions */}
+            <View className="flex-row gap-3 mb-5">
+              <QuickAction
+                icon="add-circle-outline"
+                label="Add Event"
+                onPress={() => router.push("/(tabs)/chat")}
+              />
+              <QuickAction
+                icon="cart-outline"
+                label="Grocery List"
+                onPress={() => router.push("/(tabs)/family")}
+              />
+              <QuickAction
+                icon="notifications-outline"
+                label="Remind"
+                onPress={() => router.push("/(tabs)/chat")}
+              />
+            </View>
+
+            {/* Today's Schedule */}
+            <View className="mb-5">
+              <View className="flex-row items-center mb-3">
+                <Ionicons
+                  name="calendar-outline"
+                  size={18}
+                  color={theme.colors["--color-primary"]}
+                />
+                <Text className="text-foreground text-base font-sans-bold ml-2">
+                  Today's Schedule
+                </Text>
+                {todayEvents.length > 0 && (
+                  <View className="bg-primary/20 rounded-full px-2 py-0.5 ml-2">
+                    <Text className="text-primary text-xs font-sans-bold">
+                      {todayEvents.length}
+                    </Text>
+                  </View>
+                )}
+              </View>
+
+              {todayEvents.length > 0 ? (
+                <View className="bg-surface rounded-2xl px-4 border border-border/30">
+                  {todayEvents.map((event, i) => (
+                    <ScheduleItem key={event.id} event={event} />
+                  ))}
+                </View>
+              ) : (
+                <View className="bg-surface/50 rounded-2xl p-5 items-center">
+                  <Text className="text-2xl mb-1">🎉</Text>
+                  <Text className="text-muted text-sm font-sans text-center">
+                    Clear day ahead — no scheduled chaos!
+                  </Text>
+                </View>
+              )}
+            </View>
+
+            {/* Action Items */}
+            {pendingTasks.length > 0 && (
+              <View className="mb-5">
+                <View className="flex-row items-center mb-3">
+                  <Ionicons
+                    name="checkbox-outline"
+                    size={18}
+                    color={theme.colors["--color-primary"]}
+                  />
+                  <Text className="text-foreground text-base font-sans-bold ml-2">
+                    To Do
+                  </Text>
+                  <View className="bg-primary/20 rounded-full px-2 py-0.5 ml-2">
+                    <Text className="text-primary text-xs font-sans-bold">
+                      {pendingTasks.length}
+                    </Text>
+                  </View>
+                </View>
+                <View className="bg-surface rounded-2xl px-4 py-1 border border-border/30">
+                  <TaskQuickView tasks={pendingTasks} />
+                </View>
+              </View>
+            )}
+
+            {/* Shopping */}
+            {groceryCount > 0 && (
+              <Pressable
+                onPress={() => router.push("/(tabs)/family")}
+                className="bg-surface rounded-2xl p-4 flex-row items-center border border-border/30 mb-5 active:opacity-70"
+              >
+                <View
+                  className="w-10 h-10 rounded-full items-center justify-center mr-3"
+                  style={{
+                    backgroundColor: theme.colors["--color-primary"] + "20",
+                  }}
+                >
+                  <Ionicons
+                    name="cart"
+                    size={20}
+                    color={theme.colors["--color-primary"]}
+                  />
+                </View>
+                <View className="flex-1">
+                  <Text className="text-foreground font-sans-semibold text-sm">
+                    Grocery List
+                  </Text>
+                  <Text className="text-muted text-xs font-sans">
+                    {groceryCount} item{groceryCount !== 1 ? "s" : ""} remaining
+                  </Text>
+                </View>
+                <Ionicons
+                  name="chevron-forward"
+                  size={18}
+                  color={theme.colors["--color-muted"]}
+                />
+              </Pressable>
+            )}
+          </MotiView>
+        </ScrollView>
+      </SafeAreaView>
     </View>
   );
 }

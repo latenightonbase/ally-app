@@ -435,6 +435,47 @@ export async function getWeeklyInsights(
   }
 }
 
+// --- Onboarding ---
+
+export async function completeOnboarding(data: {
+  userName: string;
+  allyName: string;
+  conversation: Array<{ question: string; answer: string }>;
+  dailyPingTime: string;
+  timezone: string;
+}): Promise<{
+  greeting: string;
+  memoryProfileCreated: boolean;
+  familyCreated: boolean;
+  familyId?: string;
+}> {
+  return apiRequest("/api/v1/onboarding/complete", {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
+// --- Invite ---
+
+export async function createInviteLink(data: {
+  email: string;
+  role?: string;
+}): Promise<{ invite: { id: string; token: string; expiresAt: string }; inviteLink: string }> {
+  return apiRequest("/api/v1/family/invite", {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
+export async function acceptFamilyInvite(
+  token: string,
+): Promise<{ joined: boolean; familyId: string }> {
+  return apiRequest("/api/v1/family/invite/accept", {
+    method: "POST",
+    body: JSON.stringify({ token }),
+  });
+}
+
 // --- Family ---
 
 export async function getFamily(): Promise<{
@@ -464,6 +505,7 @@ export async function addFamilyMember(data: {
   allergies?: string[];
   dietaryPreferences?: string[];
   notes?: string;
+  color?: string;
 }): Promise<{ member: FamilyMember }> {
   return apiRequest("/api/v1/family/members", {
     method: "POST",

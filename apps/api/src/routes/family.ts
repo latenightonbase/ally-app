@@ -1,5 +1,6 @@
 import { Elysia, t } from "elysia";
 import { authMiddleware } from "../middleware/auth";
+import { sendPushNotification } from "../services/notifications";
 import { db, schema } from "../db";
 import { and, eq, gte, lte, isNull, desc, asc } from "drizzle-orm";
 import crypto from "crypto";
@@ -190,9 +191,9 @@ export const familyRoutes = new Elysia({ prefix: "/api/v1/family" })
         })
         .returning();
 
-      // TODO: Send invite email via transactional email service
+      const deepLink = `anzi://invite/${token}`;
 
-      return { invite, inviteLink: `/join?token=${token}` };
+      return { invite, inviteLink: deepLink };
     },
     {
       body: t.Object({
@@ -249,6 +250,27 @@ export const familyRoutes = new Elysia({ prefix: "/api/v1/family" })
         .update(schema.familyInvites)
         .set({ status: "accepted" })
         .where(eq(schema.familyInvites.id, invite.id));
+
+      // Notify the inviter that someone joined
+      const inviter = await db.query.user.findFirst({
+        where: eq(schema.user.id, invite.invitedBy),
+        columns: { expoPushToken: true, allyName: true },
+      });
+      const joinerName = (
+        await db
+          .select({ name: schema.user.name })
+          .from(schema.user)
+          .where(eq(schema.user.id, user.id))
+      )[0]?.name ?? "Someone";
+
+      if (inviter?.expoPushToken) {
+        sendPushNotification(
+          inviter.expoPushToken,
+          inviter.allyName ?? "Anzi",
+          `${joinerName} joined your family on Anzi! 🎉`,
+          { type: "family_invite_accepted" },
+        ).catch(() => {});
+      }
 
       return { joined: true, familyId: invite.familyId };
     },

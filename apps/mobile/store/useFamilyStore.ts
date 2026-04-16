@@ -1,6 +1,8 @@
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+
+const FAMILY_STORAGE_KEY = "anzi-family-storage";
 import type {
   Family,
   FamilyMember,
@@ -157,7 +159,7 @@ export const useFamilyStore = create<FamilyState>()(
         }),
     }),
     {
-      name: "anzi-family-storage",
+      name: FAMILY_STORAGE_KEY,
       storage: createJSONStorage(() => AsyncStorage),
       partialize: (state) => ({
         family: state.family,
@@ -168,3 +170,7 @@ export const useFamilyStore = create<FamilyState>()(
     },
   ),
 );
+
+export async function clearFamilyPersistedStorage() {
+  await AsyncStorage.removeItem(FAMILY_STORAGE_KEY);
+}

@@ -262,6 +262,8 @@ export interface CreateReminderInput {
   conversationId?: string;
   source?: ReminderSource;
   metadata?: Record<string, unknown>;
+  familyId?: string;
+  targetMemberId?: string;
 }
 
 export type CheckinType = "casual" | "event_followup" | "goal_checkin" | "context_aware";

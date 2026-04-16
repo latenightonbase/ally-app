@@ -17,6 +17,14 @@ import { TextInput } from "../../components/ui/TextInput";
 import { Button } from "../../components/ui/Button";
 import { useTheme } from "../../context/ThemeContext";
 import { authClient } from "../../lib/auth";
+import { useAppStore, clearPersistedStorage } from "../../store/useAppStore";
+import { useFamilyStore, clearFamilyPersistedStorage } from "../../store/useFamilyStore";
+
+async function clearStaleStores() {
+  useAppStore.getState().reset();
+  useFamilyStore.getState().reset();
+  await Promise.all([clearPersistedStorage(), clearFamilyPersistedStorage()]);
+}
 
 export default function SignInScreen() {
   const { theme } = useTheme();
@@ -43,7 +51,8 @@ export default function SignInScreen() {
         return;
       }
 
-      router.replace("/(tabs)");
+      await clearStaleStores();
+      router.replace("/");
     } catch (e) {
       Alert.alert(
         "Error",
@@ -77,7 +86,8 @@ export default function SignInScreen() {
         return;
       }
 
-      router.replace("/(tabs)");
+      await clearStaleStores();
+      router.replace("/");
     } catch (e: any) {
       if (e?.code !== "ERR_REQUEST_CANCELED") {
         Alert.alert("Error", e instanceof Error ? e.message : "Apple Sign In failed.");

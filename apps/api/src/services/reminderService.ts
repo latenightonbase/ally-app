@@ -1,6 +1,7 @@
 import { db, schema } from "../db";
 import { eq, and, lte, sql } from "drizzle-orm";
 import { sendPushNotification } from "./notifications";
+import { notifyFamilyMember, notifyReminderCreator } from "./notificationRouter";
 import { resolveSession } from "./session";
 import type { CreateReminderInput } from "@ally/shared";
 
@@ -21,6 +22,8 @@ export async function createReminder(input: CreateReminderInput): Promise<string
       conversationId: input.conversationId ?? null,
       source: input.source ?? "chat",
       metadata: input.metadata ?? {},
+      familyId: input.familyId ?? null,
+      targetMemberId: input.targetMemberId ?? null,
     })
     .returning({ id: schema.reminders.id });
 
@@ -129,6 +132,7 @@ export async function processReminders(): Promise<void> {
       title: schema.reminders.title,
       body: schema.reminders.body,
       metadata: schema.reminders.metadata,
+      targetMemberId: schema.reminders.targetMemberId,
     })
     .from(schema.reminders)
     .where(
@@ -143,7 +147,6 @@ export async function processReminders(): Promise<void> {
 
   for (const reminder of dueReminders) {
     try {
-      // Fetch user info early — needed for both chat message and push
       const userRow = await db.query.user.findFirst({
         where: eq(schema.user.id, reminder.userId),
         columns: { name: true, expoPushToken: true, allyName: true },
@@ -151,11 +154,11 @@ export async function processReminders(): Promise<void> {
 
       const userName = userRow?.name ?? null;
       const messageText = formatWarmReminder(reminder.title, userName);
+      const allyName = userRow?.allyName ?? "Anzi";
+      const meta = (reminder.metadata ?? {}) as Record<string, unknown>;
 
-      // Insert the in-conversation message FIRST — this is the reliable
-      // delivery path and must succeed even if push notifications fail.
+      // Insert the in-conversation message for the creator
       if (reminder.conversationId) {
-        // Resolve or create a session so the message appears in active chat
         const sessionId = await resolveSession(
           reminder.userId,
           reminder.conversationId,
@@ -168,7 +171,6 @@ export async function processReminders(): Promise<void> {
           content: messageText,
         });
 
-        // Update conversation's lastMessageAt and messageCount
         const countResult = await db
           .select({ count: sql<number>`count(*)` })
           .from(schema.messages)
@@ -183,18 +185,34 @@ export async function processReminders(): Promise<void> {
           .where(eq(schema.conversations.id, reminder.conversationId));
       }
 
-      // Mark as sent (chat message is already delivered at this point)
       await db
         .update(schema.reminders)
         .set({ status: "sent", notifiedAt: new Date() })
         .where(eq(schema.reminders.id, reminder.id));
 
-      // Attempt push notification as a best-effort bonus — failures here
-      // don't affect the reminder status since the chat message is already in.
-      if (userRow?.expoPushToken) {
-        const allyName = userRow.allyName ?? "Anzi";
+      // Route push notification to the target family member if specified
+      if (reminder.targetMemberId) {
+        const result = await notifyFamilyMember({
+          memberId: reminder.targetMemberId,
+          title: allyName,
+          body: messageText,
+          data: {
+            type: "reminder",
+            reminderId: reminder.id,
+            reminderTitle: reminder.title,
+          },
+        });
 
-        const meta = (reminder.metadata ?? {}) as Record<string, unknown>;
+        // Send confirmation back to the creator
+        if (result.delivered) {
+          await notifyReminderCreator(
+            reminder.userId,
+            result.memberName,
+            reminder.title,
+          );
+        }
+      } else if (userRow?.expoPushToken) {
+        // No target member — send to the creator themselves
         await sendPushNotification(
           userRow.expoPushToken,
           allyName,
@@ -204,9 +222,7 @@ export async function processReminders(): Promise<void> {
             reminderId: reminder.id,
             conversationId: reminder.conversationId,
             reminderTitle: reminder.title,
-            remindAt: reminder.metadata && (reminder.metadata as Record<string, unknown>).remindAtISO
-              ? (reminder.metadata as Record<string, unknown>).remindAtISO as string
-              : new Date().toISOString(),
+            remindAt: meta.remindAtISO as string ?? new Date().toISOString(),
             body: reminder.body ?? undefined,
             timezone: meta.timezone as string | undefined,
             durationMinutes: typeof meta.durationMinutes === "number" ? meta.durationMinutes : 30,

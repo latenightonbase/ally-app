@@ -258,6 +258,73 @@ export async function runDailyPing() {
         );
       }
 
+      // ── 2b. Family calendar events for today ──
+      const dbUser = await db.query.user.findFirst({
+        where: eq(schema.user.id, userRow.id),
+        columns: { familyId: true },
+      });
+
+      if (dbUser?.familyId) {
+        const dayStart = new Date(now);
+        dayStart.setHours(0, 0, 0, 0);
+        const dayEnd = new Date(now);
+        dayEnd.setHours(23, 59, 59, 999);
+
+        const [familyEvents, familyMembers, familyTasks] = await Promise.all([
+          db
+            .select()
+            .from(schema.calendarEvents)
+            .where(
+              and(
+                eq(schema.calendarEvents.familyId, dbUser.familyId),
+                gte(schema.calendarEvents.startTime, dayStart),
+                lte(schema.calendarEvents.startTime, dayEnd),
+              ),
+            )
+            .orderBy(schema.calendarEvents.startTime)
+            .limit(10),
+          db
+            .select({ id: schema.familyMembers.id, name: schema.familyMembers.name })
+            .from(schema.familyMembers)
+            .where(eq(schema.familyMembers.familyId, dbUser.familyId)),
+          db
+            .select()
+            .from(schema.tasks)
+            .where(
+              and(
+                eq(schema.tasks.familyId, dbUser.familyId),
+                eq(schema.tasks.status, "pending"),
+              ),
+            )
+            .limit(5),
+        ]);
+
+        const memberMap = new Map(familyMembers.map((m) => [m.id, m.name]));
+
+        if (familyEvents.length > 0) {
+          contextParts.push(
+            `Today's family schedule:\n${familyEvents
+              .map((e) => {
+                const time = e.allDay ? "All day" : e.startTime.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+                const assigned = (e.assignedTo as string[])?.map((id) => memberMap.get(id)).filter(Boolean).join(", ") || "";
+                return `- ${time}: ${e.title}${assigned ? ` (${assigned})` : ""}`;
+              })
+              .join("\n")}`,
+          );
+        }
+
+        if (familyTasks.length > 0) {
+          contextParts.push(
+            `Pending family tasks:\n${familyTasks
+              .map((t) => {
+                const assignee = t.assignedTo ? memberMap.get(t.assignedTo) : null;
+                return `- ${t.title}${assignee ? ` [${assignee}]` : ""}`;
+              })
+              .join("\n")}`,
+          );
+        }
+      }
+
       // ── 3. Today's reminders ──
       const upcomingReminders = await getPendingReminders(userRow.id, 5).catch(() => []);
       const todayReminders = upcomingReminders.filter((r) => {
@@ -344,31 +411,25 @@ export async function runDailyPing() {
       const { text } = await callClaude({
         system: `Today is ${todayFormatted}.
 
-You are ${allyName}, a personal AI companion for ${displayName}. Write a single brief, warm check-in message (1-2 sentences). Sound like a caring friend sending a casual text — not a notification or reminder app.
+You are ${allyName}, a family AI assistant for ${displayName}. Write a brief, warm morning message (2-4 sentences) that helps them start their day organized. Sound like a capable friend who already sorted through the day for them.
 
-CRITICAL — TEMPORAL AWARENESS:
-- Every piece of context below has a relative time label like "today", "yesterday", "3 days ago", "last week", "2 months ago".
-- USE these labels to understand what is current vs. past:
-  • "today" = happening now or very recently, safe to reference as ongoing
-  • "yesterday" = happened yesterday — it is OVER, ask how it went, don't assume it's happening now
-  • "3 days ago" or older = this is PAST. Do NOT treat it as current. A walk at 4PM from "yesterday" was YESTERDAY's walk. A trip from "2 weeks ago" means they are BACK.
-- When in doubt: if it's not labeled "today" or "tomorrow", treat it as something that already happened.
+FORMAT:
+- Lead with the most important thing happening today (event, task, or reminder).
+- Mention 1-2 other things worth knowing (schedule, tasks due, grocery needs).
+- End with something encouraging or a quick question about what needs attention.
+- Keep it scannable — names, times, specifics. Not vague.
+- Use 1-2 emojis naturally. This should feel like a text from a friend, not a notification bot.
 
-OTHER RULES:
-- Pick ONE thread from the context below and check in on it naturally.
-- If there's an upcoming event (labeled "tomorrow" or "in X days") or today's reminder, that takes priority.
-- Reference the CURRENT state of things, not old states.
-- Don't be generic. Don't list things. Use 1-2 emojis naturally like a real person texting.
-- When in doubt, reference the most RECENT memory or the last session summary.
+TEMPORAL AWARENESS:
+- Context includes relative time labels. Use them to understand what's current vs. past.
+- If there are today's reminders or upcoming events, prioritize those.
+- Don't reference old events as if they're happening now.
 
-VARIETY — this is critical:
-- Your recent messages are listed below. Do NOT reuse the same opening phrase, sentence structure, or topic as any of them.
-- Vary your style: sometimes ask a question, sometimes make a comment, sometimes be playful, sometimes be direct. Be witty and expressive — this should feel like a text from their funniest, most caring friend. Mix it up.
-- If you've already checked in about a topic recently, pick a DIFFERENT one.
-- Never start two messages in a row with similar phrasing like "I know..." or "Hey, just...".
-- Show personality: hot takes, emojis, humor, warmth. "thinking about you today 🥹" or "ok but did the interview happen yet bc I need to know 👀" — not generic wellness-app vibes.${contextBlock}${previousMessagesBlock}`,
-        messages: [{ role: "user", content: "Generate the daily check-in message." }],
-        maxTokens: 200,
+VARIETY:
+- Your recent messages are listed below. Do NOT repeat the same opening, structure, or topic.
+- Vary your style: sometimes lead with the schedule, sometimes with a proactive flag, sometimes with a quick win.${contextBlock}${previousMessagesBlock}`,
+        messages: [{ role: "user", content: "Generate the morning briefing message." }],
+        maxTokens: 300,
       });
 
       let conversationId: string;

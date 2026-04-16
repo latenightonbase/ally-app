@@ -104,9 +104,9 @@ export async function ensureBriefingForUser(userId: string): Promise<
 
   const user = await db.query.user.findFirst({
     where: eq(schema.user.id, userId),
-    columns: { tier: true },
+    columns: { tier: true, familyId: true },
   });
-  if (!user || (user.tier !== "pro" && user.tier !== "premium")) return null;
+  if (!user) return null;
 
   const profile = await loadMemoryProfile(userId);
   if (!profile) return null;
@@ -114,14 +114,16 @@ export async function ensureBriefingForUser(userId: string): Promise<
   // Use the semantic retrieval pipeline for relevant context
   const relevantFacts = await retrieveRelevantFacts({
     userId,
-    query: "what's on my mind today goals check in",
+    query: "family schedule today upcoming events tasks",
     limit: 12,
   }).catch(() => [] as Awaited<ReturnType<typeof retrieveRelevantFacts>>);
 
-  // Pull upcoming events within the next 7 days
+  // Pull upcoming memory events within the next 7 days
   const now = new Date();
   const sevenDaysOut = new Date(now);
   sevenDaysOut.setDate(sevenDaysOut.getDate() + 7);
+  const threeDaysOut = new Date(now);
+  threeDaysOut.setDate(threeDaysOut.getDate() + 3);
 
   const upcomingEvents = await db.query.memoryEvents.findMany({
     where: and(
@@ -135,11 +137,87 @@ export async function ensureBriefingForUser(userId: string): Promise<
     limit: 5,
   });
 
+  // Pull family calendar events for today + next 3 days
+  const familyId = user.familyId;
+  let calendarContext = "";
+  let taskContext = "";
+  let shoppingContext = "";
+
+  if (familyId) {
+    const dayStart = new Date(now);
+    dayStart.setHours(0, 0, 0, 0);
+
+    const [calendarEvents, familyMembers, pendingTasksRaw, shoppingLists] = await Promise.all([
+      db
+        .select()
+        .from(schema.calendarEvents)
+        .where(
+          and(
+            eq(schema.calendarEvents.familyId, familyId),
+            gte(schema.calendarEvents.startTime, dayStart),
+            lte(schema.calendarEvents.startTime, threeDaysOut),
+          ),
+        )
+        .orderBy(schema.calendarEvents.startTime)
+        .limit(20),
+      db
+        .select({ id: schema.familyMembers.id, name: schema.familyMembers.name })
+        .from(schema.familyMembers)
+        .where(eq(schema.familyMembers.familyId, familyId)),
+      db
+        .select()
+        .from(schema.tasks)
+        .where(
+          and(
+            eq(schema.tasks.familyId, familyId),
+            eq(schema.tasks.status, "pending"),
+          ),
+        )
+        .limit(10),
+      db
+        .select()
+        .from(schema.shoppingLists)
+        .where(eq(schema.shoppingLists.familyId, familyId))
+        .limit(1),
+    ]);
+
+    const memberMap = new Map(familyMembers.map((m) => [m.id, m.name]));
+
+    if (calendarEvents.length > 0) {
+      calendarContext = "\nFamily calendar (today + next 3 days):\n" +
+        calendarEvents.map((e) => {
+          const date = e.startTime.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
+          const time = e.allDay ? "all day" : e.startTime.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+          const assigned = (e.assignedTo as string[])?.map((id) => memberMap.get(id)).filter(Boolean).join(", ") || "";
+          return `- ${e.title} — ${date} ${time}${assigned ? ` (${assigned})` : ""}`;
+        }).join("\n");
+    }
+
+    if (pendingTasksRaw.length > 0) {
+      taskContext = "\nPending tasks:\n" +
+        pendingTasksRaw.map((t) => {
+          const assignee = t.assignedTo ? memberMap.get(t.assignedTo) : null;
+          const due = t.dueDate ? ` (due ${t.dueDate.toLocaleDateString("en-US", { month: "short", day: "numeric" })})` : "";
+          return `- ${t.title}${assignee ? ` [${assignee}]` : ""}${due}`;
+        }).join("\n");
+    }
+
+    if (shoppingLists.length > 0) {
+      const items = await db
+        .select()
+        .from(schema.shoppingListItems)
+        .where(eq(schema.shoppingListItems.listId, shoppingLists[0].id));
+      const unchecked = items.filter((i) => !i.checked);
+      if (unchecked.length > 0) {
+        shoppingContext = `\nGrocery list: ${unchecked.length} items remaining (${unchecked.slice(0, 5).map((i) => i.name).join(", ")}${unchecked.length > 5 ? "..." : ""})`;
+      }
+    }
+  }
+
   const pendingFollowups = (profile.pendingFollowups ?? []).filter(
     (f) => !f.resolved,
   );
 
-  // Get session count for relationship-stage-aware briefing
   const [sessionCountResult] = await db
     .select({ value: count() })
     .from(schema.sessions)
@@ -148,10 +226,15 @@ export async function ensureBriefingForUser(userId: string): Promise<
 
   const { content } = await generateBriefing({
     profile,
-    relevantFacts: relevantFacts.map((f) => ({
-      content: f.content,
-      category: f.category ?? "general",
-    })),
+    relevantFacts: [
+      ...relevantFacts.map((f) => ({
+        content: f.content,
+        category: f.category ?? "general",
+      })),
+      ...(calendarContext ? [{ content: calendarContext, category: "schedule" }] : []),
+      ...(taskContext ? [{ content: taskContext, category: "tasks" }] : []),
+      ...(shoppingContext ? [{ content: shoppingContext, category: "shopping" }] : []),
+    ],
     upcomingEvents: upcomingEvents.map((e) => ({
       content: e.content,
       eventDate: e.eventDate.toISOString().split("T")[0],

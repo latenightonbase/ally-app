@@ -1,0 +1,56 @@
+The pivot:
+We're shifting Anzi from a personal AI companion to an AI-powered family organizer. Think of it as a modern, intelligent version of Cozi — but instead of a dumb calendar you have to manage yourself, Anzi is an AI that runs the household for you. You tell her once, she makes sure everything gets done and the right people know about it.
+
+The core experience:
+Mom is the command center. She tells Anzi anything — appointments, reminders, tasks, groceries — in plain natural language. No forms. No dropdowns. Just talk or type naturally like texting a friend. Anzi parses it, adds it to the right place, and automatically reminds the right family member at the right time.
+Nobody has to ask mom. Because Anzi already told them.
+
+The features we need:
+1. Family member profiles
+Mom sets up her family once during onboarding. Each family member gets a name, age, and contact info — phone number or email. When mom mentions a family member in any conversation, Anzi knows who they are and can send them reminders directly.
+Dad gets his own push notification. Emma gets her own reminder. Mom stops being the human notification system for everyone.
+2. Redesigned home screen
+Replace the current chat-first home screen with a family morning summary. Every morning mom opens Anzi and sees one clean screen:
+
+What's happening today for everyone
+What's coming up in the next 3 days
+What Anzi has already handled and reminded
+Anything that needs mom's attention or a decision
+
+Scannable in 30 seconds. Like a daily briefing from a really good assistant.
+3. Shared lists
+Grocery list. To-do list. School supplies. Any list the family needs. Mom adds to the grocery list by telling Anzi — "add milk and eggs." Dad can see the list too. Items get checked off when done. Simple, shared, always up to date.
+4. Smart reminder routing
+When mom says "remind Mike about soccer pickup at 3" — Anzi sends Mike a reminder automatically at the right time. Mom doesn't follow up. Mom doesn't text Mike. Anzi handles it and confirms to mom that it's done.
+5. Voice input button
+A microphone button in the chat interface. Mom is driving, cooking, nursing — she can't type. She taps the mic, speaks naturally, Anzi captures it. This is the biggest friction reducer over every existing family app.
+6. Onboarding redesign
+New onboarding focused on family setup not emotional state. Five screens:
+
+What should I call you
+Tell me about your family — kids names and ages
+What's falling through the cracks most
+Who else needs reminders
+What time should I brief you every morning
+
+Ends with the magic moment — tell me one thing you need to happen this week and I'll make sure the right person knows about it.
+7. Updated Anzi personality
+Anzi's responses change completely. Short, direct, confirms things are handled and moves on. No emotional follow-ups. No asking how you're feeling. Just warm, efficient, capable.
+Good response: "Done. Jake's dentist Thursday at 3. Mike gets reminded Wednesday night."
+Bad response: "That sounds like a busy week! I completely understand..."
+
+What stays the same:
+The reminder pipeline — already works, just needs routing to family members
+The memory system — still tracks family context
+The morning briefing — same infrastructure, new format
+The design language — sage green, warm, modern — already better than Cozi
+The chat interface — stays as the primary way to talk to Anzi
+
+What this competes with:
+Cozi — 15 year old family organizer with millions of users, outdated design, no AI, barely updated. We're building what Cozi should have become.
+Google Calendar — free but dumb. No AI. No proactive reminders to family members. No natural language. No lists. No household intelligence.
+Apple Reminders — individual only, no family routing, no intelligence.
+Nobody has done this with AI yet. That's the gap.
+
+The one sentence brief for your dev team:
+"We're rebuilding Anzi as an AI-powered family organizer — mom tells Anzi once, Anzi makes sure the whole family knows what they need to know, automatically, without mom having to follow up on anything."
