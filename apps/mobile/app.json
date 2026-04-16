@@ -17,6 +17,9 @@
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
         "NSCameraUsageDescription": "Allow Ally to access your camera to take photos and videos.",
+        "NSPhotoLibraryUsageDescription": "Allow Ally to access your photo library to share and save images.",
+        "NSMicrophoneUsageDescription": "Allow Ally to access your microphone for voice input.",
+        "NSSpeechRecognitionUsageDescription": "Allow Ally to use speech recognition to transcribe your voice messages.",
         "NSCalendarsUsageDescription": "Ally uses your calendar to add reminders as events so you never miss what matters.",
         "NSCalendarsFullAccessUsageDescription": "Ally uses your calendar to add reminders as events so you never miss what matters.",
         "NSCalendarsWriteOnlyAccessUsageDescription": "Ally uses your calendar to add reminders as events so you never miss what matters."
