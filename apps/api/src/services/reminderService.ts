@@ -1,9 +1,11 @@
 import { db, schema } from "../db";
-import { eq, and, lte, sql } from "drizzle-orm";
+import { eq, and, lte, gte, sql } from "drizzle-orm";
 import { sendPushNotification } from "./notifications";
 import { notifyFamilyMember, notifyReminderCreator } from "./notificationRouter";
 import { resolveSession } from "./session";
 import type { CreateReminderInput } from "@ally/shared";
+
+const DAILY_PING_SUPPRESSION_MS = 5 * 60_000;
 
 /**
  * Create a new reminder that will trigger a push notification at the specified time.
@@ -189,6 +191,23 @@ export async function processReminders(): Promise<void> {
         .update(schema.reminders)
         .set({ status: "sent", notifiedAt: new Date() })
         .where(eq(schema.reminders.id, reminder.id));
+
+      // Suppress push if a daily_ping just fired for this user (briefing already surfaced it)
+      const suppressionCutoff = new Date(now.getTime() - DAILY_PING_SUPPRESSION_MS);
+      const recentPing = await db.query.jobRuns.findFirst({
+        where: and(
+          eq(schema.jobRuns.jobName, "daily_ping"),
+          eq(schema.jobRuns.userId, reminder.userId),
+          gte(schema.jobRuns.startedAt, suppressionCutoff),
+        ),
+      });
+
+      if (recentPing && !reminder.targetMemberId) {
+        console.log(
+          `[reminders] Suppressed push for reminder ${reminder.id} — daily_ping fired ${Math.round((now.getTime() - recentPing.startedAt.getTime()) / 1000)}s ago`,
+        );
+        continue;
+      }
 
       // Route push notification to the target family member if specified
       if (reminder.targetMemberId) {

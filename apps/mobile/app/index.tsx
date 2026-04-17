@@ -4,6 +4,7 @@ import { Redirect } from "expo-router";
 import { useSession } from "../lib/auth";
 import { useAppStore } from "../store/useAppStore";
 import { getUserProfile, getFamily } from "../lib/api";
+import { consumePendingInvite } from "./invite/[token]";
 
 export default function Index() {
   const { data: session, isPending } = useSession();
@@ -12,6 +13,7 @@ export default function Index() {
   const lastUserId = useRef<string | null>(null);
   const [resolving, setResolving] = useState(false);
   const [needsOnboarding, setNeedsOnboarding] = useState(false);
+  const [pendingInviteToken, setPendingInviteToken] = useState<string | null>(null);
 
   useEffect(() => {
     const userId = session?.user?.id ?? null;
@@ -29,6 +31,13 @@ export default function Index() {
 
     (async () => {
       try {
+        const inviteToken = await consumePendingInvite();
+        if (inviteToken) {
+          setPendingInviteToken(inviteToken);
+          setResolving(false);
+          return;
+        }
+
         const serverProfile = await getUserProfile();
         setTier(serverProfile.tier);
         if (serverProfile.name) {
@@ -55,6 +64,9 @@ export default function Index() {
   }
 
   if (session) {
+    if (pendingInviteToken) {
+      return <Redirect href={`/invite/${pendingInviteToken}` as any} />;
+    }
     if (needsOnboarding) {
       return <Redirect href="/(onboarding)" />;
     }

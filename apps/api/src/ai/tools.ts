@@ -222,7 +222,7 @@ export function getCustomTools(): Anthropic.Messages.Tool[] {
     {
       name: "set_family_reminder",
       description:
-        "Set a reminder that will push a notification to the right family member at the right time. ONLY call this after the user has explicitly confirmed they want a reminder. NEVER call proactively when events are just mentioned. Specify WHO gets reminded and WHEN.",
+        "Send a push notification to a family member at a specific time. This only sends a ping — it does NOT create a visible task. When the user says 'remind [name] to [do something]', also call assign_task so the person sees it in their task list. ONLY call this after the user has explicitly confirmed they want a reminder.",
       input_schema: {
         type: "object" as const,
         properties: {

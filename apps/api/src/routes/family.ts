@@ -120,13 +120,18 @@ export const familyRoutes = new Elysia({ prefix: "/api/v1/family" })
     "/members",
     async ({ body, user, set }) => {
       const [dbUser] = await db
-        .select({ familyId: schema.user.familyId })
+        .select({ familyId: schema.user.familyId, familyRole: schema.user.familyRole })
         .from(schema.user)
         .where(eq(schema.user.id, user.id));
 
       if (!dbUser?.familyId) {
         set.status = 404;
         return { error: "No family found." };
+      }
+
+      if (dbUser.familyRole !== "admin") {
+        set.status = 403;
+        return { error: "Only the family admin can add members." };
       }
 
       const [member] = await db
@@ -167,13 +172,18 @@ export const familyRoutes = new Elysia({ prefix: "/api/v1/family" })
     "/invite",
     async ({ body, user, set }) => {
       const [dbUser] = await db
-        .select({ familyId: schema.user.familyId })
+        .select({ familyId: schema.user.familyId, familyRole: schema.user.familyRole })
         .from(schema.user)
         .where(eq(schema.user.id, user.id));
 
       if (!dbUser?.familyId) {
         set.status = 404;
         return { error: "No family found." };
+      }
+
+      if (dbUser.familyRole !== "admin") {
+        set.status = 403;
+        return { error: "Only the family admin can send invites." };
       }
 
       const token = crypto.randomBytes(32).toString("hex");
@@ -191,7 +201,7 @@ export const familyRoutes = new Elysia({ prefix: "/api/v1/family" })
         })
         .returning();
 
-      const deepLink = `anzi://invite/${token}`;
+      const deepLink = `ally-app://invite/${token}`;
 
       return { invite, inviteLink: deepLink };
     },
@@ -207,6 +217,16 @@ export const familyRoutes = new Elysia({ prefix: "/api/v1/family" })
   .post(
     "/invite/accept",
     async ({ body, user, set }) => {
+      const [currentUser] = await db
+        .select({ familyId: schema.user.familyId })
+        .from(schema.user)
+        .where(eq(schema.user.id, user.id));
+
+      if (currentUser?.familyId) {
+        set.status = 409;
+        return { error: "You already belong to a family. Leave your current family first." };
+      }
+
       const [invite] = await db
         .select()
         .from(schema.familyInvites)
