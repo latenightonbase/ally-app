@@ -69,7 +69,7 @@ function EditModal({
         className="flex-1"
       >
         <Pressable
-          className="flex-1 bg-black/40 justify-end"
+          className="flex-1 bg-foreground/40 justify-end"
           onPress={onClose}
         >
           <Pressable onPress={() => {}}>
@@ -165,7 +165,7 @@ function TimePickerModal({
       onRequestClose={onClose}
     >
       <Pressable
-        className="flex-1 bg-black/40 justify-end"
+        className="flex-1 bg-foreground/40 justify-end"
         onPress={onClose}
       >
         <Pressable onPress={() => {}}>
@@ -277,10 +277,7 @@ export default function SettingsScreen() {
   const [serverProfile, setServerProfile] = useState<UserProfileData | null>(null);
   const [profileLoading, setProfileLoading] = useState(true);
 
-  // Edit modal state
-  const [editField, setEditField] = useState<
-    "name" | "allyName" | "occupation" | null
-  >(null);
+  const [editField, setEditField] = useState<"name" | null>(null);
   const [timePickerVisible, setTimePickerVisible] = useState(false);
   const [saving, setSaving] = useState(false);
 
@@ -299,23 +296,18 @@ export default function SettingsScreen() {
   }, []);
 
   const handleEdit = useCallback(
-    async (field: "name" | "allyName" | "occupation", value: string) => {
+    async (field: "name", value: string) => {
       setEditField(null);
-      // Optimistic update — show change immediately
       const previous = serverProfile;
       setServerProfile((prev) => (prev ? { ...prev, [field]: value } : prev));
-      if (field === "name" || field === "allyName") {
-        setUser({ [field]: value });
-      }
+      setUser({ [field]: value });
       setSaving(true);
       try {
         const updated = await updateUserProfile({ [field]: value });
         setServerProfile(updated);
       } catch {
-        setServerProfile(previous); // revert optimistic update
-        if (field === "name" || field === "allyName") {
-          setUser({ [field]: previous?.[field] ?? "" });
-        }
+        setServerProfile(previous);
+        setUser({ [field]: previous?.[field] ?? "" });
         Alert.alert("Error", "Could not save changes. Please try again.");
       } finally {
         setSaving(false);
@@ -412,7 +404,6 @@ export default function SettingsScreen() {
   const displayName =
     serverProfile?.name ?? session?.user?.name ?? user.name ?? "";
   const displayAllyName = serverProfile?.allyName ?? user.allyName ?? "Anzi";
-  const displayOccupation = serverProfile?.occupation ?? "";
   const displayPingTime =
     serverProfile?.dailyPingTime
       ? TIME_LABELS[serverProfile.dailyPingTime] ?? serverProfile.dailyPingTime
@@ -491,20 +482,6 @@ export default function SettingsScreen() {
             value={serverProfile?.email ?? session?.user?.email ?? ""}
           />
           <SettingsRow
-            icon="sparkles-outline"
-            label="Anzi's Name"
-            value={displayAllyName}
-            showChevron
-            onPress={() => setEditField("allyName")}
-          />
-          <SettingsRow
-            icon="briefcase-outline"
-            label="Occupation"
-            value={displayOccupation || undefined}
-            showChevron
-            onPress={() => setEditField("occupation")}
-          />
-          <SettingsRow
             icon="trash-outline"
             label="Clear All Memories"
             onPress={handleResetMemories}
@@ -542,22 +519,6 @@ export default function SettingsScreen() {
         value={displayName}
         placeholder="What should Anzi call you?"
         onSave={(v) => handleEdit("name", v)}
-        onClose={() => setEditField(null)}
-      />
-      <EditModal
-        visible={editField === "allyName"}
-        title="Anzi's Name"
-        value={displayAllyName}
-        placeholder="e.g. Anzi, Atlas, Nova…"
-        onSave={(v) => handleEdit("allyName", v)}
-        onClose={() => setEditField(null)}
-      />
-      <EditModal
-        visible={editField === "occupation"}
-        title="Occupation"
-        value={displayOccupation}
-        placeholder="What do you do?"
-        onSave={(v) => handleEdit("occupation", v)}
         onClose={() => setEditField(null)}
       />
       <TimePickerModal

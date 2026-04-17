@@ -131,7 +131,7 @@ export default function SignInScreen() {
               {/* Sign in with Apple */}
               <AppleAuthentication.AppleAuthenticationButton
                 buttonType={AppleAuthentication.AppleAuthenticationButtonType.SIGN_IN}
-                buttonStyle={AppleAuthentication.AppleAuthenticationButtonStyle.BLACK}
+                buttonStyle={AppleAuthentication.AppleAuthenticationButtonStyle.WHITE}
                 cornerRadius={16}
                 style={{ width: "100%", height: 54 }}
                 onPress={handleAppleSignIn}

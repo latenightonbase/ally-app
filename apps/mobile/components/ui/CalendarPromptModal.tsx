@@ -71,7 +71,7 @@ export function CalendarPromptModal() {
       onRequestClose={handleDismiss}
     >
       <Pressable
-        className="flex-1 bg-black/40 justify-end"
+        className="flex-1 bg-foreground/40 justify-end"
         onPress={handleDismiss}
       >
         {/* Inner pressable stops propagation so tapping the sheet doesn't dismiss */}

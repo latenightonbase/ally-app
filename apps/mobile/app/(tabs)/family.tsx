@@ -1,4 +1,4 @@
-import React, { useEffect, useCallback, useMemo, useState } from "react";
+import React, { useEffect, useCallback, useMemo } from "react";
 import {
   ScrollView,
   View,
@@ -8,11 +8,6 @@ import {
   TouchableOpacity,
   Share,
   Alert,
-  Modal,
-  Pressable,
-  TextInput as RNTextInput,
-  KeyboardAvoidingView,
-  Platform,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { MotiView } from "moti";
@@ -26,7 +21,6 @@ import {
   toggleShoppingItem as apiToggleItem,
   updateTask as apiUpdateTask,
   createInviteLink,
-  addFamilyMember,
 } from "../../lib/api";
 import { useTheme } from "../../context/ThemeContext";
 import type { Task, CalendarEvent, ShoppingListItem } from "@ally/shared";
@@ -241,151 +235,6 @@ function ShoppingSection({
   );
 }
 
-// ---------- Add Member Modal ----------
-
-const MEMBER_COLORS = [
-  "#4F46E5", "#059669", "#D97706", "#DC2626", "#7C3AED",
-  "#DB2777", "#0891B2", "#65A30D", "#EA580C", "#6366F1",
-];
-
-function AddMemberModal({
-  visible,
-  onClose,
-  onAdded,
-  existingCount,
-}: {
-  visible: boolean;
-  onClose: () => void;
-  onAdded: () => void;
-  existingCount: number;
-}) {
-  const { theme } = useTheme();
-  const [name, setName] = useState("");
-  const [role, setRole] = useState<"parent" | "child" | "other">("child");
-  const [age, setAge] = useState("");
-  const [saving, setSaving] = useState(false);
-
-  const handleSave = async () => {
-    if (!name.trim()) return;
-    setSaving(true);
-    try {
-      await addFamilyMember({
-        name: name.trim(),
-        role,
-        age: age.trim() ? parseInt(age.trim(), 10) : undefined,
-        color: MEMBER_COLORS[existingCount % MEMBER_COLORS.length],
-      });
-      setName("");
-      setAge("");
-      setRole("child");
-      onAdded();
-      onClose();
-    } catch {
-      Alert.alert("Error", "Could not add family member. Please try again.");
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const roles: { label: string; value: "parent" | "child" | "other" }[] = [
-    { label: "Partner", value: "parent" },
-    { label: "Child", value: "child" },
-    { label: "Other", value: "other" },
-  ];
-
-  return (
-    <Modal
-      visible={visible}
-      transparent
-      animationType="fade"
-      onRequestClose={onClose}
-    >
-      <KeyboardAvoidingView
-        behavior={Platform.OS === "ios" ? "padding" : "height"}
-        className="flex-1"
-      >
-        <Pressable
-          className="flex-1 bg-black/40 justify-end"
-          onPress={onClose}
-        >
-          <Pressable onPress={() => {}}>
-            <View
-              className="rounded-t-3xl px-5 pt-5 pb-8"
-              style={{ backgroundColor: theme.colors["--color-surface"] }}
-            >
-              <Text className="text-foreground text-lg font-sans-semibold mb-4">
-                Add Family Member
-              </Text>
-
-              <RNTextInput
-                value={name}
-                onChangeText={setName}
-                placeholder="Name"
-                placeholderTextColor={theme.colors["--color-muted"]}
-                className="text-foreground text-base font-sans mb-3 bg-background rounded-xl px-4 py-3"
-                style={{ color: theme.colors["--color-foreground"] }}
-                autoFocus
-              />
-
-              <View className="flex-row gap-2 mb-3">
-                {roles.map((r) => (
-                  <Pressable
-                    key={r.value}
-                    onPress={() => setRole(r.value)}
-                    className={`flex-1 py-2.5 rounded-xl items-center ${
-                      role === r.value ? "bg-primary" : "bg-background"
-                    }`}
-                  >
-                    <Text
-                      className={`text-sm font-sans-semibold ${
-                        role === r.value ? "text-white" : "text-foreground"
-                      }`}
-                    >
-                      {r.label}
-                    </Text>
-                  </Pressable>
-                ))}
-              </View>
-
-              {role === "child" && (
-                <RNTextInput
-                  value={age}
-                  onChangeText={setAge}
-                  placeholder="Age (optional)"
-                  placeholderTextColor={theme.colors["--color-muted"]}
-                  keyboardType="number-pad"
-                  className="text-foreground text-base font-sans mb-3 bg-background rounded-xl px-4 py-3"
-                  style={{ color: theme.colors["--color-foreground"] }}
-                />
-              )}
-
-              <View className="flex-row gap-3 mt-1">
-                <Pressable
-                  onPress={onClose}
-                  className="flex-1 py-3.5 rounded-2xl bg-primary-soft items-center active:opacity-70"
-                >
-                  <Text className="text-primary font-sans-semibold">Cancel</Text>
-                </Pressable>
-                <Pressable
-                  onPress={handleSave}
-                  disabled={!name.trim() || saving}
-                  className={`flex-1 py-3.5 rounded-2xl items-center active:opacity-70 ${
-                    !name.trim() || saving ? "bg-primary/50" : "bg-primary"
-                  }`}
-                >
-                  <Text className="text-white font-sans-semibold">
-                    {saving ? "Adding..." : "Add"}
-                  </Text>
-                </Pressable>
-              </View>
-            </View>
-          </Pressable>
-        </Pressable>
-      </KeyboardAvoidingView>
-    </Modal>
-  );
-}
-
 // ---------- Main Screen ----------
 
 export default function FamilyDashboardScreen() {
@@ -478,8 +327,6 @@ export default function FamilyDashboardScreen() {
     return tasks.filter((t) => t.status !== "completed").slice(0, 8);
   }, [tasks]);
 
-  const [addMemberVisible, setAddMemberVisible] = useState(false);
-
   const familyName = family?.name ?? dashboard?.family?.name ?? `${user.name}'s Family`;
 
   const handleInvite = useCallback(async () => {
@@ -564,20 +411,6 @@ export default function FamilyDashboardScreen() {
               {(dashboard?.members ?? members).map((m) => (
                 <MemberChip key={m.id} name={m.name} color={m.color ?? undefined} />
               ))}
-              <TouchableOpacity
-                onPress={() => setAddMemberVisible(true)}
-                className="rounded-full px-3 py-1.5 mr-2 mb-2 border border-dashed border-primary/50 flex-row items-center"
-                activeOpacity={0.7}
-              >
-                <Ionicons
-                  name="person-add-outline"
-                  size={14}
-                  color={theme.colors["--color-primary"]}
-                />
-                <Text className="text-primary text-sm font-sans-semibold ml-1">
-                  Add
-                </Text>
-              </TouchableOpacity>
               <TouchableOpacity
                 onPress={handleInvite}
                 className="rounded-full px-3 py-1.5 mr-2 mb-2 border border-dashed border-primary/50 flex-row items-center"
@@ -679,12 +512,6 @@ export default function FamilyDashboardScreen() {
         </ScrollView>
       </SafeAreaView>
 
-      <AddMemberModal
-        visible={addMemberVisible}
-        onClose={() => setAddMemberVisible(false)}
-        onAdded={() => load(true)}
-        existingCount={(dashboard?.members ?? members).length}
-      />
     </View>
   );
 }

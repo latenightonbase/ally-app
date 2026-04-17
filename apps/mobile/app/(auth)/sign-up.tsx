@@ -18,14 +18,8 @@ import { TextInput } from "../../components/ui/TextInput";
 import { Button } from "../../components/ui/Button";
 import { useTheme } from "../../context/ThemeContext";
 import { authClient } from "../../lib/auth";
-import { useAppStore, clearPersistedStorage } from "../../store/useAppStore";
-import { useFamilyStore, clearFamilyPersistedStorage } from "../../store/useFamilyStore";
-
-async function clearStaleStores() {
-  useAppStore.getState().reset();
-  useFamilyStore.getState().reset();
-  await Promise.all([clearPersistedStorage(), clearFamilyPersistedStorage()]);
-}
+import { useAppStore } from "../../store/useAppStore";
+import { createFamily } from "../../lib/api";
 
 export default function SignUpScreen() {
   const { theme } = useTheme();
@@ -36,6 +30,18 @@ export default function SignUpScreen() {
   const [loading, setLoading] = useState(false);
   const [appleLoading, setAppleLoading] = useState(false);
   const setUser = useAppStore((s) => s.setUser);
+
+  /** After auth succeeds, create a default family for the user */
+  const setupFamily = async (userName: string) => {
+    try {
+      await createFamily({
+        name: `${userName}'s Family`,
+        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+      });
+    } catch {
+      // Non-fatal — they can create a family later
+    }
+  };
 
   const handleAppleSignUp = async () => {
     setAppleLoading(true);
@@ -60,7 +66,6 @@ export default function SignUpScreen() {
         return;
       }
 
-      await clearStaleStores();
       const firstName = credential.fullName?.givenName ?? "Friend";
       setUser({ name: firstName });
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -109,10 +114,10 @@ export default function SignUpScreen() {
         return;
       }
 
-      await clearStaleStores();
       setUser({ name: name.trim() });
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      router.replace("/(onboarding)");
+      await setupFamily(name.trim());
+      router.replace("/(tabs)");
     } catch (e) {
       Alert.alert(
         "Error",

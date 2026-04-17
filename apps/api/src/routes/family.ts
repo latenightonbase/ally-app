@@ -115,58 +115,6 @@ export const familyRoutes = new Elysia({ prefix: "/api/v1/family" })
     },
   )
 
-  // ─── Add a family member ───────────────────────────────────────
-  .post(
-    "/members",
-    async ({ body, user, set }) => {
-      const [dbUser] = await db
-        .select({ familyId: schema.user.familyId, familyRole: schema.user.familyRole })
-        .from(schema.user)
-        .where(eq(schema.user.id, user.id));
-
-      if (!dbUser?.familyId) {
-        set.status = 404;
-        return { error: "No family found." };
-      }
-
-      if (dbUser.familyRole !== "admin") {
-        set.status = 403;
-        return { error: "Only the family admin can add members." };
-      }
-
-      const [member] = await db
-        .insert(schema.familyMembers)
-        .values({
-          familyId: dbUser.familyId,
-          name: body.name,
-          role: body.role ?? "child",
-          age: body.age ?? null,
-          birthday: body.birthday ?? null,
-          school: body.school ?? null,
-          allergies: body.allergies ?? [],
-          dietaryPreferences: body.dietaryPreferences ?? [],
-          notes: body.notes ?? null,
-          color: body.color ?? "#4F46E5",
-        })
-        .returning();
-
-      return { member };
-    },
-    {
-      body: t.Object({
-        name: t.String(),
-        role: t.Optional(t.String()),
-        age: t.Optional(t.Number()),
-        birthday: t.Optional(t.String()),
-        school: t.Optional(t.String()),
-        allergies: t.Optional(t.Array(t.String())),
-        dietaryPreferences: t.Optional(t.Array(t.String())),
-        notes: t.Optional(t.String()),
-        color: t.Optional(t.String()),
-      }),
-    },
-  )
-
   // ─── Invite another user to the family ─────────────────────────
   .post(
     "/invite",

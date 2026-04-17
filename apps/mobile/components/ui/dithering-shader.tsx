@@ -43,7 +43,7 @@ interface DitheringShaderProps {
  * The WebView is transparent so it composites over the RN view hierarchy.
  */
 export function DitheringShader({
-  colorBack = "#000000",
+  colorBack = "#1A1714",
   colorFront = "#ffffff",
   shape = "simplex",
   type = "8x8",
