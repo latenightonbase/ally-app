@@ -114,7 +114,7 @@ export default function OnboardingMagicMomentScreen() {
                 sure the right person knows about it.
               </Text>
 
-              <View className="bg-surface rounded-2xl p-4 border border-border/30">
+              <View className="bg-surface rounded-2xl p-4 border border-primary-soft">
                 <RNTextInput
                   value={text}
                   onChangeText={setText}

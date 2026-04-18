@@ -38,7 +38,7 @@ export default function OnboardingFamilyScreen() {
               to shared lists, tasks, and the family calendar.
             </Text>
 
-            <View className="bg-surface rounded-2xl p-5 mb-4 border border-border/30">
+            <View className="bg-surface rounded-2xl p-5 mb-4 border border-primary-soft">
               <View className="flex-row items-center mb-3">
                 <View
                   className="w-10 h-10 rounded-full items-center justify-center mr-3"

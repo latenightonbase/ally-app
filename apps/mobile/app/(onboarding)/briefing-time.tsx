@@ -56,7 +56,7 @@ export default function OnboardingBriefingTimeScreen() {
                   className={`flex-row items-center p-4 rounded-2xl border ${
                     selected === option.value
                       ? "bg-primary/10 border-primary"
-                      : "bg-surface border-border/30"
+                      : "bg-surface border-primary-soft"
                   }`}
                 >
                   <Text className="text-xl mr-3">{option.emoji}</Text>

@@ -44,7 +44,7 @@ function SectionHeader({
         {title}
       </Text>
       {count !== undefined && count > 0 && (
-        <View className="bg-primary/20 rounded-full px-2 py-0.5 ml-2">
+        <View className="bg-primary-soft rounded-full px-2 py-0.5 ml-2">
           <Text className="text-primary text-xs font-sans-bold">{count}</Text>
         </View>
       )}
@@ -80,7 +80,7 @@ function EventCard({ event }: { event: CalendarEvent }) {
   const assignedNames = (event as any).assignedNames as string[] | undefined;
 
   return (
-    <View className="bg-surface rounded-2xl p-4 mb-2 border border-border/30">
+    <View className="bg-surface rounded-2xl p-4 mb-2 border border-primary-soft">
       <View className="flex-row items-start justify-between">
         <View className="flex-1">
           <Text className="text-foreground text-base font-sans-semibold">
@@ -129,7 +129,7 @@ function TaskRow({
 
   return (
     <TouchableOpacity
-      className="flex-row items-center bg-surface rounded-xl p-3 mb-2 border border-border/30"
+      className="flex-row items-center bg-surface rounded-xl p-3 mb-2 border border-primary-soft"
       onPress={() => onToggle(task.id)}
       activeOpacity={0.7}
     >
@@ -413,7 +413,7 @@ export default function FamilyDashboardScreen() {
               ))}
               <TouchableOpacity
                 onPress={handleInvite}
-                className="rounded-full px-3 py-1.5 mr-2 mb-2 border border-dashed border-primary/50 flex-row items-center"
+                className="rounded-full px-3 py-1.5 mr-2 mb-2 border border-dashed border-primary-soft flex-row items-center"
                 activeOpacity={0.7}
               >
                 <Ionicons
@@ -487,7 +487,7 @@ export default function FamilyDashboardScreen() {
             />
             {shoppingLists.length > 0 &&
             shoppingLists[0].items.length > 0 ? (
-              <View className="bg-surface rounded-2xl p-4 border border-border/30">
+              <View className="bg-surface rounded-2xl p-4 border border-primary-soft">
                 <ShoppingSection
                   lists={shoppingLists}
                   onToggleItem={handleToggleShoppingItem}

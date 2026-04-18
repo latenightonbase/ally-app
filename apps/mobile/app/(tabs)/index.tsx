@@ -32,7 +32,7 @@ function ScheduleItem({ event }: { event: CalendarEvent }) {
       });
 
   return (
-    <View className="flex-row items-center py-3 border-b border-border/20">
+    <View className="flex-row items-center py-3 border-b border-primary-soft">
       <View
         className="w-1 h-10 rounded-full mr-3"
         style={{ backgroundColor: event.color ?? theme.colors["--color-primary"] }}
@@ -63,7 +63,7 @@ function QuickAction({
   return (
     <Pressable
       onPress={onPress}
-      className="flex-1 bg-surface rounded-2xl py-4 items-center border border-border/30 active:opacity-70"
+      className="flex-1 bg-surface rounded-2xl py-4 items-center border border-primary-soft active:opacity-70"
     >
       <Ionicons name={icon} size={22} color={theme.colors["--color-primary"]} />
       <Text className="text-foreground text-xs font-sans-semibold mt-1.5">
@@ -222,7 +222,7 @@ export default function HomeScreen() {
 
             {/* AI Briefing */}
             {briefingText && (
-              <View className="bg-primary/10 rounded-2xl p-4 mb-5 border border-primary/20">
+              <View className="bg-primary/10 rounded-2xl p-4 mb-5 border border-primary-soft">
                 <View className="flex-row items-center mb-2">
                   <Text className="text-lg mr-2">📋</Text>
                   <Text className="text-primary font-sans-bold text-sm">
@@ -268,7 +268,7 @@ export default function HomeScreen() {
                   Today's Schedule
                 </Text>
                 {todayEvents.length > 0 && (
-                  <View className="bg-primary/20 rounded-full px-2 py-0.5 ml-2">
+                  <View className="bg-primary-soft rounded-full px-2 py-0.5 ml-2">
                     <Text className="text-primary text-xs font-sans-bold">
                       {todayEvents.length}
                     </Text>
@@ -277,7 +277,7 @@ export default function HomeScreen() {
               </View>
 
               {todayEvents.length > 0 ? (
-                <View className="bg-surface rounded-2xl px-4 border border-border/30">
+                <View className="bg-surface rounded-2xl px-4 border border-primary-soft">
                   {todayEvents.map((event, i) => (
                     <ScheduleItem key={event.id} event={event} />
                   ))}
@@ -304,13 +304,13 @@ export default function HomeScreen() {
                   <Text className="text-foreground text-base font-sans-bold ml-2">
                     To Do
                   </Text>
-                  <View className="bg-primary/20 rounded-full px-2 py-0.5 ml-2">
+                  <View className="bg-primary-soft rounded-full px-2 py-0.5 ml-2">
                     <Text className="text-primary text-xs font-sans-bold">
                       {pendingTasks.length}
                     </Text>
                   </View>
                 </View>
-                <View className="bg-surface rounded-2xl px-4 py-1 border border-border/30">
+                <View className="bg-surface rounded-2xl px-4 py-1 border border-primary-soft">
                   <TaskQuickView tasks={pendingTasks} />
                 </View>
               </View>
@@ -320,7 +320,7 @@ export default function HomeScreen() {
             {groceryCount > 0 && (
               <Pressable
                 onPress={() => router.push("/(tabs)/family")}
-                className="bg-surface rounded-2xl p-4 flex-row items-center border border-border/30 mb-5 active:opacity-70"
+                className="bg-surface rounded-2xl p-4 flex-row items-center border border-primary-soft mb-5 active:opacity-70"
               >
                 <View
                   className="w-10 h-10 rounded-full items-center justify-center mr-3"
