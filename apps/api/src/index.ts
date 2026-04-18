@@ -16,6 +16,7 @@ import { familyRoutes } from "./routes/family";
 import { calendarRoutes } from "./routes/calendar";
 import { taskRoutes } from "./routes/tasks";
 import { shoppingRoutes } from "./routes/shopping";
+import { inviteWebRoutes } from "./routes/inviteWeb";
 import { startScheduler } from "./jobs/scheduler";
 import { startMemoryWorker } from "./services/memoryQueue";
 import { ensureCollection } from "./services/vectorStore";
@@ -66,6 +67,7 @@ const app = new Elysia()
     };
   })
   .use(healthRoutes)
+  .use(inviteWebRoutes)
   .use(chatRoutes)
   .use(onboardingRoutes)
   .use(briefingRoutes)

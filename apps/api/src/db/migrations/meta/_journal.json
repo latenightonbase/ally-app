@@ -36,6 +36,13 @@
       "when": 1776180072947,
       "tag": "0004_rainy_guardian",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1776533374649,
+      "tag": "0005_add-family-invite-code",
+      "breakpoints": true
     }
   ]
 }

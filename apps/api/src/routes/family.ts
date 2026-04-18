@@ -1,9 +1,20 @@
 import { Elysia, t } from "elysia";
 import { authMiddleware } from "../middleware/auth";
 import { sendPushNotification } from "../services/notifications";
+import { buildInviteDeepLink, buildPublicInviteUrl } from "../lib/inviteWeb";
 import { db, schema } from "../db";
 import { and, eq, gte, lte, isNull, desc, asc } from "drizzle-orm";
 import crypto from "crypto";
+
+function generateInviteCode(): string {
+  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  let code = "";
+  const bytes = crypto.randomBytes(6);
+  for (let i = 0; i < 6; i++) {
+    code += chars[bytes[i] % chars.length];
+  }
+  return code;
+}
 
 export const familyRoutes = new Elysia({ prefix: "/api/v1/family" })
   .use(authMiddleware)
@@ -47,6 +58,7 @@ export const familyRoutes = new Elysia({ prefix: "/api/v1/family" })
           name,
           createdBy: user.id,
           timezone: timezone ?? "America/New_York",
+          inviteCode: generateInviteCode(),
         })
         .returning();
 
@@ -149,9 +161,10 @@ export const familyRoutes = new Elysia({ prefix: "/api/v1/family" })
         })
         .returning();
 
-      const deepLink = `ally-app://invite/${token}`;
+      const deepLink = buildInviteDeepLink(token);
+      const inviteLink = buildPublicInviteUrl(token) ?? deepLink;
 
-      return { invite, inviteLink: deepLink };
+      return { invite, inviteLink, deepLink };
     },
     {
       body: t.Object({
@@ -245,6 +258,111 @@ export const familyRoutes = new Elysia({ prefix: "/api/v1/family" })
     {
       body: t.Object({
         token: t.String(),
+      }),
+    },
+  )
+
+  // ─── Get family invite code ────────────────────────────────────
+  .get("/invite-code", async ({ user, set }) => {
+    const [dbUser] = await db
+      .select({ familyId: schema.user.familyId })
+      .from(schema.user)
+      .where(eq(schema.user.id, user.id));
+
+    if (!dbUser?.familyId) {
+      set.status = 404;
+      return { error: "No family found." };
+    }
+
+    const [family] = await db
+      .select({ inviteCode: schema.families.inviteCode })
+      .from(schema.families)
+      .where(eq(schema.families.id, dbUser.familyId));
+
+    if (!family?.inviteCode) {
+      // Backfill: generate a code if the family doesn't have one yet
+      const code = generateInviteCode();
+      await db
+        .update(schema.families)
+        .set({ inviteCode: code })
+        .where(eq(schema.families.id, dbUser.familyId));
+      return { code };
+    }
+
+    return { code: family.inviteCode };
+  })
+
+  // ─── Regenerate invite code (admin only) ───────────────────────
+  .post("/invite-code/regenerate", async ({ user, set }) => {
+    const [dbUser] = await db
+      .select({ familyId: schema.user.familyId, familyRole: schema.user.familyRole })
+      .from(schema.user)
+      .where(eq(schema.user.id, user.id));
+
+    if (!dbUser?.familyId) {
+      set.status = 404;
+      return { error: "No family found." };
+    }
+
+    if (dbUser.familyRole !== "admin") {
+      set.status = 403;
+      return { error: "Only the family admin can regenerate the invite code." };
+    }
+
+    const code = generateInviteCode();
+    await db
+      .update(schema.families)
+      .set({ inviteCode: code })
+      .where(eq(schema.families.id, dbUser.familyId));
+
+    return { code };
+  })
+
+  // ─── Join a family by invite code ──────────────────────────────
+  .post(
+    "/join",
+    async ({ body, user, set }) => {
+      const [currentUser] = await db
+        .select({ familyId: schema.user.familyId })
+        .from(schema.user)
+        .where(eq(schema.user.id, user.id));
+
+      if (currentUser?.familyId) {
+        set.status = 409;
+        return { error: "You already belong to a family. Leave your current family first." };
+      }
+
+      const code = body.code.trim().toUpperCase();
+      const [family] = await db
+        .select()
+        .from(schema.families)
+        .where(eq(schema.families.inviteCode, code));
+
+      if (!family) {
+        set.status = 404;
+        return { error: "Invalid invite code. Check the code and try again." };
+      }
+
+      // Link user to family
+      await db
+        .update(schema.user)
+        .set({ familyId: family.id, familyRole: "member" })
+        .where(eq(schema.user.id, user.id));
+
+      // Create a family member record
+      const userName = (await db.select({ name: schema.user.name }).from(schema.user).where(eq(schema.user.id, user.id)))[0]?.name ?? "Member";
+      await db.insert(schema.familyMembers).values({
+        familyId: family.id,
+        userId: user.id,
+        name: userName,
+        role: "parent",
+      });
+
+      return { joined: true, familyId: family.id };
+    },
+    {
+      body: t.Object({
+        code: t.String(),
       }),
     },
   )

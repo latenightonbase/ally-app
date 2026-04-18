@@ -460,7 +460,11 @@ export async function completeOnboarding(data: {
 export async function createInviteLink(data: {
   email: string;
   role?: string;
-}): Promise<{ invite: { id: string; token: string; expiresAt: string }; inviteLink: string }> {
+}): Promise<{
+  invite: { id: string; token: string; expiresAt: string };
+  inviteLink: string;
+  deepLink?: string;
+}> {
   return apiRequest("/api/v1/family/invite", {
     method: "POST",
     body: JSON.stringify(data),
@@ -524,6 +528,25 @@ export async function inviteFamilyMember(data: {
   return apiRequest("/api/v1/family/invite", {
     method: "POST",
     body: JSON.stringify(data),
+  });
+}
+
+export async function getInviteCode(): Promise<{ code: string }> {
+  return apiRequest("/api/v1/family/invite-code");
+}
+
+export async function joinFamilyByCode(
+  code: string,
+): Promise<{ joined: boolean; familyId: string }> {
+  return apiRequest("/api/v1/family/join", {
+    method: "POST",
+    body: JSON.stringify({ code }),
+  });
+}
+
+export async function regenerateInviteCode(): Promise<{ code: string }> {
+  return apiRequest("/api/v1/family/invite-code/regenerate", {
+    method: "POST",
   });
 }
 

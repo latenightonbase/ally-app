@@ -52,6 +52,7 @@ export const taskRecurrenceEnum = pgEnum("task_recurrence", [
 export const families = pgTable("families", {
   id: uuid("id").primaryKey().defaultRandom(),
   name: text("name").notNull(),
+  inviteCode: text("invite_code").unique(),
   createdBy: text("created_by")
     .notNull()
     .references(() => user.id, { onDelete: "cascade" }),
