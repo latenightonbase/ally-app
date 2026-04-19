@@ -22,9 +22,9 @@ export function Chip({ label, selected, onPress }: ChipProps) {
   }));
 
   const handlePress = () => {
-    scale.value = withSpring(0.92, { damping: 12, stiffness: 400 });
+    scale.value = withSpring(0.98, { damping: 20, stiffness: 400 });
     setTimeout(() => {
-      scale.value = withSpring(1, { damping: 12, stiffness: 400 });
+      scale.value = withSpring(1, { damping: 20, stiffness: 400 });
     }, 100);
     onPress();
   };
@@ -36,7 +36,7 @@ export function Chip({ label, selected, onPress }: ChipProps) {
       className={`px-4 py-2.5 rounded-full mr-2 mb-2 ${
         selected
           ? "bg-primary"
-          : "bg-surface border border-muted/30"
+          : "bg-surface border border-primary-soft"
       }`}
     >
       <Text

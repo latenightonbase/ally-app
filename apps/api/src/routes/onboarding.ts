@@ -141,6 +141,7 @@ export const onboardingRoutes = new Elysia({ prefix: "/api/v1" })
           userName: body.userName,
           allyName: body.allyName,
           conversation: body.conversation as OnboardingQA[],
+          timezone: body.timezone,
         });
 
         // --- Create family if the AI extracted family info ---
@@ -201,6 +202,74 @@ export const onboardingRoutes = new Elysia({ prefix: "/api/v1" })
             .update(schema.user)
             .set({ familyId, familyRole: "admin" })
             .where(eq(schema.user.id, user.id));
+        }
+
+        // --- Create events/tasks from magic-moment action items ---
+        if (familyId && data.actionItems && data.actionItems.length > 0) {
+          // Fetch all family member records to resolve assignee names
+          const allMembers = await db
+            .select({ id: schema.familyMembers.id, name: schema.familyMembers.name })
+            .from(schema.familyMembers)
+            .where(eq(schema.familyMembers.familyId, familyId));
+
+          for (const item of data.actionItems) {
+            try {
+              // Resolve assignee name to family member ID
+              let assigneeMemberId: string | undefined;
+              if (item.assigneeName) {
+                const match = allMembers.find(
+                  (m) => m.name.toLowerCase() === item.assigneeName!.toLowerCase(),
+                );
+                assigneeMemberId = match?.id;
+              }
+
+              if (item.type === "event" && item.dateTime) {
+                const startTime = new Date(item.dateTime);
+                await db.insert(schema.calendarEvents).values({
+                  familyId,
+                  createdBy: user.id,
+                  title: item.title,
+                  description: item.description || null,
+                  startTime,
+                  assignedTo: assigneeMemberId ? [assigneeMemberId] : [],
+                });
+              } else {
+                // Store as a task/todo
+                await db.insert(schema.tasks).values({
+                  familyId,
+                  createdBy: user.id,
+                  title: item.title,
+                  description: item.description || null,
+                  assignedTo: assigneeMemberId || null,
+                  dueDate: item.dateTime ? new Date(item.dateTime) : null,
+                  category: item.category || "other",
+                  priority: "medium",
+                });
+              }
+            } catch (err) {
+              console.warn("[onboarding/complete] Failed to create action item:", item.title, err);
+            }
+          }
+        }
+
+        // --- Store raw magic-moment text as a memory fallback ---
+        const magicMomentQA = body.conversation.find(
+          (qa) => qa.question.includes("one thing") || qa.question.includes("right person"),
+        );
+        if (magicMomentQA?.answer?.trim()) {
+          try {
+            await updateProfile(user.id, {
+              pendingFollowups: [
+                {
+                  topic: "Onboarding magic moment",
+                  context: magicMomentQA.answer.trim(),
+                  suggestedDate: new Date().toISOString(),
+                },
+              ],
+            } as Partial<MemoryProfile>);
+          } catch (err) {
+            console.warn("[onboarding/complete] Failed to save magic moment memory:", err);
+          }
         }
 
         // --- Build and save memory profile ---

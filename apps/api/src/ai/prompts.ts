@@ -554,9 +554,21 @@ Return as JSON:
       }
     ]
   },
-  "briefingTime": "the daily ping time the user chose, or '07:30'"
+  "briefingTime": "the daily ping time the user chose, or '07:30'",
+  "actionItems": [
+    {
+      "title": "short title of the task or event",
+      "description": "brief description if needed",
+      "dateTime": "ISO 8601 datetime string or null if no specific time",
+      "assigneeName": "name of the person this is for, or null",
+      "type": "event if a specific date AND time are mentioned, todo otherwise",
+      "category": "health|school|errand|chore|other"
+    }
+  ]
 }
 \`\`\`
+
+4. Extract actionable items: If the user mentions ANY tasks, appointments, events, reminders, or things that need to happen, extract them into the "actionItems" array. Use "event" type when both a date AND time are specified, "todo" type otherwise. The current date and timezone will be provided — resolve relative dates like "tomorrow", "this Thursday", "next week" to absolute ISO 8601 datetimes. If no actionable items are mentioned, return an empty array.
 
 dynamicAttributes key examples: "family_decision_style", "morning_routine_approach", "delegation_pattern", "scheduling_preference".
 Omit dynamicAttributes entirely if nothing clear emerged.`;

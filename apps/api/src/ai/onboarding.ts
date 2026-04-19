@@ -17,12 +17,22 @@ interface FamilyMemberSetup {
   notes?: string;
 }
 
+interface ActionItem {
+  title: string;
+  description?: string;
+  dateTime?: string;
+  assigneeName?: string;
+  type: "event" | "todo";
+  category?: string;
+}
+
 interface OnboardingResult {
   greeting: string;
   memoryProfile: Partial<MemoryProfile>;
   briefingTime: string;
   familyName?: string;
   familyMembers?: FamilyMemberSetup[];
+  actionItems?: ActionItem[];
 }
 
 interface FollowupResult {
@@ -60,12 +70,16 @@ export async function processOnboardingConversation(input: {
   userName: string;
   allyName: string;
   conversation: OnboardingQA[];
+  timezone?: string;
 }): Promise<{ data: OnboardingResult; tokensUsed: number }> {
   const conversationText = input.conversation
     .map((qa) => `[Anzi] ${qa.question}\n[${input.userName}] ${qa.answer}`)
     .join("\n\n");
 
+  const currentDate = new Date().toISOString();
   const userMessage = `The user's name is "${input.userName}" and they named their companion "${input.allyName}".
+Current date/time: ${currentDate}
+User's timezone: ${input.timezone || "UTC"}
 
 Here is the full onboarding conversation:
 
