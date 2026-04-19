@@ -1,4 +1,4 @@
-import React, { useEffect, useCallback, useMemo } from "react";
+import React, { useEffect, useCallback, useMemo, useState } from "react";
 import {
   ScrollView,
   View,
@@ -167,6 +167,52 @@ function TaskRow({
         />
       )}
     </TouchableOpacity>
+  );
+}
+
+function CompletedTaskRow({
+  task,
+  onUnmark,
+}: {
+  task: Task & { assignedToName?: string | null; completedByName?: string | null };
+  onUnmark: (taskId: string) => void;
+}) {
+  const { theme } = useTheme();
+  const completedTime = task.completedAt
+    ? new Date(task.completedAt).toLocaleDateString("en-US", {
+        month: "short",
+        day: "numeric",
+        hour: "numeric",
+        minute: "2-digit",
+      })
+    : null;
+  const completedBy = task.completedByName ?? task.assignedToName ?? null;
+
+  return (
+    <View className="flex-row items-center bg-surface/60 rounded-xl p-3 mb-2 border border-primary-soft">
+      <Ionicons
+        name="checkmark-circle"
+        size={22}
+        color={theme.colors["--color-success"] ?? "#059669"}
+      />
+      <View className="flex-1 ml-3">
+        <Text className="text-muted text-sm font-sans-semibold line-through">
+          {task.title}
+        </Text>
+        <Text className="text-muted text-xs font-sans mt-0.5">
+          {[completedBy ? `by ${completedBy}` : null, completedTime]
+            .filter(Boolean)
+            .join(" · ")}
+        </Text>
+      </View>
+      <TouchableOpacity
+        onPress={() => onUnmark(task.id)}
+        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+        className="ml-2 px-2 py-1 rounded-lg bg-primary-soft"
+      >
+        <Text className="text-primary text-xs font-sans-semibold">Undo</Text>
+      </TouchableOpacity>
+    </View>
   );
 }
 
@@ -342,6 +388,18 @@ export default function FamilyDashboardScreen() {
   const pendingTasks = useMemo(() => {
     return tasks.filter((t) => t.status !== "completed").slice(0, 8);
   }, [tasks]);
+
+  const completedTasks = useMemo(() => {
+    return tasks
+      .filter((t) => t.status === "completed")
+      .sort((a, b) => {
+        const aTime = a.completedAt ? new Date(a.completedAt).getTime() : 0;
+        const bTime = b.completedAt ? new Date(b.completedAt).getTime() : 0;
+        return bTime - aTime; // most recent first
+      });
+  }, [tasks]);
+
+  const [showCompleted, setShowCompleted] = useState(false);
 
   const familyName = family?.name ?? dashboard?.family?.name ?? `${user.name}'s Family`;
 
@@ -668,6 +726,43 @@ export default function FamilyDashboardScreen() {
               </View>
             )}
 
+            {/* Upcoming Reminders */}
+            {((dashboard as any)?.upcomingReminders ?? []).length > 0 && (
+              <>
+                <SectionHeader
+                  title="Reminders"
+                  icon="notifications-outline"
+                  count={(dashboard as any).upcomingReminders.length}
+                />
+                {(dashboard as any).upcomingReminders.map((r: any) => {
+                  const remindDate = new Date(r.remindAt);
+                  const isToday = remindDate.toDateString() === new Date().toDateString();
+                  const timeStr = remindDate.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+                  const dateStr = isToday
+                    ? `Today, ${timeStr}`
+                    : `${remindDate.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })}, ${timeStr}`;
+                  return (
+                    <View
+                      key={r.id}
+                      className="bg-surface rounded-2xl p-4 mb-2 border border-primary-soft flex-row items-center"
+                    >
+                      <Ionicons name="alarm-outline" size={20} color={theme.colors["--color-primary"]} />
+                      <View className="flex-1 ml-3">
+                        <Text className="text-foreground text-base font-sans-semibold">{r.title}</Text>
+                        <Text className="text-muted text-sm font-sans mt-1">{dateStr}</Text>
+                        {r.body && (
+                          <Text className="text-muted text-xs font-sans mt-0.5">{r.body}</Text>
+                        )}
+                      </View>
+                    </View>
+                  );
+                })}
+                <Text className="text-muted text-xs font-sans mt-1 ml-1 mb-2">
+                  Showing next 7 days
+                </Text>
+              </>
+            )}
+
             {/* Tasks */}
             <SectionHeader
               title="To Do"
@@ -693,6 +788,34 @@ export default function FamilyDashboardScreen() {
                   All caught up! 🎉
                 </Text>
               </View>
+            )}
+
+            {/* Completed Tasks */}
+            {completedTasks.length > 0 && (
+              <>
+                <TouchableOpacity
+                  className="flex-row items-center mt-4 mb-2"
+                  onPress={() => setShowCompleted(!showCompleted)}
+                  activeOpacity={0.7}
+                >
+                  <Ionicons
+                    name={showCompleted ? "chevron-down" : "chevron-forward"}
+                    size={18}
+                    color={theme.colors["--color-muted"]}
+                  />
+                  <Text className="text-muted text-sm font-sans-semibold ml-1">
+                    Completed ({completedTasks.length})
+                  </Text>
+                </TouchableOpacity>
+                {showCompleted &&
+                  completedTasks.map((task) => (
+                    <CompletedTaskRow
+                      key={task.id}
+                      task={task}
+                      onUnmark={handleToggleTask}
+                    />
+                  ))}
+              </>
             )}
 
             {/* Shopping List */}

@@ -3,7 +3,7 @@ import { authMiddleware } from "../middleware/auth";
 import { sendPushNotification } from "../services/notifications";
 import { buildInviteDeepLink, buildPublicInviteUrl } from "../lib/inviteWeb";
 import { db, schema } from "../db";
-import { and, eq, gte, lte, isNull, desc, asc } from "drizzle-orm";
+import { and, eq, gte, lte, isNull, desc, asc, sql } from "drizzle-orm";
 import crypto from "crypto";
 
 function generateInviteCode(): string {
@@ -386,7 +386,11 @@ export const familyRoutes = new Elysia({ prefix: "/api/v1/family" })
     const dayEnd = new Date(now);
     dayEnd.setHours(23, 59, 59, 999);
 
-    const [family, members, todayEvents, pendingTasks, shoppingLists, todayMeals] =
+    const sevenDaysFromNow = new Date(now);
+    sevenDaysFromNow.setDate(sevenDaysFromNow.getDate() + 7);
+    sevenDaysFromNow.setHours(23, 59, 59, 999);
+
+    const [family, members, todayEvents, pendingTasks, upcomingReminders, shoppingLists, todayMeals] =
       await Promise.all([
         db
           .select()
@@ -418,6 +422,18 @@ export const familyRoutes = new Elysia({ prefix: "/api/v1/family" })
             ),
           )
           .orderBy(asc(schema.tasks.dueDate)),
+        db
+          .select()
+          .from(schema.reminders)
+          .where(
+            and(
+              sql`(${schema.reminders.familyId} = ${familyId} OR ${schema.reminders.userId} = ${user.id})`,
+              eq(schema.reminders.status, "pending"),
+              gte(schema.reminders.remindAt, now),
+              lte(schema.reminders.remindAt, sevenDaysFromNow),
+            ),
+          )
+          .orderBy(asc(schema.reminders.remindAt)),
         db
           .select()
           .from(schema.shoppingLists)
@@ -453,6 +469,7 @@ export const familyRoutes = new Elysia({ prefix: "/api/v1/family" })
       members,
       todayEvents,
       pendingTasks,
+      upcomingReminders,
       shoppingLists: listsWithCounts,
       todayMeals,
     };

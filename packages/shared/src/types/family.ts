@@ -167,6 +167,25 @@ export interface MealPlan {
   createdAt: string;
 }
 
+// ─── Reminders ───────────────────────────────────────────────────
+
+export type ReminderStatus = "pending" | "sent" | "dismissed";
+export type ReminderSource = "chat" | "extraction" | "onboarding" | "system";
+
+export interface Reminder {
+  id: string;
+  userId: string;
+  familyId: string;
+  targetMemberId: string | null;
+  title: string;
+  body: string | null;
+  remindAt: string;
+  timezone: string | null;
+  source: ReminderSource;
+  status: ReminderStatus;
+  createdAt: string;
+}
+
 // ─── Family API request/response types ───────────────────────────
 
 export interface CreateFamilyRequest {
@@ -190,6 +209,7 @@ export interface FamilyDashboard {
   members: FamilyMember[];
   todayEvents: CalendarEvent[];
   pendingTasks: Task[];
+  upcomingReminders: Reminder[];
   activeShoppingLists: ShoppingList[];
   todayMeals: MealPlan[];
 }

@@ -20,7 +20,7 @@ import {
   getShoppingLists,
 } from "../../lib/api";
 import { useTheme } from "../../context/ThemeContext";
-import type { CalendarEvent, Task } from "@ally/shared";
+import type { CalendarEvent, Task, Reminder } from "@ally/shared";
 
 function ScheduleItem({ event }: { event: CalendarEvent }) {
   const { theme } = useTheme();
@@ -162,6 +162,11 @@ export default function HomeScreen() {
     [dashboard],
   );
 
+  const upcomingReminders = useMemo(
+    () => (dashboard as any)?.upcomingReminders ?? [],
+    [dashboard],
+  ) as Reminder[];
+
   const pendingTasks = useMemo(
     () => tasks.filter((t) => t.status !== "completed").slice(0, 5),
     [tasks],
@@ -300,6 +305,49 @@ export default function HomeScreen() {
                 </View>
               )}
             </View>
+
+            {/* Upcoming Reminders */}
+            {upcomingReminders.length > 0 && (
+              <View className="mb-5">
+                <View className="flex-row items-center mb-3">
+                  <Ionicons
+                    name="notifications-outline"
+                    size={18}
+                    color={theme.colors["--color-primary"]}
+                  />
+                  <Text className="text-foreground text-base font-sans-bold ml-2">
+                    Reminders
+                  </Text>
+                  <View className="bg-primary-soft rounded-full px-2 py-0.5 ml-2">
+                    <Text className="text-primary text-xs font-sans-bold">
+                      {upcomingReminders.length}
+                    </Text>
+                  </View>
+                </View>
+                <View className="bg-surface rounded-2xl px-4 border border-primary-soft">
+                  {upcomingReminders.slice(0, 5).map((r) => {
+                    const remindDate = new Date(r.remindAt);
+                    const isToday = remindDate.toDateString() === new Date().toDateString();
+                    const timeStr = remindDate.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+                    const dateStr = isToday
+                      ? `Today, ${timeStr}`
+                      : `${remindDate.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })}, ${timeStr}`;
+                    return (
+                      <View key={r.id} className="flex-row items-center py-3 border-b border-primary-soft">
+                        <Ionicons name="alarm-outline" size={16} color={theme.colors["--color-primary"]} />
+                        <View className="flex-1 ml-3">
+                          <Text className="text-foreground font-sans-semibold text-sm">{r.title}</Text>
+                          <Text className="text-muted text-xs font-sans mt-0.5">{dateStr}</Text>
+                        </View>
+                      </View>
+                    );
+                  })}
+                </View>
+                <Text className="text-muted text-xs font-sans mt-1.5 ml-1">
+                  Showing next 7 days
+                </Text>
+              </View>
+            )}
 
             {/* Action Items */}
             {pendingTasks.length > 0 && (

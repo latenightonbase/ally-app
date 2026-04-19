@@ -567,6 +567,42 @@ async function handleAssignTask(
 
   const dueDate = dueDateRaw ? parseReminderTime(dueDateRaw, ctx.timezone) : null;
 
+  // ── Duplicate check (Jaccard similarity ≥ 0.8) ──
+  const existingTasks = await db
+    .select({ id: schema.tasks.id, title: schema.tasks.title, dueDate: schema.tasks.dueDate, category: schema.tasks.category })
+    .from(schema.tasks)
+    .where(
+      and(
+        eq(schema.tasks.familyId, ctx.familyId),
+        eq(schema.tasks.status, "pending"),
+      ),
+    );
+
+  const newTokens = new Set(title.toLowerCase().split(/\s+/).filter(Boolean));
+  for (const existing of existingTasks) {
+    // Check category match (if both have one)
+    if (category && existing.category && category !== existing.category) continue;
+    // Check dueDate proximity (±30 min) when both have dates
+    if (dueDate && existing.dueDate) {
+      const diff = Math.abs(dueDate.getTime() - existing.dueDate.getTime());
+      if (diff > 30 * 60 * 1000) continue;
+    } else if ((dueDate == null) !== (existing.dueDate == null)) {
+      // One has date, other doesn't — still compare by title alone
+    }
+    // Jaccard similarity on title
+    const existingTokens = new Set(existing.title.toLowerCase().split(/\s+/).filter(Boolean));
+    const intersection = [...newTokens].filter((t) => existingTokens.has(t)).length;
+    const union = new Set([...newTokens, ...existingTokens]).size;
+    const jaccard = union > 0 ? intersection / union : 0;
+    if (jaccard >= 0.8) {
+      return JSON.stringify({
+        skipped: true,
+        reason: `A similar task already exists: "${existing.title}"`,
+        existingTaskId: existing.id,
+      });
+    }
+  }
+
   const [task] = await db
     .insert(schema.tasks)
     .values({

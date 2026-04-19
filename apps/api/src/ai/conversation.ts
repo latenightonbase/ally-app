@@ -119,7 +119,7 @@ function enforceTokenBudget(input: ConversationInput): ConversationInput {
   // Step 1: trim history to last 10 messages
   let trimmedInput: ConversationInput = {
     ...input,
-    conversationHistory: input.conversationHistory.slice(-10),
+    conversationHistory: input.conversationHistory.slice(-16),
   };
 
   const trimmedHistoryText = trimmedInput.conversationHistory
@@ -239,7 +239,7 @@ function preFlightTokenCheck(
   );
 
   // Step 1: Trim messages to last 6
-  let trimmedMessages = messages.length > 6 ? messages.slice(-6) : messages;
+  let trimmedMessages = messages.length > 10 ? messages.slice(-10) : messages;
   // Always ensure first message is from user
   if (trimmedMessages.length > 0 && trimmedMessages[0].role === "assistant") {
     trimmedMessages = trimmedMessages.slice(1);

@@ -4,7 +4,7 @@ import { callClaude } from "../ai/client";
 import type { MemoryProfile, MemoryFact } from "@ally/shared";
 
 const SESSION_GAP_MS = 30 * 60 * 1000;
-const MAX_ACTIVE_SESSION_MESSAGES = 8;
+const MAX_ACTIVE_SESSION_MESSAGES = 20;
 /** Force-rotate session once it exceeds this many messages to prevent context blowup. */
 const MAX_SESSION_MESSAGES_BEFORE_ROTATE = 40;
 

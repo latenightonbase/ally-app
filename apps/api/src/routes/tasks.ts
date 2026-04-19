@@ -65,6 +65,35 @@ export const taskRoutes = new Elysia({ prefix: "/api/v1/tasks" })
         return { error: "No family found." };
       }
 
+      // ── Duplicate check (Jaccard similarity ≥ 0.8) ──
+      const existingTasks = await db
+        .select({ id: schema.tasks.id, title: schema.tasks.title, dueDate: schema.tasks.dueDate, category: schema.tasks.category })
+        .from(schema.tasks)
+        .where(
+          and(
+            eq(schema.tasks.familyId, dbUser.familyId),
+            eq(schema.tasks.status, "pending"),
+          ),
+        );
+
+      const newDueDate = body.dueDate ? new Date(body.dueDate) : null;
+      const newTokens = new Set(body.title.toLowerCase().split(/\s+/).filter(Boolean));
+      for (const existing of existingTasks) {
+        if (body.category && existing.category && body.category !== existing.category) continue;
+        if (newDueDate && existing.dueDate) {
+          const diff = Math.abs(newDueDate.getTime() - existing.dueDate.getTime());
+          if (diff > 30 * 60 * 1000) continue;
+        }
+        const existingTokens = new Set(existing.title.toLowerCase().split(/\s+/).filter(Boolean));
+        const intersection = [...newTokens].filter((t) => existingTokens.has(t)).length;
+        const union = new Set([...newTokens, ...existingTokens]).size;
+        const jaccard = union > 0 ? intersection / union : 0;
+        if (jaccard >= 0.8) {
+          set.status = 409;
+          return { error: `A similar task already exists: "${existing.title}"`, existingTaskId: existing.id };
+        }
+      }
+
       const [task] = await db
         .insert(schema.tasks)
         .values({
@@ -73,7 +102,7 @@ export const taskRoutes = new Elysia({ prefix: "/api/v1/tasks" })
           title: body.title,
           description: body.description ?? null,
           assignedTo: body.assignedTo ?? null,
-          dueDate: body.dueDate ? new Date(body.dueDate) : null,
+          dueDate: newDueDate,
           priority: body.priority ?? "medium",
           category: body.category ?? null,
           recurrence: (body.recurrence as any) ?? "none",
