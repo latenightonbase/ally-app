@@ -724,6 +724,51 @@ export default function FamilyDashboardScreen() {
               </View>
             )}
 
+            {/* Join a Family */}
+            <SectionHeader title="Join a Family" icon="enter-outline" />
+            <View className="bg-surface rounded-2xl p-4 border border-primary-soft">
+              <Text className="text-muted text-sm font-sans mb-3">
+                Have an invite code? Enter it below to join another family.
+              </Text>
+              <TextInput
+                value={joinCode}
+                onChangeText={(t) => {
+                  setJoinCode(t.toUpperCase());
+                  setJoinError(null);
+                }}
+                placeholder="e.g. A3KX7Q"
+                placeholderTextColor={theme.colors["--color-muted"]}
+                autoCapitalize="characters"
+                autoCorrect={false}
+                maxLength={6}
+                className="bg-background border border-primary-soft rounded-xl px-4 py-3 text-foreground text-lg font-sans-bold text-center tracking-widest mb-3"
+                style={{ letterSpacing: 6, color: theme.colors["--color-foreground"] }}
+              />
+              {joinError && (
+                <Text className="text-sm font-sans mb-3" style={{ color: theme.colors["--color-error"] ?? "#DC2626" }}>
+                  {joinError}
+                </Text>
+              )}
+              <TouchableOpacity
+                onPress={handleJoinByCode}
+                disabled={joinCode.trim().length < 6 || joinLoading}
+                className="rounded-xl py-3 items-center"
+                style={{
+                  backgroundColor:
+                    joinCode.trim().length >= 6
+                      ? theme.colors["--color-primary"]
+                      : theme.colors["--color-muted"] + "40",
+                }}
+                activeOpacity={0.8}
+              >
+                {joinLoading ? (
+                  <ActivityIndicator color="#fff" />
+                ) : (
+                  <Text className="text-white text-base font-sans-bold">Join Family</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+
             {/* Spacer for tab bar */}
             <View className="h-8" />
           </MotiView>
