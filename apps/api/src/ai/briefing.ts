@@ -52,7 +52,7 @@ export async function generateBriefing(input: {
   const { text, tokensUsed } = await callClaude({
     system: buildBriefingSystemPrompt(input.sessionCount),
     messages: [{ role: "user", content: userMessage }],
-    maxTokens: 512,
+    maxTokens: 256,
   });
 
   return { content: text, tokensUsed };

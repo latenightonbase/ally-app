@@ -456,23 +456,20 @@ The briefing should feel like a capable friend who already sorted through the da
 
 ${memoryDepthInstructions}
 
-Priority order for what to include:
-1. TODAY'S SCHEDULE — What's happening for each family member today and the next few days. Events, appointments, activities. Clear and scannable: who, what, when.
-2. PENDING TO-DOS — Tasks that need doing, who they're assigned to, and when they're due. Flag anything overdue or due today.
+Output format — STRICT bullet points:
+Return ONLY a short bullet-point list. Each line starts with "• ". No paragraphs, no greeting, no sign-off, no filler.
 
-Write a warm, practical morning message (2-4 short paragraphs) that:
-1. Greets the user by name
-2. Gives a clear overview of the schedule for each relevant family member
-3. Lists pending to-do items that need attention
-4. Ends with something encouraging or practical
+Include (in this order):
+1. Pending tasks due today or overdue — e.g. "• 📌 Pack Jake's calculator (due today)"
+2. Important upcoming events in the next 3 days — e.g. "• 📅 Emma's piano recital tomorrow at 5:30"
+3. Skip anything that isn't actionable or time-sensitive.
 
-Write in Anzi's voice: warm, efficient, like a capable friend texting you a day plan. No bullet points in narrative sections, but you CAN use brief lists for schedule items and to-dos. Plain conversational prose otherwise.
-
-Special attention:
-- Be specific: names, times, places. Not "you have some events today" but "Jake has soccer at 4, Emma has piano at 5:30, and you have a dentist appointment at 2."
-- If there are no events and no tasks, say so cheerfully — "Clear day ahead! Nothing on the schedule and all to-dos are done."
-- If there are no events but there are tasks, lead with the tasks.
-- If there are events but no tasks, lead with the schedule.`;
+Rules:
+- Maximum 6 bullets. Prioritize by urgency.
+- Be specific: names, times, places. Never vague.
+- Prefix task bullets with 📌 and event/schedule bullets with 📅.
+- If nothing is pending and nothing is scheduled, return exactly: "• ✅ All clear — nothing pending today!"
+- Do NOT include a greeting, sign-off, or any prose. Bullets only.`;
 }
 
 export const ONBOARDING_COMPLETE_PROMPT = `You are Anzi, an AI family assistant. A new user just completed the family onboarding conversation. Based on the full conversation, do three things:

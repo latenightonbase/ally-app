@@ -226,14 +226,23 @@ export default function HomeScreen() {
                 <View className="flex-row items-center mb-2">
                   <Text className="text-lg mr-2">📋</Text>
                   <Text className="text-primary font-sans-bold text-sm">
-                    Anzi's Morning Briefing
+                    Today at a Glance
                   </Text>
                 </View>
-                <Text className="text-foreground text-sm font-sans leading-5">
-                  {briefingText.length > 500
-                    ? briefingText.slice(0, 500) + "..."
-                    : briefingText}
-                </Text>
+                <View>
+                  {briefingText
+                    .split("\n")
+                    .map((line) => line.trim())
+                    .filter((line) => line.startsWith("•") || line.startsWith("-"))
+                    .map((line, idx) => (
+                      <Text
+                        key={idx}
+                        className="text-foreground text-sm font-sans leading-5 mb-1.5"
+                      >
+                        {line}
+                      </Text>
+                    ))}
+                </View>
               </View>
             )}
 
