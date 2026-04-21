@@ -1,11 +1,10 @@
 import React, { useState } from "react";
-import { View, Text, ScrollView, Pressable } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
-import { MotiView } from "moti";
-import { Ionicons } from "@expo/vector-icons";
+import { View, Text } from "react-native";
 import { router } from "expo-router";
-import { Button } from "../../components/ui/Button";
-import { useTheme } from "../../context/ThemeContext";
+import * as Haptics from "expo-haptics";
+import { OnboardingShell } from "../../components/onboarding/OnboardingShell";
+import { PrimaryCTA } from "../../components/onboarding/PrimaryCTA";
+import { ChoiceRow } from "../../components/onboarding/ChoiceRow";
 import { useOnboardingStore } from "../../store/useOnboardingStore";
 
 const TIME_OPTIONS = [
@@ -19,73 +18,47 @@ const TIME_OPTIONS = [
 ];
 
 export default function OnboardingBriefingTimeScreen() {
-  const { theme } = useTheme();
   const setDailyPingTime = useOnboardingStore((s) => s.setDailyPingTime);
   const [selected, setSelected] = useState("07:30");
 
+  const handleSelect = (value: string) => {
+    Haptics.selectionAsync();
+    setSelected(value);
+  };
+
   const handleNext = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setDailyPingTime(selected);
     router.push("/(onboarding)/magic-moment");
   };
 
   return (
-    <View className="flex-1 bg-background">
-      <SafeAreaView edges={["top", "bottom"]} className="flex-1">
-        <ScrollView
-          contentContainerStyle={{ flexGrow: 1 }}
-          className="px-8 pt-12"
-        >
-          <MotiView
-            from={{ opacity: 0, translateY: 20 }}
-            animate={{ opacity: 1, translateY: 0 }}
-            transition={{ type: "timing", duration: 500 }}
-          >
-            <Text className="text-foreground text-3xl font-sans-bold mb-3">
-              Morning briefing time
-            </Text>
-            <Text className="text-muted text-base font-sans leading-6 mb-8">
-              Every morning, Anzi will send you a summary of the day ahead for
-              your whole family. When should it arrive?
-            </Text>
+    <OnboardingShell
+      step={4}
+      totalSteps={6}
+      footer={<PrimaryCTA title="Continue" onPress={handleNext} />}
+    >
+      <View className="mt-4">
+        <Text className="text-foreground text-3xl font-sans-bold leading-tight mb-3">
+          When should I{"\n"}check in?
+        </Text>
+        <Text className="text-muted text-base font-sans leading-6 mb-8">
+          Every morning, Anzi sends a summary of the day ahead for your whole
+          family. Pick a time that works.
+        </Text>
+      </View>
 
-            <View className="gap-2">
-              {TIME_OPTIONS.map((option) => (
-                <Pressable
-                  key={option.value}
-                  onPress={() => setSelected(option.value)}
-                  className={`flex-row items-center p-4 rounded-2xl border ${
-                    selected === option.value
-                      ? "bg-primary/10 border-primary"
-                      : "bg-surface border-primary-soft"
-                  }`}
-                >
-                  <Text className="text-xl mr-3">{option.emoji}</Text>
-                  <Text
-                    className={`text-base font-sans-semibold flex-1 ${
-                      selected === option.value
-                        ? "text-primary"
-                        : "text-foreground"
-                    }`}
-                  >
-                    {option.label}
-                  </Text>
-                  {selected === option.value && (
-                    <Ionicons
-                      name="checkmark-circle"
-                      size={22}
-                      color={theme.colors["--color-primary"]}
-                    />
-                  )}
-                </Pressable>
-              ))}
-            </View>
-          </MotiView>
-
-          <View className="mt-auto pb-8">
-            <Button title="Next" onPress={handleNext} size="lg" />
-          </View>
-        </ScrollView>
-      </SafeAreaView>
-    </View>
+      <View className="gap-2.5">
+        {TIME_OPTIONS.map((option) => (
+          <ChoiceRow
+            key={option.value}
+            label={option.label}
+            leading={option.emoji}
+            selected={selected === option.value}
+            onPress={() => handleSelect(option.value)}
+          />
+        ))}
+      </View>
+    </OnboardingShell>
   );
 }

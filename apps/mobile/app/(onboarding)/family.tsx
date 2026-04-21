@@ -1,118 +1,108 @@
 import React from "react";
-import { View, Text, ScrollView } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { View, Text } from "react-native";
 import { MotiView } from "moti";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
-import { Button } from "../../components/ui/Button";
+import * as Haptics from "expo-haptics";
+import { OnboardingShell } from "../../components/onboarding/OnboardingShell";
+import { PrimaryCTA } from "../../components/onboarding/PrimaryCTA";
 import { useTheme } from "../../context/ThemeContext";
 import { useOnboardingStore } from "@/store/useOnboardingStore";
 
-export default function OnboardingFamilyScreen() {
+type IoniconsName = React.ComponentProps<typeof Ionicons>["name"];
+
+interface FeatureCardProps {
+  icon: IoniconsName;
+  title: string;
+  description: string;
+  delay: number;
+}
+
+function FeatureCard({ icon, title, description, delay }: FeatureCardProps) {
   const { theme } = useTheme();
+  return (
+    <MotiView
+      from={{ opacity: 0, translateY: 12 }}
+      animate={{ opacity: 1, translateY: 0 }}
+      transition={{ type: "timing", duration: 450, delay }}
+      className="flex-row items-start bg-surface rounded-2xl p-4 mb-3"
+    >
+      <View
+        className="w-11 h-11 rounded-2xl items-center justify-center mr-4"
+        style={{ backgroundColor: theme.colors["--color-primary"] + "1F" }}
+      >
+        <Ionicons
+          name={icon}
+          size={22}
+          color={theme.colors["--color-primary"]}
+        />
+      </View>
+      <View className="flex-1 pt-0.5">
+        <Text className="text-foreground font-sans-semibold text-base mb-1">
+          {title}
+        </Text>
+        <Text className="text-muted text-sm font-sans leading-5">
+          {description}
+        </Text>
+      </View>
+    </MotiView>
+  );
+}
+
+export default function OnboardingFamilyScreen() {
   const setFamilyMembers = useOnboardingStore((s) => s.setFamilyMembers);
 
   const handleNext = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setFamilyMembers([]);
     router.push("/(onboarding)/challenges");
   };
 
   return (
-    <View className="flex-1 bg-background">
-      <SafeAreaView edges={["top", "bottom"]} className="flex-1">
-        <ScrollView
-          contentContainerStyle={{ flexGrow: 1 }}
-          className="px-8 pt-12"
-        >
-          <MotiView
-            from={{ opacity: 0, translateY: 20 }}
-            animate={{ opacity: 1, translateY: 0 }}
-            transition={{ type: "timing", duration: 500 }}
-          >
-            <Text className="text-foreground text-3xl font-sans-bold mb-3">
-              Your family on Anzi
-            </Text>
-            <Text className="text-muted text-base font-sans leading-6 mb-8">
-              Once you're set up, you can invite your partner and family members
-              to join Anzi. Everyone gets their own chat with Anzi and can add
-              to shared lists, tasks, and the family calendar.
-            </Text>
+    <OnboardingShell
+      step={2}
+      totalSteps={6}
+      footer={<PrimaryCTA title="Continue" onPress={handleNext} />}
+    >
+      <View className="mt-4">
+        <Text className="text-foreground text-3xl font-sans-bold leading-tight mb-3">
+          Your family,{"\n"}all in one place.
+        </Text>
+        <Text className="text-muted text-base font-sans leading-6 mb-8">
+          Once you're set up, you can invite your partner and kids so everyone
+          shares the same calendar, tasks, and lists.
+        </Text>
+      </View>
 
-            <View className="bg-surface rounded-2xl p-5 mb-4 border border-primary-soft">
-              <View className="flex-row items-center mb-3">
-                <View
-                  className="w-10 h-10 rounded-full items-center justify-center mr-3"
-                  style={{ backgroundColor: theme.colors["--color-primary"] + "20" }}
-                >
-                  <Ionicons
-                    name="link-outline"
-                    size={20}
-                    color={theme.colors["--color-primary"]}
-                  />
-                </View>
-                <View className="flex-1">
-                  <Text className="text-foreground font-sans-semibold text-base">
-                    Invite via link
-                  </Text>
-                  <Text className="text-muted text-sm font-sans">
-                    Share a link so they can join your family
-                  </Text>
-                </View>
-              </View>
+      <FeatureCard
+        icon="link-outline"
+        title="Invite via link"
+        description="Share a link so they can join your family in seconds."
+        delay={150}
+      />
+      <FeatureCard
+        icon="chatbubbles-outline"
+        title="Everyone chats with Anzi"
+        description="Each member gets their own thread to add tasks, events, and notes."
+        delay={260}
+      />
+      <FeatureCard
+        icon="people-outline"
+        title="Shared family data"
+        description="Lists, calendar, and tasks stay in sync for everyone."
+        delay={370}
+      />
 
-              <View className="flex-row items-center mb-3">
-                <View
-                  className="w-10 h-10 rounded-full items-center justify-center mr-3"
-                  style={{ backgroundColor: theme.colors["--color-primary"] + "20" }}
-                >
-                  <Ionicons
-                    name="chatbubbles-outline"
-                    size={20}
-                    color={theme.colors["--color-primary"]}
-                  />
-                </View>
-                <View className="flex-1">
-                  <Text className="text-foreground font-sans-semibold text-base">
-                    Everyone chats with Anzi
-                  </Text>
-                  <Text className="text-muted text-sm font-sans">
-                    Each member can ask Anzi to add tasks, events, and more
-                  </Text>
-                </View>
-              </View>
-
-              <View className="flex-row items-center">
-                <View
-                  className="w-10 h-10 rounded-full items-center justify-center mr-3"
-                  style={{ backgroundColor: theme.colors["--color-primary"] + "20" }}
-                >
-                  <Ionicons
-                    name="people-outline"
-                    size={20}
-                    color={theme.colors["--color-primary"]}
-                  />
-                </View>
-                <View className="flex-1">
-                  <Text className="text-foreground font-sans-semibold text-base">
-                    Shared family data
-                  </Text>
-                  <Text className="text-muted text-sm font-sans">
-                    Lists, calendar, and tasks stay in sync for everyone
-                  </Text>
-                </View>
-              </View>
-            </View>
-
-            <Text className="text-muted text-sm font-sans text-center mt-2 mb-6">
-              You can invite family members from the Family tab after setup.
-            </Text>
-          </MotiView>
-
-          <View className="mt-auto pb-8">
-            <Button title="Next" onPress={handleNext} size="lg" />
-          </View>
-        </ScrollView>
-      </SafeAreaView>
-    </View>
+      <MotiView
+        from={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={{ type: "timing", duration: 400, delay: 520 }}
+        className="mt-4"
+      >
+        <Text className="text-muted text-xs font-sans text-center leading-5">
+          You can invite family members any time from the Family tab.
+        </Text>
+      </MotiView>
+    </OnboardingShell>
   );
 }

@@ -4,21 +4,24 @@ import {
   Text,
   KeyboardAvoidingView,
   Platform,
-  Pressable,
   Alert,
   ActivityIndicator,
+  Pressable,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { MotiView } from "moti";
+import { Easing } from "react-native-reanimated";
 import { router } from "expo-router";
 import * as AppleAuthentication from "expo-apple-authentication";
 import * as Haptics from "expo-haptics";
+import { Ionicons } from "@expo/vector-icons";
 import { TextInput } from "../../components/ui/TextInput";
 import { Button } from "../../components/ui/Button";
 import { useTheme } from "../../context/ThemeContext";
 import { authClient } from "../../lib/auth";
 import { useAppStore, clearPersistedStorage } from "../../store/useAppStore";
 import { useFamilyStore, clearFamilyPersistedStorage } from "../../store/useFamilyStore";
+import { useOnboardingStore } from "../../store/useOnboardingStore";
 
 async function clearStaleStores() {
   useAppStore.getState().reset();
@@ -32,6 +35,14 @@ export default function SignInScreen() {
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [appleLoading, setAppleLoading] = useState(false);
+  const resetOnboarding = useOnboardingStore((s) => s.reset);
+
+  const handleGetStarted = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    resetOnboarding();
+    useAppStore.getState().setUser({ name: "" });
+    router.push("/(onboarding)");
+  };
 
   const handleSignIn = async () => {
     if (!email.trim() || !password.trim()) {
@@ -111,8 +122,21 @@ export default function SignInScreen() {
               transition={{ type: "timing", duration: 600 }}
               className="items-center mb-10"
             >
-              <View className="w-20 h-20 rounded-full bg-primary items-center justify-center mb-6">
-                <Text className="text-white text-3xl font-sans-bold">A</Text>
+              <View className="relative w-24 h-24 items-center justify-center mb-6">
+                <MotiView
+                  from={{ scale: 1, opacity: 0.25 }}
+                  animate={{ scale: 1.35, opacity: 0 }}
+                  transition={{
+                    type: "timing",
+                    duration: 2200,
+                    loop: true,
+                    easing: Easing.out(Easing.ease),
+                  }}
+                  className="absolute inset-0 rounded-full bg-primary"
+                />
+                <View className="w-24 h-24 rounded-full bg-primary items-center justify-center">
+                  <Text className="text-white text-3xl font-sans-bold">A</Text>
+                </View>
               </View>
               <Text className="text-foreground text-3xl font-sans-bold text-center mb-2">
                 Welcome back
@@ -186,20 +210,42 @@ export default function SignInScreen() {
               )}
             </MotiView>
 
+            {/* New-here CTA */}
             <MotiView
-              from={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              transition={{ type: "timing", duration: 400, delay: 400 }}
-              className="mt-8 items-center gap-3"
+              from={{ opacity: 0, translateY: 8 }}
+              animate={{ opacity: 1, translateY: 0 }}
+              transition={{ type: "timing", duration: 500, delay: 380 }}
+              className="mt-10"
             >
-              <Pressable onPress={() => router.push("/(auth)/sign-up")}>
-                <Text className="text-muted text-base font-sans">
-                  New here?{" "}
-                  <Text className="text-primary font-sans-semibold">
-                    Create an account
-                  </Text>
+              <View className="flex-row items-center gap-4 mb-5">
+                <View className="flex-1 h-px bg-muted/20" />
+                <Text className="text-muted text-xs font-sans-semibold tracking-widest uppercase">
+                  New to Anzi?
                 </Text>
+                <View className="flex-1 h-px bg-muted/20" />
+              </View>
+
+              <Pressable
+                onPress={handleGetStarted}
+                className="flex-row items-center justify-center gap-2 rounded-2xl py-4 px-5 bg-primary-soft active:opacity-80"
+                style={{
+                  borderWidth: 1,
+                  borderColor: theme.colors["--color-primary"] + "40",
+                }}
+              >
+                <Text className="text-primary text-base font-sans-semibold">
+                  Get Started
+                </Text>
+                <Ionicons
+                  name="arrow-forward"
+                  size={18}
+                  color={theme.colors["--color-primary"]}
+                />
               </Pressable>
+
+              <Text className="text-muted text-xs font-sans text-center leading-5 mt-3">
+                1-minute setup. No credit card.
+              </Text>
             </MotiView>
 
           </View>

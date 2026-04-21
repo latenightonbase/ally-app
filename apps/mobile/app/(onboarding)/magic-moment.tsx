@@ -1,179 +1,116 @@
 import React, { useState } from "react";
-import {
-  View,
-  Text,
-  KeyboardAvoidingView,
-  Platform,
-  ScrollView,
-  TextInput as RNTextInput,
-  ActivityIndicator,
-  Alert,
-} from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { View, Text, TextInput as RNTextInput } from "react-native";
 import { MotiView } from "moti";
+import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
-import { Button } from "../../components/ui/Button";
+import * as Haptics from "expo-haptics";
+import { OnboardingShell } from "../../components/onboarding/OnboardingShell";
+import { PrimaryCTA } from "../../components/onboarding/PrimaryCTA";
 import { useTheme } from "../../context/ThemeContext";
-import { useAppStore } from "../../store/useAppStore";
 import { useOnboardingStore } from "../../store/useOnboardingStore";
-import { completeOnboarding } from "../../lib/api";
 
 export default function OnboardingMagicMomentScreen() {
   const { theme } = useTheme();
-  const userName = useAppStore((s) => s.user.name);
-  const allyName = useAppStore((s) => s.user.allyName);
-  const { familyMembers, challenges, dailyPingTime, reset } =
-    useOnboardingStore();
-  const setUser = useAppStore((s) => s.setUser);
+  const setMagicMoment = useOnboardingStore((s) => s.setMagicMoment);
   const [text, setText] = useState("");
-  const [loading, setLoading] = useState(false);
+  const [isFocused, setIsFocused] = useState(false);
 
-  const handleComplete = async () => {
-    setLoading(true);
-
-    const conversation = [
-      {
-        question: "What should I call you?",
-        answer: userName,
-      },
-      {
-        question: "Tell me about your family",
-        answer:
-          familyMembers.length > 0
-            ? familyMembers
-                .map(
-                  (m) =>
-                    `${m.name} (${m.role}${m.age ? `, age ${m.age}` : ""})`,
-                )
-                .join(", ")
-            : "Just me for now",
-      },
-      {
-        question: "What falls through the cracks most?",
-        answer: challenges.length > 0 ? challenges.join(", ") : "Nothing specific",
-      },
-      {
-        question: "What time should I brief you every morning?",
-        answer: dailyPingTime,
-      },
-    ];
-
-    if (text.trim()) {
-      conversation.push({
-        question:
-          "What's the one thing this week you need to happen and the right person to know about it?",
-        answer: text.trim(),
-      });
-    }
-
-    try {
-      const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-      const result = await completeOnboarding({
-        userName,
-        allyName,
-        conversation,
-        dailyPingTime,
-        timezone,
-      });
-
-      setUser({ dailyPingTime, timezone });
-      reset();
-      router.replace("/(tabs)");
-    } catch (e) {
-      Alert.alert(
-        "Setup failed",
-        e instanceof Error ? e.message : "Please try again.",
-      );
-    } finally {
-      setLoading(false);
-    }
+  const handleContinue = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setMagicMoment(text.trim());
+    router.push("/(onboarding)/create-account");
   };
 
-  return (
-    <View className="flex-1 bg-background">
-      <SafeAreaView edges={["top", "bottom"]} className="flex-1">
-        <KeyboardAvoidingView
-          behavior={Platform.OS === "ios" ? "padding" : "height"}
-          className="flex-1"
-        >
-          <ScrollView
-            contentContainerStyle={{ flexGrow: 1 }}
-            keyboardShouldPersistTaps="handled"
-            className="px-8 pt-12"
-          >
-            <MotiView
-              from={{ opacity: 0, translateY: 20 }}
-              animate={{ opacity: 1, translateY: 0 }}
-              transition={{ type: "timing", duration: 500 }}
-            >
-              <Text className="text-foreground text-3xl font-sans-bold mb-3">
-                One last thing
-              </Text>
-              <Text className="text-muted text-base font-sans leading-6 mb-8">
-                Tell me one thing you need to happen this week — and I'll make
-                sure the right person knows about it.
-              </Text>
+  const hasText = text.trim().length > 0;
 
-              <View className="bg-surface rounded-2xl p-4 border border-primary-soft">
-                <RNTextInput
-                  value={text}
-                  onChangeText={setText}
-                  placeholder={`"Jake has a dentist appointment Thursday at 3, remind Mike Wednesday night"`}
-                  placeholderTextColor={theme.colors["--color-muted"]}
-                  multiline
-                  numberOfLines={4}
-                  textAlignVertical="top"
-                  className="text-foreground text-base font-sans"
-                  style={{
-                    color: theme.colors["--color-foreground"],
-                    minHeight: 120,
-                  }}
-                />
-              </View>
-
-              <View className="bg-primary/10 rounded-2xl p-4 mt-4 flex-row">
-                <Text className="text-primary text-2xl mr-3">✨</Text>
-                <Text className="text-primary text-sm font-sans flex-1 leading-5">
-                  This is where the magic starts. Anzi will add it to the
-                  calendar, set reminders, and notify the right people —
-                  automatically.
-                </Text>
-              </View>
-            </MotiView>
-
-            <View className="mt-auto pb-8">
-              {loading ? (
-                <View className="items-center py-4">
-                  <ActivityIndicator
-                    size="large"
-                    color={theme.colors["--color-primary"]}
-                  />
-                  <Text className="text-muted text-sm font-sans mt-3">
-                    Setting up your family...
-                  </Text>
-                </View>
-              ) : (
-                <>
-                  <Button
-                    title="Let's go!"
-                    onPress={handleComplete}
-                    size="lg"
-                  />
-                  {!text.trim() && (
-                    <Button
-                      title="Skip — I'll tell you later"
-                      onPress={handleComplete}
-                      variant="ghost"
-                      size="md"
-                      className="mt-2"
-                    />
-                  )}
-                </>
-              )}
-            </View>
-          </ScrollView>
-        </KeyboardAvoidingView>
-      </SafeAreaView>
+  const footer = (
+    <View>
+      <PrimaryCTA
+        title={hasText ? "Let's go" : "Skip for now"}
+        onPress={handleContinue}
+        icon={hasText ? "sparkles" : "arrow-forward"}
+      />
+      {!hasText && (
+        <PrimaryCTA
+          title="I'll tell you later"
+          onPress={handleContinue}
+          variant="ghost"
+        />
+      )}
     </View>
+  );
+
+  return (
+    <OnboardingShell
+      step={5}
+      totalSteps={6}
+      keyboardAvoiding
+      footer={footer}
+    >
+      <View className="mt-4">
+        <Text className="text-foreground text-3xl font-sans-bold leading-tight mb-3">
+          One last thing.
+        </Text>
+        <Text className="text-muted text-base font-sans leading-6 mb-8">
+          Tell me one thing you need to happen this week — and I'll make sure
+          the right person knows about it.
+        </Text>
+      </View>
+
+      {/* Text area */}
+      <View
+        className="rounded-2xl p-4 bg-surface"
+        style={{
+          borderWidth: isFocused ? 2 : 1,
+          borderColor: isFocused
+            ? theme.colors["--color-primary"]
+            : theme.colors["--color-muted"] + "33",
+        }}
+      >
+        <RNTextInput
+          value={text}
+          onChangeText={setText}
+          onFocus={() => setIsFocused(true)}
+          onBlur={() => setIsFocused(false)}
+          placeholder={`"Jake has a dentist appointment Thursday at 3 — remind Mike Wednesday night."`}
+          placeholderTextColor={theme.colors["--color-muted"] + "CC"}
+          multiline
+          numberOfLines={5}
+          textAlignVertical="top"
+          selectionColor={theme.colors["--color-primary"]}
+          style={{
+            color: theme.colors["--color-foreground"],
+            fontSize: 16,
+            lineHeight: 24,
+            minHeight: 140,
+            padding: 0,
+          }}
+        />
+      </View>
+
+      {/* Magic info card */}
+      <MotiView
+        from={{ opacity: 0, translateY: 8 }}
+        animate={{ opacity: 1, translateY: 0 }}
+        transition={{ type: "timing", duration: 450, delay: 200 }}
+        className="mt-4 rounded-2xl p-4 flex-row items-start"
+        style={{ backgroundColor: theme.colors["--color-primary"] + "14" }}
+      >
+        <View
+          className="w-9 h-9 rounded-xl items-center justify-center mr-3"
+          style={{ backgroundColor: theme.colors["--color-primary"] + "26" }}
+        >
+          <Ionicons
+            name="sparkles"
+            size={18}
+            color={theme.colors["--color-primary"]}
+          />
+        </View>
+        <Text className="text-primary text-sm font-sans flex-1 leading-5 pt-1">
+          This is where the magic starts. Anzi adds it to the calendar, sets
+          reminders, and notifies the right people — automatically.
+        </Text>
+      </MotiView>
+    </OnboardingShell>
   );
 }
