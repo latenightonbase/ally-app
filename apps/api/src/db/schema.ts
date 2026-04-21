@@ -168,10 +168,8 @@ export const tasks = pgTable(
       .references(() => user.id, { onDelete: "cascade" }),
     title: text("title").notNull(),
     description: text("description"),
-    /** Family member ID this is assigned to */
-    assignedTo: uuid("assigned_to").references(() => familyMembers.id, {
-      onDelete: "set null",
-    }),
+    /** Family member IDs this task is assigned to (multi-assignee) */
+    assignedTo: jsonb("assigned_to").$type<string[]>().notNull().default([]),
     dueDate: timestamp("due_date", { withTimezone: true }),
     status: taskStatusEnum("status").notNull().default("pending"),
     recurrence: taskRecurrenceEnum("recurrence").notNull().default("none"),
@@ -186,7 +184,6 @@ export const tasks = pgTable(
   },
   (table) => ({
     familyIdx: index("tasks_family_idx").on(table.familyId),
-    assignedIdx: index("tasks_assigned_idx").on(table.assignedTo),
     familyStatusIdx: index("tasks_family_status_idx").on(
       table.familyId,
       table.status,
@@ -528,6 +525,8 @@ export const reminderSourceEnum = pgEnum("reminder_source", [
   "extraction",
   "onboarding",
   "system",
+  "user",
+  "proactive",
 ]);
 
 export const reminders = pgTable(
@@ -538,10 +537,8 @@ export const reminders = pgTable(
       .notNull()
       .references(() => user.id, { onDelete: "cascade" }),
     familyId: uuid("family_id").references(() => families.id, { onDelete: "cascade" }),
-    /** Which family member this reminder targets */
-    targetMemberId: uuid("target_member_id").references(() => familyMembers.id, {
-      onDelete: "set null",
-    }),
+    /** Which family member(s) this reminder targets (multi-assignee) */
+    targetMemberIds: jsonb("target_member_ids").$type<string[]>().notNull().default([]),
     conversationId: uuid("conversation_id").references(() => conversations.id, {
       onDelete: "set null",
     }),

@@ -20,6 +20,11 @@ import {
   getShoppingLists,
 } from "../../lib/api";
 import { useTheme } from "../../context/ThemeContext";
+import { ScreenHeader } from "../../components/ui/ScreenHeader";
+import { AddFab } from "../../components/ui/AddFab";
+import { CreateReminderSheet } from "../../components/modals/CreateReminderSheet";
+import { CreateTaskSheet } from "../../components/modals/CreateTaskSheet";
+import { AddShoppingItemSheet } from "../../components/modals/AddShoppingItemSheet";
 import type { CalendarEvent, Task, Reminder } from "@ally/shared";
 
 function ScheduleItem({ event }: { event: CalendarEvent }) {
@@ -124,6 +129,9 @@ export default function HomeScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [briefingText, setBriefingText] = useState<string | null>(null);
   const [briefingLoading, setBriefingLoading] = useState(true);
+  const [reminderSheetOpen, setReminderSheetOpen] = useState(false);
+  const [taskSheetOpen, setTaskSheetOpen] = useState(false);
+  const [shoppingSheetOpen, setShoppingSheetOpen] = useState(false);
 
   const load = useCallback(
     async (isRefresh = false) => {
@@ -195,8 +203,9 @@ export default function HomeScreen() {
   return (
     <View className="flex-1 bg-background">
       <SafeAreaView edges={["top"]} className="flex-1">
+        <ScreenHeader />
         <ScrollView
-          className="flex-1 px-5 pt-2"
+          className="flex-1 px-5"
           contentContainerStyle={{ paddingBottom: 120 }}
           showsVerticalScrollIndicator={false}
           refreshControl={
@@ -254,19 +263,19 @@ export default function HomeScreen() {
             {/* Quick Actions */}
             <View className="flex-row gap-3 mb-5">
               <QuickAction
-                icon="add-circle-outline"
-                label="Add Event"
-                onPress={() => router.push("/(tabs)/chat")}
+                icon="checkmark-done-outline"
+                label="New Task"
+                onPress={() => setTaskSheetOpen(true)}
               />
               <QuickAction
                 icon="cart-outline"
-                label="Grocery List"
-                onPress={() => router.push("/(tabs)/family")}
+                label="Shopping"
+                onPress={() => setShoppingSheetOpen(true)}
               />
               <QuickAction
                 icon="notifications-outline"
                 label="Remind"
-                onPress={() => router.push("/(tabs)/chat")}
+                onPress={() => setReminderSheetOpen(true)}
               />
             </View>
 
@@ -409,6 +418,45 @@ export default function HomeScreen() {
           </MotiView>
         </ScrollView>
       </SafeAreaView>
+
+      <AddFab
+        actions={[
+          {
+            id: "reminder",
+            label: "Reminder",
+            icon: "notifications-outline",
+            onPress: () => setReminderSheetOpen(true),
+          },
+          {
+            id: "task",
+            label: "Task",
+            icon: "checkmark-done-outline",
+            onPress: () => setTaskSheetOpen(true),
+          },
+          {
+            id: "shopping",
+            label: "Shopping item",
+            icon: "cart-outline",
+            onPress: () => setShoppingSheetOpen(true),
+          },
+        ]}
+      />
+
+      <CreateReminderSheet
+        visible={reminderSheetOpen}
+        onClose={() => setReminderSheetOpen(false)}
+        onCreated={() => load(true)}
+      />
+      <CreateTaskSheet
+        visible={taskSheetOpen}
+        onClose={() => setTaskSheetOpen(false)}
+        onCreated={() => load(true)}
+      />
+      <AddShoppingItemSheet
+        visible={shoppingSheetOpen}
+        onClose={() => setShoppingSheetOpen(false)}
+        onAdded={() => load(true)}
+      />
     </View>
   );
 }

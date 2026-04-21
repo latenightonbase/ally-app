@@ -3,7 +3,7 @@ import { storeExtractedFacts, addFollowups } from "../services/memory";
 import { createReminder, parseReminderTime } from "../services/reminderService";
 import { notifyFamilyMembers } from "../services/notificationRouter";
 import { db, schema } from "../db";
-import { and, eq, gte, lte, between, isNull } from "drizzle-orm";
+import { and, asc, eq, gte, inArray, isNull, lte, or, sql } from "drizzle-orm";
 import type { ExtractedFact, MemoryCategory } from "@ally/shared";
 import type Anthropic from "@anthropic-ai/sdk";
 
@@ -157,8 +157,9 @@ export function getCustomTools(): Anthropic.Messages.Tool[] {
             description: "What needs to be done — concise (e.g. 'Sign permission slip', 'Buy birthday gift for party')",
           },
           assignedTo: {
-            type: "string",
-            description: "Name of the family member this is assigned to. Leave empty if unassigned.",
+            type: "array",
+            items: { type: "string" },
+            description: "Names of family members this is assigned to. Empty or omitted if unassigned. Use an array even for a single person (e.g. [\"John\"]).",
           },
           dueDate: {
             type: "string",
@@ -232,7 +233,12 @@ export function getCustomTools(): Anthropic.Messages.Tool[] {
           },
           targetMember: {
             type: "string",
-            description: "Name of the family member who should be reminded. Use 'me' for the user themselves, or a name like 'Dad', 'Jake', etc.",
+            description: "Deprecated: prefer `targetMembers`. Name of a single family member, or 'me' for the user themselves.",
+          },
+          targetMembers: {
+            type: "array",
+            items: { type: "string" },
+            description: "Names of the family members who should be reminded (e.g. ['Dad', 'Jake']). Use this to ping multiple people at once. Use 'me' for the user themselves.",
           },
           when: {
             type: "string",
@@ -249,7 +255,7 @@ export function getCustomTools(): Anthropic.Messages.Tool[] {
             description: "high: time-sensitive. medium: important. low: nice to remember.",
           },
         },
-        required: ["topic", "targetMember", "when", "priority"],
+        required: ["topic", "when", "priority"],
       },
     },
     {
@@ -269,6 +275,111 @@ export function getCustomTools(): Anthropic.Messages.Tool[] {
           },
         },
         required: ["date"],
+      },
+    },
+    {
+      name: "list_family_reminders",
+      description:
+        "List pending reminders for the family. Use when the user asks what reminders are active, when planning proactive check-ins, or before creating a reminder to avoid duplicates. Read-only.",
+      input_schema: {
+        type: "object" as const,
+        properties: {
+          status: {
+            type: "string",
+            enum: ["pending", "sent", "dismissed", "all"],
+            description: "Filter by status. Defaults to 'pending'.",
+          },
+          memberName: {
+            type: "string",
+            description: "Optional: only reminders targeting this member's name.",
+          },
+          within: {
+            type: "string",
+            enum: ["24h", "48h", "7d", "30d", "all"],
+            description: "Time window for remindAt. Defaults to 7d.",
+          },
+          limit: {
+            type: "number",
+            description: "Max rows to return (default 20, max 50).",
+          },
+        },
+        required: [],
+      },
+    },
+    {
+      name: "list_family_tasks",
+      description:
+        "List family tasks. Use when the user asks what's on the to-do list, who's responsible for what, or when deciding whether to ping someone about an outstanding item. Read-only.",
+      input_schema: {
+        type: "object" as const,
+        properties: {
+          status: {
+            type: "string",
+            enum: ["pending", "in_progress", "completed", "all"],
+            description: "Filter by task status. Defaults to 'pending'+'in_progress'.",
+          },
+          memberName: {
+            type: "string",
+            description: "Optional: only tasks assigned to this family member.",
+          },
+          dueWithin: {
+            type: "string",
+            enum: ["today", "48h", "7d", "overdue", "all"],
+            description: "Time window for dueDate. Defaults to '7d'.",
+          },
+          limit: {
+            type: "number",
+            description: "Max rows to return (default 25, max 100).",
+          },
+        },
+        required: [],
+      },
+    },
+    {
+      name: "list_shopping_items",
+      description:
+        "List items on the family's shopping lists. Use when the user asks what's on the list, when planning a grocery run, or when deciding whether to remind someone to pick up an item. Read-only.",
+      input_schema: {
+        type: "object" as const,
+        properties: {
+          listName: {
+            type: "string",
+            description: "Optional: filter to one list (e.g. 'Groceries', 'Costco').",
+          },
+          includeChecked: {
+            type: "boolean",
+            description: "Include already-checked items. Defaults to false.",
+          },
+          limit: {
+            type: "number",
+            description: "Max items per list (default 30, max 100).",
+          },
+        },
+        required: [],
+      },
+    },
+    {
+      name: "list_family_events",
+      description:
+        "List upcoming family calendar events in a time window. Use to plan around conflicts, anticipate commitments, or decide when to ping family members. Read-only.",
+      input_schema: {
+        type: "object" as const,
+        properties: {
+          memberName: {
+            type: "string",
+            description: "Optional: only events involving this family member.",
+          },
+          within: {
+            type: "string",
+            enum: ["24h", "48h", "7d", "30d"],
+            description: "Time window starting now. Defaults to '7d'.",
+          },
+          limit: {
+            type: "number",
+            description: "Max rows to return (default 20, max 50).",
+          },
+        },
+        required: [],
       },
     },
   ];
@@ -294,6 +405,14 @@ export async function executeToolCall(
       return handleAddToShoppingList(toolInput, ctx);
     case "check_family_schedule":
       return handleCheckFamilySchedule(toolInput, ctx);
+    case "list_family_reminders":
+      return handleListFamilyReminders(toolInput, ctx);
+    case "list_family_tasks":
+      return handleListFamilyTasks(toolInput, ctx);
+    case "list_shopping_items":
+      return handleListShoppingItems(toolInput, ctx);
+    case "list_family_events":
+      return handleListFamilyEvents(toolInput, ctx);
     default:
       return JSON.stringify({ error: `Unknown tool: ${toolName}` });
   }
@@ -358,7 +477,24 @@ async function handleSetFamilyReminder(
   const context = (input.context as string) || "";
   const priority = input.priority as "high" | "medium" | "low";
   const when = input.when as string | undefined;
-  const targetMember = input.targetMember as string;
+  const targetMemberRaw = input.targetMember as string | undefined;
+  const targetMembersRaw = input.targetMembers as string[] | undefined;
+
+  const requestedNames = (() => {
+    const names: string[] = [];
+    if (Array.isArray(targetMembersRaw)) {
+      for (const n of targetMembersRaw) {
+        if (typeof n === "string" && n.trim()) names.push(n.trim());
+      }
+    }
+    if (targetMemberRaw && targetMemberRaw.trim()) {
+      names.push(targetMemberRaw.trim());
+    }
+    return Array.from(new Set(names));
+  })();
+
+  const targetMemberLabel =
+    requestedNames.length > 0 ? requestedNames.join(", ") : "me";
 
   if (when) {
     const remindAt = parseReminderTime(when, ctx.timezone);
@@ -402,18 +538,22 @@ async function handleSetFamilyReminder(
     // Store as a followup too
     await addFollowups(ctx.userId, [{ topic, context, priority }]);
 
-    // Resolve target family member ID if we have a familyId
-    let targetMemberId: string | undefined;
-    if (ctx.familyId && targetMember && targetMember !== "me") {
+    let targetMemberIds: string[] = [];
+    if (ctx.familyId && requestedNames.length > 0) {
       const members = await db
         .select({ id: schema.familyMembers.id, name: schema.familyMembers.name })
         .from(schema.familyMembers)
         .where(eq(schema.familyMembers.familyId, ctx.familyId));
 
-      const match = members.find(
-        (m) => m.name.toLowerCase() === targetMember.toLowerCase(),
+      const memberByName = new Map(
+        members.map((m) => [m.name.toLowerCase(), m.id]),
       );
-      if (match) targetMemberId = match.id;
+
+      for (const name of requestedNames) {
+        if (name.toLowerCase() === "me") continue;
+        const id = memberByName.get(name.toLowerCase());
+        if (id && !targetMemberIds.includes(id)) targetMemberIds.push(id);
+      }
     }
 
     const reminderId = await createReminder({
@@ -425,12 +565,13 @@ async function handleSetFamilyReminder(
       conversationId: ctx.conversationId,
       source: "chat",
       familyId: ctx.familyId,
-      targetMemberId,
+      targetMemberIds,
       metadata: {
         priority,
         rawWhen: when,
         remindAtISO: remindAt.toISOString(),
-        targetMember,
+        targetMember: targetMemberLabel,
+        targetMembers: requestedNames,
       },
     });
 
@@ -439,20 +580,21 @@ async function handleSetFamilyReminder(
       topic,
       priority,
       reminderId,
-      targetMember,
+      targetMember: targetMemberLabel,
+      targetMembers: requestedNames,
       scheduledFor: remindAt.toISOString(),
       pushNotification: true,
     });
   }
 
-  // No time specified — just store as a followup
   await addFollowups(ctx.userId, [{ topic, context, priority }]);
 
   return JSON.stringify({
     saved: true,
     topic,
     priority,
-    targetMember,
+    targetMember: targetMemberLabel,
+    targetMembers: requestedNames,
     pushNotification: false,
   });
 }
@@ -556,25 +698,34 @@ async function handleAssignTask(
   }
 
   const title = input.title as string;
-  const assignedToName = input.assignedTo as string | undefined;
+  const rawAssignees = input.assignedTo;
+  const assignedToNames: string[] = Array.isArray(rawAssignees)
+    ? (rawAssignees as string[])
+    : typeof rawAssignees === "string" && rawAssignees.length > 0
+      ? [rawAssignees]
+      : [];
   const dueDateRaw = input.dueDate as string | undefined;
   const priority = (input.priority as string) ?? "medium";
   const category = input.category as string | undefined;
   const recurrence = (input.recurrence as string) ?? "none";
   const description = input.description as string | undefined;
 
-  // Resolve family member
-  let assignedToId: string | undefined;
-  if (assignedToName) {
+  // Resolve family member names to IDs
+  let assignedToIds: string[] = [];
+  if (assignedToNames.length > 0) {
     const members = await db
       .select({ id: schema.familyMembers.id, name: schema.familyMembers.name })
       .from(schema.familyMembers)
       .where(eq(schema.familyMembers.familyId, ctx.familyId));
 
-    const match = members.find(
-      (m) => m.name.toLowerCase() === assignedToName.toLowerCase(),
-    );
-    if (match) assignedToId = match.id;
+    assignedToIds = assignedToNames
+      .map((name) => {
+        const match = members.find(
+          (m) => m.name.toLowerCase() === name.toLowerCase(),
+        );
+        return match?.id;
+      })
+      .filter((id): id is string => Boolean(id));
   }
 
   const dueDate = dueDateRaw ? parseReminderTime(dueDateRaw, ctx.timezone) : null;
@@ -622,7 +773,7 @@ async function handleAssignTask(
       createdBy: ctx.userId,
       title,
       description: description ?? null,
-      assignedTo: assignedToId ?? null,
+      assignedTo: assignedToIds,
       dueDate,
       priority,
       category: category ?? null,
@@ -631,8 +782,7 @@ async function handleAssignTask(
     })
     .returning({ id: schema.tasks.id });
 
-  // Notify the assigned family member
-  if (assignedToId) {
+  if (assignedToIds.length > 0) {
     const creatorName = await db
       .select({ name: schema.user.name })
       .from(schema.user)
@@ -640,7 +790,7 @@ async function handleAssignTask(
       .then((rows) => rows[0]?.name ?? "Someone");
 
     notifyFamilyMembers(
-      [assignedToId],
+      assignedToIds,
       "New task assigned",
       `${creatorName} assigned you: ${title}`,
       { type: "task_assigned", taskId: task.id },
@@ -653,7 +803,7 @@ async function handleAssignTask(
     created: true,
     taskId: task.id,
     title,
-    assignedTo: assignedToName ?? null,
+    assignedTo: assignedToNames,
     dueDate: dueDate?.toISOString() ?? null,
     priority,
   });
@@ -778,23 +928,30 @@ async function handleCheckFamilySchedule(
     allDay: e.allDay,
   }));
 
-  const formattedTasks = tasksDue.map((t) => ({
-    title: t.title,
-    priority: t.priority,
-    assignedTo: t.assignedTo ? memberMap.get(t.assignedTo) ?? "Unassigned" : "Unassigned",
-  }));
+  const formattedTasks = tasksDue.map((t) => {
+    const ids = Array.isArray(t.assignedTo) ? (t.assignedTo as string[]) : [];
+    return {
+      title: t.title,
+      priority: t.priority,
+      assignedTo:
+        ids.length > 0
+          ? ids.map((id) => memberMap.get(id) ?? "Unknown")
+          : ["Unassigned"],
+    };
+  });
 
   // Filter by member name if specified
   if (memberName) {
+    const lowered = memberName.toLowerCase();
     const filtered = formattedEvents.filter((e) =>
-      e.assignedTo.some((n) => n.toLowerCase() === memberName.toLowerCase()),
+      e.assignedTo.some((n) => n.toLowerCase() === lowered),
     );
     return JSON.stringify({
       date: dayStart.toISOString().split("T")[0],
       memberFilter: memberName,
       events: filtered,
-      tasks: formattedTasks.filter(
-        (t) => t.assignedTo.toLowerCase() === memberName.toLowerCase(),
+      tasks: formattedTasks.filter((t) =>
+        t.assignedTo.some((n) => n.toLowerCase() === lowered),
       ),
     });
   }
@@ -831,3 +988,355 @@ function detectConflicts(
   }
   return conflicts;
 }
+
+// ─── Read tools ──────────────────────────────────────────────────
+
+function resolveWithinMs(value: string | undefined, fallback: string): number {
+  const v = value ?? fallback;
+  switch (v) {
+    case "24h":
+      return 24 * 3600 * 1000;
+    case "48h":
+      return 48 * 3600 * 1000;
+    case "7d":
+      return 7 * 24 * 3600 * 1000;
+    case "30d":
+      return 30 * 24 * 3600 * 1000;
+    default:
+      return 7 * 24 * 3600 * 1000;
+  }
+}
+
+async function getFamilyMemberMap(familyId: string) {
+  const members = await db
+    .select({ id: schema.familyMembers.id, name: schema.familyMembers.name })
+    .from(schema.familyMembers)
+    .where(eq(schema.familyMembers.familyId, familyId));
+  const byId = new Map(members.map((m) => [m.id, m.name]));
+  const byName = new Map(members.map((m) => [m.name.toLowerCase(), m.id]));
+  return { byId, byName, members };
+}
+
+async function handleListFamilyReminders(
+  input: Record<string, unknown>,
+  ctx: ToolContext,
+): Promise<string> {
+  const status = (input.status as string | undefined) ?? "pending";
+  const within = input.within as string | undefined;
+  const memberName = input.memberName as string | undefined;
+  const limit = Math.min(
+    Math.max(Number(input.limit ?? 20) || 20, 1),
+    50,
+  );
+
+  const now = new Date();
+  const windowMs = within === "all" ? null : resolveWithinMs(within, "7d");
+  const end = windowMs ? new Date(now.getTime() + windowMs) : null;
+
+  const conds: ReturnType<typeof and>[] = [
+    eq(schema.reminders.userId, ctx.userId),
+  ];
+  if (status !== "all") {
+    conds.push(
+      eq(
+        schema.reminders.status,
+        status as "pending" | "sent" | "dismissed",
+      ),
+    );
+  }
+  if (end) {
+    conds.push(gte(schema.reminders.remindAt, now));
+    conds.push(lte(schema.reminders.remindAt, end));
+  }
+
+  const rows = await db
+    .select()
+    .from(schema.reminders)
+    .where(and(...conds))
+    .orderBy(asc(schema.reminders.remindAt))
+    .limit(limit);
+
+  let memberById = new Map<string, string>();
+  let memberByName = new Map<string, string>();
+  if (ctx.familyId) {
+    const maps = await getFamilyMemberMap(ctx.familyId);
+    memberById = maps.byId;
+    memberByName = maps.byName;
+  }
+
+  const filterMemberId = memberName
+    ? memberByName.get(memberName.toLowerCase())
+    : undefined;
+
+  const reminders = rows
+    .filter((r) => {
+      if (!memberName) return true;
+      if (!filterMemberId) return false;
+      const ids = (r.targetMemberIds as string[] | null) ?? [];
+      return ids.includes(filterMemberId);
+    })
+    .map((r) => ({
+      id: r.id,
+      title: r.title,
+      body: r.body,
+      remindAt: r.remindAt.toISOString(),
+      status: r.status,
+      source: r.source,
+      targetMembers: ((r.targetMemberIds as string[] | null) ?? []).map(
+        (id) => memberById.get(id) ?? "Unknown",
+      ),
+    }));
+
+  return JSON.stringify({
+    count: reminders.length,
+    reminders,
+  });
+}
+
+async function handleListFamilyTasks(
+  input: Record<string, unknown>,
+  ctx: ToolContext,
+): Promise<string> {
+  if (!ctx.familyId) {
+    return JSON.stringify({
+      error: "No family set up yet. Complete onboarding first.",
+    });
+  }
+
+  const statusFilter = (input.status as string | undefined) ?? "open";
+  const dueWithin = (input.dueWithin as string | undefined) ?? "7d";
+  const memberName = input.memberName as string | undefined;
+  const limit = Math.min(
+    Math.max(Number(input.limit ?? 25) || 25, 1),
+    100,
+  );
+
+  const now = new Date();
+  const conds: ReturnType<typeof and>[] = [
+    eq(schema.tasks.familyId, ctx.familyId),
+  ];
+
+  if (statusFilter === "pending") {
+    conds.push(eq(schema.tasks.status, "pending"));
+  } else if (statusFilter === "in_progress") {
+    conds.push(eq(schema.tasks.status, "in_progress"));
+  } else if (statusFilter === "completed") {
+    conds.push(eq(schema.tasks.status, "completed"));
+  } else if (statusFilter === "open" || statusFilter === undefined) {
+    conds.push(
+      or(
+        eq(schema.tasks.status, "pending"),
+        eq(schema.tasks.status, "in_progress"),
+      )!,
+    );
+  }
+
+  if (dueWithin === "today") {
+    const dayStart = new Date(now);
+    dayStart.setHours(0, 0, 0, 0);
+    const dayEnd = new Date(now);
+    dayEnd.setHours(23, 59, 59, 999);
+    conds.push(gte(schema.tasks.dueDate, dayStart));
+    conds.push(lte(schema.tasks.dueDate, dayEnd));
+  } else if (dueWithin === "overdue") {
+    conds.push(lte(schema.tasks.dueDate, now));
+    conds.push(isNull(schema.tasks.completedAt));
+  } else if (dueWithin !== "all") {
+    const end = new Date(now.getTime() + resolveWithinMs(dueWithin, "7d"));
+    conds.push(
+      or(
+        isNull(schema.tasks.dueDate),
+        and(
+          gte(schema.tasks.dueDate, now),
+          lte(schema.tasks.dueDate, end),
+        )!,
+      )!,
+    );
+  }
+
+  const rows = await db
+    .select()
+    .from(schema.tasks)
+    .where(and(...conds))
+    .orderBy(asc(schema.tasks.dueDate))
+    .limit(limit);
+
+  const { byId: memberById, byName: memberByName } = await getFamilyMemberMap(
+    ctx.familyId,
+  );
+
+  const filterMemberId = memberName
+    ? memberByName.get(memberName.toLowerCase())
+    : undefined;
+
+  const tasks = rows
+    .filter((t) => {
+      if (!memberName) return true;
+      if (!filterMemberId) return false;
+      const ids = Array.isArray(t.assignedTo) ? (t.assignedTo as string[]) : [];
+      return ids.includes(filterMemberId);
+    })
+    .map((t) => {
+      const ids = Array.isArray(t.assignedTo) ? (t.assignedTo as string[]) : [];
+      return {
+        id: t.id,
+        title: t.title,
+        description: t.description,
+        status: t.status,
+        priority: t.priority,
+        dueDate: t.dueDate?.toISOString() ?? null,
+        assignedTo:
+          ids.length > 0
+            ? ids.map((id) => memberById.get(id) ?? "Unknown")
+            : [],
+      };
+    });
+
+  return JSON.stringify({
+    count: tasks.length,
+    tasks,
+  });
+}
+
+async function handleListShoppingItems(
+  input: Record<string, unknown>,
+  ctx: ToolContext,
+): Promise<string> {
+  if (!ctx.familyId) {
+    return JSON.stringify({
+      error: "No family set up yet. Complete onboarding first.",
+    });
+  }
+
+  const listNameFilter = input.listName as string | undefined;
+  const includeChecked = Boolean(input.includeChecked);
+  const limit = Math.min(
+    Math.max(Number(input.limit ?? 30) || 30, 1),
+    100,
+  );
+
+  const lists = await db
+    .select()
+    .from(schema.shoppingLists)
+    .where(eq(schema.shoppingLists.familyId, ctx.familyId));
+
+  const filtered = listNameFilter
+    ? lists.filter(
+        (l) => l.name.toLowerCase() === listNameFilter.toLowerCase(),
+      )
+    : lists;
+
+  if (filtered.length === 0) {
+    return JSON.stringify({ count: 0, lists: [] });
+  }
+
+  const listIds = filtered.map((l) => l.id);
+  const itemConds: ReturnType<typeof and>[] = [
+    inArray(schema.shoppingListItems.listId, listIds),
+  ];
+  if (!includeChecked) {
+    itemConds.push(eq(schema.shoppingListItems.checked, false));
+  }
+
+  const items = await db
+    .select()
+    .from(schema.shoppingListItems)
+    .where(and(...itemConds))
+    .orderBy(asc(schema.shoppingListItems.createdAt));
+
+  const grouped = filtered.map((l) => {
+    const listItems = items
+      .filter((i) => i.listId === l.id)
+      .slice(0, limit)
+      .map((i) => ({
+        id: i.id,
+        name: i.name,
+        quantity: i.quantity,
+        category: i.category,
+        checked: i.checked,
+      }));
+    return {
+      listId: l.id,
+      listName: l.name,
+      itemCount: listItems.length,
+      items: listItems,
+    };
+  });
+
+  return JSON.stringify({
+    count: grouped.reduce((sum, g) => sum + g.itemCount, 0),
+    lists: grouped,
+  });
+}
+
+async function handleListFamilyEvents(
+  input: Record<string, unknown>,
+  ctx: ToolContext,
+): Promise<string> {
+  if (!ctx.familyId) {
+    return JSON.stringify({
+      error: "No family set up yet. Complete onboarding first.",
+    });
+  }
+
+  const within = input.within as string | undefined;
+  const memberName = input.memberName as string | undefined;
+  const limit = Math.min(
+    Math.max(Number(input.limit ?? 20) || 20, 1),
+    50,
+  );
+
+  const now = new Date();
+  const end = new Date(now.getTime() + resolveWithinMs(within, "7d"));
+
+  const rows = await db
+    .select()
+    .from(schema.calendarEvents)
+    .where(
+      and(
+        eq(schema.calendarEvents.familyId, ctx.familyId),
+        gte(schema.calendarEvents.startTime, now),
+        lte(schema.calendarEvents.startTime, end),
+        isNull(schema.calendarEvents.completedAt),
+      ),
+    )
+    .orderBy(asc(schema.calendarEvents.startTime))
+    .limit(limit);
+
+  const { byId: memberById, byName: memberByName } = await getFamilyMemberMap(
+    ctx.familyId,
+  );
+
+  const filterMemberId = memberName
+    ? memberByName.get(memberName.toLowerCase())
+    : undefined;
+
+  const events = rows
+    .filter((e) => {
+      if (!memberName) return true;
+      if (!filterMemberId) return false;
+      const ids = Array.isArray(e.assignedTo) ? (e.assignedTo as string[]) : [];
+      return ids.includes(filterMemberId);
+    })
+    .map((e) => {
+      const ids = Array.isArray(e.assignedTo) ? (e.assignedTo as string[]) : [];
+      return {
+        id: e.id,
+        title: e.title,
+        description: e.description,
+        startTime: e.startTime?.toISOString(),
+        endTime: e.endTime?.toISOString(),
+        location: e.location,
+        allDay: e.allDay,
+        assignedTo: ids.map((id) => memberById.get(id) ?? "Unknown"),
+      };
+    });
+
+  return JSON.stringify({
+    count: events.length,
+    events,
+  });
+}
+
+// quiet unused import warnings when proactive handlers aren't added here
+void sql;

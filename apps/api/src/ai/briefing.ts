@@ -150,11 +150,17 @@ export async function ensureBriefingForUser(userId: string): Promise<
       assignedTo: (e.assignedTo as string[])?.map((id) => memberMap.get(id)).filter(Boolean).join(", ") || undefined,
     }));
 
-    pendingTasks = taskRows.map((t) => ({
-      title: t.title,
-      assignedTo: t.assignedTo ? memberMap.get(t.assignedTo) ?? undefined : undefined,
-      dueDate: t.dueDate ? t.dueDate.toLocaleDateString("en-US", { month: "short", day: "numeric" }) : undefined,
-    }));
+    pendingTasks = taskRows.map((t) => {
+      const ids = Array.isArray(t.assignedTo) ? (t.assignedTo as string[]) : [];
+      const names = ids
+        .map((id) => memberMap.get(id))
+        .filter(Boolean) as string[];
+      return {
+        title: t.title,
+        assignedTo: names.length > 0 ? names.join(", ") : undefined,
+        dueDate: t.dueDate ? t.dueDate.toLocaleDateString("en-US", { month: "short", day: "numeric" }) : undefined,
+      };
+    });
   }
 
   const [sessionCountResult] = await db

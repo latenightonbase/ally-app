@@ -317,8 +317,14 @@ export async function runDailyPing() {
           contextParts.push(
             `Pending family tasks:\n${familyTasks
               .map((t) => {
-                const assignee = t.assignedTo ? memberMap.get(t.assignedTo) : null;
-                return `- ${t.title}${assignee ? ` [${assignee}]` : ""}`;
+                const ids = Array.isArray(t.assignedTo)
+                  ? (t.assignedTo as string[])
+                  : [];
+                const assignees = ids
+                  .map((id) => memberMap.get(id))
+                  .filter(Boolean) as string[];
+                const label = assignees.length > 0 ? assignees.join(", ") : null;
+                return `- ${t.title}${label ? ` [${label}]` : ""}`;
               })
               .join("\n")}`,
           );

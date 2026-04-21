@@ -182,13 +182,12 @@ export const onboardingRoutes = new Elysia({ prefix: "/api/v1" })
                   assignedTo: assigneeMemberId ? [assigneeMemberId] : [],
                 });
               } else {
-                // Store as a task/todo
                 await db.insert(schema.tasks).values({
                   familyId,
                   createdBy: user.id,
                   title: item.title,
                   description: item.description || null,
-                  assignedTo: assigneeMemberId || null,
+                  assignedTo: assigneeMemberId ? [assigneeMemberId] : [],
                   dueDate: item.dateTime ? new Date(item.dateTime) : null,
                   category: item.category || "other",
                   priority: "medium",

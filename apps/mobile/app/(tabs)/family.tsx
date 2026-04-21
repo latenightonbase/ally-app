@@ -24,6 +24,7 @@ import {
   regenerateInviteCode,
 } from "../../lib/api";
 import { useTheme } from "../../context/ThemeContext";
+import { ScreenHeader } from "../../components/ui/ScreenHeader";
 
 function MemberChip({
   name,
@@ -187,6 +188,7 @@ export default function FamilyScreen() {
     return (
       <View className="flex-1 bg-background">
         <SafeAreaView edges={["top"]} className="flex-1">
+          <ScreenHeader title="Family" />
           <View className="flex-1 px-5 pt-4 items-center justify-center">
             <Ionicons
               name="people-outline"
@@ -207,8 +209,12 @@ export default function FamilyScreen() {
     return (
       <View className="flex-1 bg-background">
         <SafeAreaView edges={["top"]} className="flex-1">
+          <ScreenHeader
+            title="Join a Family"
+            subtitle="Enter the invite code shared by a family member to join their family."
+          />
           <ScrollView
-            className="flex-1 px-5 pt-2"
+            className="flex-1 px-5"
             contentContainerStyle={{ paddingBottom: 120 }}
             showsVerticalScrollIndicator={false}
           >
@@ -217,15 +223,6 @@ export default function FamilyScreen() {
               animate={{ opacity: 1, translateY: 0 }}
               transition={{ type: "timing", duration: 400 }}
             >
-              <View className="mb-5 mt-2">
-                <Text className="text-foreground text-2xl font-sans-bold">
-                  Join a Family
-                </Text>
-                <Text className="text-muted text-sm font-sans mt-1">
-                  Enter the invite code shared by a family member to join their
-                  family.
-                </Text>
-              </View>
 
               <View className="bg-surface rounded-2xl p-5 border border-primary-soft">
                 <Text className="text-foreground text-sm font-sans-semibold mb-3">
@@ -303,8 +300,12 @@ export default function FamilyScreen() {
   return (
     <View className="flex-1 bg-background">
       <SafeAreaView edges={["top"]} className="flex-1">
+        <ScreenHeader
+          title={familyName}
+          subtitle={`${memberList.length} ${memberList.length === 1 ? "member" : "members"}`}
+        />
         <ScrollView
-          className="flex-1 px-5 pt-2"
+          className="flex-1 px-5"
           contentContainerStyle={{ paddingBottom: 120 }}
           showsVerticalScrollIndicator={false}
           refreshControl={
@@ -320,16 +321,6 @@ export default function FamilyScreen() {
             animate={{ opacity: 1, translateY: 0 }}
             transition={{ type: "timing", duration: 400 }}
           >
-            {/* Header */}
-            <View className="mb-2 mt-2">
-              <Text className="text-foreground text-2xl font-sans-bold">
-                {familyName}
-              </Text>
-              <Text className="text-muted text-sm font-sans mt-1">
-                {memberList.length}{" "}
-                {memberList.length === 1 ? "member" : "members"}
-              </Text>
-            </View>
 
             {/* Members */}
             <View className="flex-row flex-wrap mt-4">

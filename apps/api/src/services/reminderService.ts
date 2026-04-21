@@ -1,16 +1,21 @@
 import { db, schema } from "../db";
 import { eq, and, lte, gte, sql } from "drizzle-orm";
 import { sendPushNotification } from "./notifications";
-import { notifyFamilyMember, notifyReminderCreator } from "./notificationRouter";
+import {
+  notifyFamilyMembers,
+  notifyReminderCreator,
+} from "./notificationRouter";
 import { resolveSession } from "./session";
-import type { CreateReminderInput } from "@ally/shared";
+import type { CreateReminderServiceInput } from "@ally/shared";
 
 const DAILY_PING_SUPPRESSION_MS = 5 * 60_000;
 
 /**
  * Create a new reminder that will trigger a push notification at the specified time.
  */
-export async function createReminder(input: CreateReminderInput): Promise<string> {
+export async function createReminder(
+  input: CreateReminderServiceInput,
+): Promise<string> {
   const remindAt = input.remindAt instanceof Date ? input.remindAt : new Date(input.remindAt);
 
   const [row] = await db
@@ -25,7 +30,7 @@ export async function createReminder(input: CreateReminderInput): Promise<string
       source: input.source ?? "chat",
       metadata: input.metadata ?? {},
       familyId: input.familyId ?? null,
-      targetMemberId: input.targetMemberId ?? null,
+      targetMemberIds: input.targetMemberIds ?? [],
     })
     .returning({ id: schema.reminders.id });
 
@@ -134,7 +139,7 @@ export async function processReminders(): Promise<void> {
       title: schema.reminders.title,
       body: schema.reminders.body,
       metadata: schema.reminders.metadata,
-      targetMemberId: schema.reminders.targetMemberId,
+      targetMemberIds: schema.reminders.targetMemberIds,
     })
     .from(schema.reminders)
     .where(
@@ -202,28 +207,33 @@ export async function processReminders(): Promise<void> {
         ),
       });
 
-      if (recentPing && !reminder.targetMemberId) {
+      const targetMemberIds = Array.isArray(reminder.targetMemberIds)
+        ? (reminder.targetMemberIds as string[])
+        : [];
+
+      if (recentPing && targetMemberIds.length === 0) {
         console.log(
           `[reminders] Suppressed push for reminder ${reminder.id} — daily_ping fired ${Math.round((now.getTime() - recentPing.startedAt.getTime()) / 1000)}s ago`,
         );
         continue;
       }
 
-      // Route push notification to the target family member if specified
-      if (reminder.targetMemberId) {
-        const result = await notifyFamilyMember({
-          memberId: reminder.targetMemberId,
-          title: allyName,
-          body: messageText,
-          data: {
+      // Route push notifications to the targeted family members if specified
+      if (targetMemberIds.length > 0) {
+        const results = await notifyFamilyMembers(
+          targetMemberIds,
+          allyName,
+          messageText,
+          {
             type: "reminder",
             reminderId: reminder.id,
             reminderTitle: reminder.title,
           },
-        });
+        );
 
-        // Send confirmation back to the creator
-        if (result.delivered) {
+        // Send confirmation back to the creator for each successful delivery
+        const delivered = results.filter((r) => r.delivered);
+        for (const result of delivered) {
           await notifyReminderCreator(
             reminder.userId,
             result.memberName,

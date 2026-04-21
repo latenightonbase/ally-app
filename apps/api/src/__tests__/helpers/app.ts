@@ -8,6 +8,8 @@ import { memoryRoutes } from "../../routes/memory";
 import { conversationRoutes } from "../../routes/conversations";
 import { insightRoutes } from "../../routes/insights";
 import { webhookRoutes } from "../../routes/webhooks";
+import { reminderRoutes } from "../../routes/reminders";
+import { taskRoutes } from "../../routes/tasks";
 
 export function createTestApp() {
   return new Elysia()
@@ -40,7 +42,9 @@ export function createTestApp() {
     .use(memoryRoutes)
     .use(conversationRoutes)
     .use(insightRoutes)
-    .use(webhookRoutes);
+    .use(webhookRoutes)
+    .use(reminderRoutes)
+    .use(taskRoutes);
 }
 
 export function request(

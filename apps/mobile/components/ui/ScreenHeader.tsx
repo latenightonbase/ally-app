@@ -1,13 +1,17 @@
 import React from "react";
 import { View, Text, Pressable } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
 import { router } from "expo-router";
-import { Avatar } from "../ui/Avatar";
-import { useAppStore } from "../../store/useAppStore";
 import { useSession } from "../../lib/auth";
+import { useAppStore } from "../../store/useAppStore";
+import { Avatar } from "./Avatar";
 
-export function ChatHeader() {
-  const allyName = useAppStore((s) => s.user.allyName) || "Anzi";
+interface ScreenHeaderProps {
+  title?: string;
+  subtitle?: string;
+  rightSlot?: React.ReactNode;
+}
+
+export function ScreenHeader({ title, subtitle, rightSlot }: ScreenHeaderProps) {
   const session = useSession();
   const storeName = useAppStore((s) => s.user.name);
 
@@ -20,18 +24,24 @@ export function ChatHeader() {
   const initial = (displayName || "A").trim().charAt(0).toUpperCase() || "A";
 
   return (
-    <SafeAreaView edges={["top"]} className="bg-background">
-      <View className="flex-row items-center px-5 py-3 border-b border-surface">
-        <Avatar name={allyName.charAt(0).toUpperCase()} size="sm" />
-        <View className="ml-3 flex-1">
-          <Text className="text-foreground text-lg font-sans-semibold">
-            {allyName}
+    <View className="flex-row items-center justify-between px-5 pt-2 pb-3">
+      <View className="flex-1 pr-3">
+        {title ? (
+          <Text
+            className="text-foreground text-2xl font-sans-bold"
+            numberOfLines={1}
+          >
+            {title}
           </Text>
-          <View className="flex-row items-center">
-            <View className="w-2 h-2 rounded-full bg-primary mr-1.5" />
-            <Text className="text-muted text-xs font-sans">Online</Text>
-          </View>
-        </View>
+        ) : null}
+        {subtitle ? (
+          <Text className="text-muted text-xs font-sans mt-0.5" numberOfLines={1}>
+            {subtitle}
+          </Text>
+        ) : null}
+      </View>
+      <View className="flex-row items-center">
+        {rightSlot}
         <Pressable
           accessibilityRole="button"
           accessibilityLabel="Open profile and settings"
@@ -42,6 +52,6 @@ export function ChatHeader() {
           <Avatar name={initial} size="md" />
         </Pressable>
       </View>
-    </SafeAreaView>
+    </View>
   );
 }

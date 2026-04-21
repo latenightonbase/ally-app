@@ -46,6 +46,12 @@ if (!isE2E) {
 
   const aiClientMock = {
     MODEL: "claude-sonnet-4-6",
+    MODEL_FAST: "claude-haiku-4-5-20251001",
+    MODEL_QUALITY: "claude-sonnet-4-6",
+    MAX_CONTEXT_TOKENS: 140_000,
+    estimateTokens: (text: string) => Math.ceil((text?.length ?? 0) / 3.2),
+    estimateMessageTokens: () => 0,
+    selectModel: (_tier?: string) => "claude-haiku-4-5-20251001",
     AIError,
     callClaude: mock(async () => ({
       text: "Mock Ally response",
@@ -120,6 +126,7 @@ if (!isE2E) {
   };
 
   const graphStoreMock = {
+    resolveEntityIdByName: mock(async () => null),
     upsertEntity: mock(async () => "mock-entity-id"),
     createEdge: mock(async () => {}),
     getEntityLinkedIds: mock(async () => ({ factIds: [], episodeIds: [] })),

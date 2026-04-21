@@ -4,6 +4,7 @@ import { runDailyPing } from "./dailyPing";
 import { runWeeklyInsights } from "./weeklyInsights";
 import { runConsolidation } from "./consolidation";
 import { runMemoryMaintenance } from "./memoryMaintenance";
+import { runProactiveAgent } from "./proactiveAgent";
 import { emit } from "../services/events";
 import { registerProactiveHandlers } from "../services/proactive";
 import { flushAllBatches } from "../services/memoryQueue";
@@ -52,6 +53,13 @@ const jobs: ScheduledJob[] = [
     handler: async () => {
       emit("system:daily_scan", {});
     },
+    enabled: true,
+    skipDedup: true,
+  },
+  {
+    name: "proactive_agent",
+    cronExpression: "0 * * * *",
+    handler: runProactiveAgent,
     enabled: true,
     skipDedup: true,
   },

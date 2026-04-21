@@ -16,19 +16,19 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { MotiView } from "moti";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
-import { useTheme } from "../../context/ThemeContext";
-import { useAppStore, clearPersistedStorage } from "../../store/useAppStore";
-import { useFamilyStore, clearFamilyPersistedStorage } from "../../store/useFamilyStore";
-import { ThemePicker } from "../../components/settings/ThemePicker";
-import { SubscriptionCard } from "../../components/settings/SubscriptionCard";
-import { SettingsRow } from "../../components/settings/SettingsRow";
-import { authClient, useSession } from "../../lib/auth";
+import { useTheme } from "../context/ThemeContext";
+import { useAppStore, clearPersistedStorage } from "../store/useAppStore";
+import { useFamilyStore, clearFamilyPersistedStorage } from "../store/useFamilyStore";
+import { ThemePicker } from "../components/settings/ThemePicker";
+import { SubscriptionCard } from "../components/settings/SubscriptionCard";
+import { SettingsRow } from "../components/settings/SettingsRow";
+import { authClient, useSession } from "../lib/auth";
 import {
   deleteMemoryProfile,
   getUserProfile,
   updateUserProfile,
   type UserProfileData,
-} from "../../lib/api";
+} from "../lib/api";
 import * as Notifications from "expo-notifications";
 
 // --- Simple edit modal ---

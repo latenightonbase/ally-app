@@ -16,6 +16,7 @@ import { familyRoutes } from "./routes/family";
 import { calendarRoutes } from "./routes/calendar";
 import { taskRoutes } from "./routes/tasks";
 import { shoppingRoutes } from "./routes/shopping";
+import { reminderRoutes } from "./routes/reminders";
 import { inviteWebRoutes } from "./routes/inviteWeb";
 import { startScheduler } from "./jobs/scheduler";
 import { startMemoryWorker } from "./services/memoryQueue";
@@ -82,6 +83,7 @@ const app = new Elysia()
   .use(calendarRoutes)
   .use(taskRoutes)
   .use(shoppingRoutes)
+  .use(reminderRoutes)
   .listen(process.env.PORT ?? 3000);
 
 if (process.env.NODE_ENV !== "test") {

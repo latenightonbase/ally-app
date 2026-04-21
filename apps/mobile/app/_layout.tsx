@@ -68,6 +68,7 @@ function RootNavigation() {
         <Stack.Screen name="(auth)" />
         <Stack.Screen name="(onboarding)" />
         <Stack.Screen name="(tabs)" />
+        <Stack.Screen name="settings" options={{ animation: "slide_from_right" }} />
         <Stack.Screen name="invite/[token]" />
       </Stack>
       <CalendarPromptModal />

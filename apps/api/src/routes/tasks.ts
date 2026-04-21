@@ -1,7 +1,16 @@
 import { Elysia, t } from "elysia";
 import { authMiddleware } from "../middleware/auth";
 import { db, schema } from "../db";
-import { and, eq, isNull, asc, desc } from "drizzle-orm";
+import { and, eq, asc } from "drizzle-orm";
+import { notifyFamilyMembers } from "../services/notificationRouter";
+
+function normaliseAssignees(
+  input: unknown,
+): string[] {
+  if (Array.isArray(input)) return (input as string[]).filter(Boolean);
+  if (typeof input === "string" && input.length > 0) return [input];
+  return [];
+}
 
 export const taskRoutes = new Elysia({ prefix: "/api/v1/tasks" })
   .use(authMiddleware)
@@ -31,7 +40,6 @@ export const taskRoutes = new Elysia({ prefix: "/api/v1/tasks" })
       )
       .orderBy(asc(schema.tasks.dueDate));
 
-    // Resolve member names
     const members = await db
       .select({ id: schema.familyMembers.id, name: schema.familyMembers.name })
       .from(schema.familyMembers)
@@ -40,14 +48,24 @@ export const taskRoutes = new Elysia({ prefix: "/api/v1/tasks" })
     const memberMap = new Map(members.map((m) => [m.id, m.name]));
 
     return {
-      tasks: tasks.map((t) => ({
-        ...t,
-        dueDate: t.dueDate?.toISOString(),
-        completedAt: t.completedAt?.toISOString(),
-        createdAt: t.createdAt?.toISOString(),
-        updatedAt: t.updatedAt?.toISOString(),
-        assignedToName: t.assignedTo ? memberMap.get(t.assignedTo) ?? null : null,
-      })),
+      tasks: tasks.map((t) => {
+        const assignedIds = Array.isArray(t.assignedTo)
+          ? (t.assignedTo as string[])
+          : [];
+        const assignedNames = assignedIds
+          .map((id) => memberMap.get(id))
+          .filter(Boolean) as string[];
+        return {
+          ...t,
+          assignedTo: assignedIds,
+          assignedToNames: assignedNames,
+          assignedToName: assignedNames.length > 0 ? assignedNames.join(", ") : null,
+          dueDate: t.dueDate?.toISOString(),
+          completedAt: t.completedAt?.toISOString(),
+          createdAt: t.createdAt?.toISOString(),
+          updatedAt: t.updatedAt?.toISOString(),
+        };
+      }),
     };
   })
 
@@ -56,7 +74,7 @@ export const taskRoutes = new Elysia({ prefix: "/api/v1/tasks" })
     "/",
     async ({ body, user, set }) => {
       const [dbUser] = await db
-        .select({ familyId: schema.user.familyId })
+        .select({ familyId: schema.user.familyId, name: schema.user.name })
         .from(schema.user)
         .where(eq(schema.user.id, user.id));
 
@@ -65,9 +83,13 @@ export const taskRoutes = new Elysia({ prefix: "/api/v1/tasks" })
         return { error: "No family found." };
       }
 
-      // ── Duplicate check (Jaccard similarity ≥ 0.8) ──
       const existingTasks = await db
-        .select({ id: schema.tasks.id, title: schema.tasks.title, dueDate: schema.tasks.dueDate, category: schema.tasks.category })
+        .select({
+          id: schema.tasks.id,
+          title: schema.tasks.title,
+          dueDate: schema.tasks.dueDate,
+          category: schema.tasks.category,
+        })
         .from(schema.tasks)
         .where(
           and(
@@ -77,22 +99,33 @@ export const taskRoutes = new Elysia({ prefix: "/api/v1/tasks" })
         );
 
       const newDueDate = body.dueDate ? new Date(body.dueDate) : null;
-      const newTokens = new Set(body.title.toLowerCase().split(/\s+/).filter(Boolean));
+      const newTokens = new Set(
+        body.title.toLowerCase().split(/\s+/).filter(Boolean),
+      );
       for (const existing of existingTasks) {
         if (body.category && existing.category && body.category !== existing.category) continue;
         if (newDueDate && existing.dueDate) {
           const diff = Math.abs(newDueDate.getTime() - existing.dueDate.getTime());
           if (diff > 30 * 60 * 1000) continue;
         }
-        const existingTokens = new Set(existing.title.toLowerCase().split(/\s+/).filter(Boolean));
-        const intersection = [...newTokens].filter((t) => existingTokens.has(t)).length;
+        const existingTokens = new Set(
+          existing.title.toLowerCase().split(/\s+/).filter(Boolean),
+        );
+        const intersection = [...newTokens].filter((token) =>
+          existingTokens.has(token),
+        ).length;
         const union = new Set([...newTokens, ...existingTokens]).size;
         const jaccard = union > 0 ? intersection / union : 0;
         if (jaccard >= 0.8) {
           set.status = 409;
-          return { error: `A similar task already exists: "${existing.title}"`, existingTaskId: existing.id };
+          return {
+            error: `A similar task already exists: "${existing.title}"`,
+            existingTaskId: existing.id,
+          };
         }
       }
+
+      const assignedTo = normaliseAssignees(body.assignedTo);
 
       const [task] = await db
         .insert(schema.tasks)
@@ -101,7 +134,7 @@ export const taskRoutes = new Elysia({ prefix: "/api/v1/tasks" })
           createdBy: user.id,
           title: body.title,
           description: body.description ?? null,
-          assignedTo: body.assignedTo ?? null,
+          assignedTo,
           dueDate: newDueDate,
           priority: body.priority ?? "medium",
           category: body.category ?? null,
@@ -109,13 +142,27 @@ export const taskRoutes = new Elysia({ prefix: "/api/v1/tasks" })
         })
         .returning();
 
+      if (assignedTo.length > 0) {
+        const creatorName = dbUser.name ?? "Someone";
+        notifyFamilyMembers(
+          assignedTo,
+          "New task assigned",
+          `${creatorName} assigned you: ${body.title}`,
+          { type: "task_assigned", taskId: task.id },
+        ).catch((err) =>
+          console.warn("[routes/tasks] Push notification failed:", err),
+        );
+      }
+
       return { task };
     },
     {
       body: t.Object({
         title: t.String(),
         description: t.Optional(t.String()),
-        assignedTo: t.Optional(t.String()),
+        assignedTo: t.Optional(
+          t.Union([t.Array(t.String()), t.String()]),
+        ),
         dueDate: t.Optional(t.String()),
         priority: t.Optional(t.String()),
         category: t.Optional(t.String()),
@@ -129,7 +176,7 @@ export const taskRoutes = new Elysia({ prefix: "/api/v1/tasks" })
     "/:id",
     async ({ params, body, user, set }) => {
       const [dbUser] = await db
-        .select({ familyId: schema.user.familyId })
+        .select({ familyId: schema.user.familyId, name: schema.user.name })
         .from(schema.user)
         .where(eq(schema.user.id, user.id));
 
@@ -138,11 +185,30 @@ export const taskRoutes = new Elysia({ prefix: "/api/v1/tasks" })
         return { error: "No family found." };
       }
 
+      const existing = await db.query.tasks.findFirst({
+        where: and(
+          eq(schema.tasks.id, params.id),
+          eq(schema.tasks.familyId, dbUser.familyId),
+        ),
+      });
+
+      if (!existing) {
+        set.status = 404;
+        return { error: "Task not found." };
+      }
+
       const updates: Record<string, any> = { updatedAt: new Date() };
       if (body.title !== undefined) updates.title = body.title;
       if (body.description !== undefined) updates.description = body.description;
-      if (body.assignedTo !== undefined) updates.assignedTo = body.assignedTo;
-      if (body.dueDate !== undefined) updates.dueDate = body.dueDate ? new Date(body.dueDate) : null;
+
+      let newAssignees: string[] | null = null;
+      if (body.assignedTo !== undefined) {
+        newAssignees = normaliseAssignees(body.assignedTo);
+        updates.assignedTo = newAssignees;
+      }
+
+      if (body.dueDate !== undefined)
+        updates.dueDate = body.dueDate ? new Date(body.dueDate) : null;
       if (body.priority !== undefined) updates.priority = body.priority;
       if (body.status !== undefined) {
         updates.status = body.status;
@@ -160,9 +226,22 @@ export const taskRoutes = new Elysia({ prefix: "/api/v1/tasks" })
         )
         .returning();
 
-      if (!task) {
-        set.status = 404;
-        return { error: "Task not found." };
+      if (newAssignees && newAssignees.length > 0) {
+        const prior = new Set(
+          Array.isArray(existing.assignedTo) ? (existing.assignedTo as string[]) : [],
+        );
+        const freshlyAssigned = newAssignees.filter((id) => !prior.has(id));
+        if (freshlyAssigned.length > 0) {
+          const creatorName = dbUser.name ?? "Someone";
+          notifyFamilyMembers(
+            freshlyAssigned,
+            "Task assigned",
+            `${creatorName} assigned you: ${task.title}`,
+            { type: "task_assigned", taskId: task.id },
+          ).catch((err) =>
+            console.warn("[routes/tasks] Push notification failed:", err),
+          );
+        }
       }
 
       return { task };
@@ -170,8 +249,10 @@ export const taskRoutes = new Elysia({ prefix: "/api/v1/tasks" })
     {
       body: t.Object({
         title: t.Optional(t.String()),
-        description: t.Optional(t.String()),
-        assignedTo: t.Optional(t.Nullable(t.String())),
+        description: t.Optional(t.Nullable(t.String())),
+        assignedTo: t.Optional(
+          t.Union([t.Array(t.String()), t.Null(), t.String()]),
+        ),
         dueDate: t.Optional(t.Nullable(t.String())),
         priority: t.Optional(t.String()),
         status: t.Optional(t.String()),

@@ -19,6 +19,10 @@ import {
   updateTask as apiUpdateTask,
 } from "../../lib/api";
 import { useTheme } from "../../context/ThemeContext";
+import { ScreenHeader } from "../../components/ui/ScreenHeader";
+import { AddFab } from "../../components/ui/AddFab";
+import { CreateTaskSheet } from "../../components/modals/CreateTaskSheet";
+import { AddShoppingItemSheet } from "../../components/modals/AddShoppingItemSheet";
 import type { Task, ShoppingListItem } from "@ally/shared";
 
 // ---------- Helper Components ----------
@@ -52,7 +56,10 @@ function TaskRow({
   task,
   onToggle,
 }: {
-  task: Task & { assignedToName?: string | null };
+  task: Task & {
+    assignedToName?: string | null;
+    assignedToNames?: string[] | null;
+  };
   onToggle: (taskId: string) => void;
 }) {
   const { theme } = useTheme();
@@ -106,7 +113,11 @@ function CompletedTaskRow({
   task,
   onUnmark,
 }: {
-  task: Task & { assignedToName?: string | null; completedByName?: string | null };
+  task: Task & {
+    assignedToName?: string | null;
+    assignedToNames?: string[] | null;
+    completedByName?: string | null;
+  };
   onUnmark: (taskId: string) => void;
 }) {
   const { theme } = useTheme();
@@ -237,6 +248,8 @@ export default function ListsScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showCompleted, setShowCompleted] = useState(false);
+  const [taskSheetOpen, setTaskSheetOpen] = useState(false);
+  const [shoppingSheetOpen, setShoppingSheetOpen] = useState(false);
 
   const hasFamily = !!family || !!dashboard;
 
@@ -339,6 +352,7 @@ export default function ListsScreen() {
     return (
       <View className="flex-1 bg-background">
         <SafeAreaView edges={["top"]} className="flex-1">
+          <ScreenHeader title="Lists" />
           <View className="flex-1 px-5 items-center justify-center">
             <Ionicons
               name="list-outline"
@@ -357,8 +371,12 @@ export default function ListsScreen() {
   return (
     <View className="flex-1 bg-background">
       <SafeAreaView edges={["top"]} className="flex-1">
+        <ScreenHeader
+          title="Lists"
+          subtitle="Tasks, reminders, and shopping for the family"
+        />
         <ScrollView
-          className="flex-1 px-5 pt-2"
+          className="flex-1 px-5"
           contentContainerStyle={{ paddingBottom: 120 }}
           showsVerticalScrollIndicator={false}
           refreshControl={
@@ -374,15 +392,6 @@ export default function ListsScreen() {
             animate={{ opacity: 1, translateY: 0 }}
             transition={{ type: "timing", duration: 400 }}
           >
-            <View className="mb-2 mt-2">
-              <Text className="text-foreground text-2xl font-sans-bold">
-                Lists
-              </Text>
-              <Text className="text-muted text-sm font-sans mt-1">
-                Tasks, reminders, and shopping for the family
-              </Text>
-            </View>
-
             {error && (
               <Text
                 className="text-sm font-sans mb-2"
@@ -534,6 +543,34 @@ export default function ListsScreen() {
           </MotiView>
         </ScrollView>
       </SafeAreaView>
+
+      <AddFab
+        actions={[
+          {
+            id: "task",
+            label: "Task",
+            icon: "checkmark-done-outline",
+            onPress: () => setTaskSheetOpen(true),
+          },
+          {
+            id: "shopping",
+            label: "Shopping item",
+            icon: "cart-outline",
+            onPress: () => setShoppingSheetOpen(true),
+          },
+        ]}
+      />
+
+      <CreateTaskSheet
+        visible={taskSheetOpen}
+        onClose={() => setTaskSheetOpen(false)}
+        onCreated={() => load(true)}
+      />
+      <AddShoppingItemSheet
+        visible={shoppingSheetOpen}
+        onClose={() => setShoppingSheetOpen(false)}
+        onAdded={() => load(true)}
+      />
     </View>
   );
 }

@@ -19,6 +19,10 @@ import {
   getReminders,
 } from "../../lib/api";
 import { useTheme } from "../../context/ThemeContext";
+import { ScreenHeader } from "../../components/ui/ScreenHeader";
+import { AddFab } from "../../components/ui/AddFab";
+import { CreateReminderSheet } from "../../components/modals/CreateReminderSheet";
+import { CreateTaskSheet } from "../../components/modals/CreateTaskSheet";
 import type { CalendarEvent, Task } from "@ally/shared";
 
 type DashboardReminder = {
@@ -26,7 +30,7 @@ type DashboardReminder = {
   title: string;
   body: string | null;
   remindAt: string;
-  targetMemberId?: string | null;
+  targetMemberIds?: string[] | null;
 };
 
 LocaleConfig.locales["en"] = {
@@ -144,6 +148,8 @@ export default function CalendarScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [reminderSheetOpen, setReminderSheetOpen] = useState(false);
+  const [taskSheetOpen, setTaskSheetOpen] = useState(false);
 
   const hasFamily = !!family || !!dashboard;
 
@@ -228,13 +234,18 @@ export default function CalendarScreen() {
       if (!task.dueDate) continue;
       const date = new Date(task.dueDate);
       const key = toDateKey(date);
-      const assignee = task.assignedTo ? memberMap.get(task.assignedTo) : null;
+      const assigneeIds = Array.isArray(task.assignedTo)
+        ? task.assignedTo
+        : [];
+      const assigneeNames = assigneeIds
+        .map((id) => memberMap.get(id))
+        .filter(Boolean) as string[];
       push(key, {
         id: `task-${task.id}`,
         kind: "task",
         title: task.title,
         time: date,
-        subtitle: assignee ?? undefined,
+        subtitle: assigneeNames.join(", ") || undefined,
         status: task.status,
       });
     }
@@ -242,15 +253,18 @@ export default function CalendarScreen() {
     for (const reminder of reminders) {
       const date = new Date(reminder.remindAt);
       const key = toDateKey(date);
-      const assignee = reminder.targetMemberId
-        ? memberMap.get(reminder.targetMemberId)
-        : null;
+      const ids = Array.isArray(reminder.targetMemberIds)
+        ? reminder.targetMemberIds
+        : [];
+      const assigneeNames = ids
+        .map((id) => memberMap.get(id))
+        .filter(Boolean) as string[];
       push(key, {
         id: `reminder-${reminder.id}`,
         kind: "reminder",
         title: reminder.title,
         time: date,
-        subtitle: assignee ?? reminder.body ?? undefined,
+        subtitle: assigneeNames.join(", ") || reminder.body || undefined,
       });
     }
 
@@ -332,6 +346,7 @@ export default function CalendarScreen() {
     return (
       <View className="flex-1 bg-background">
         <SafeAreaView edges={["top"]} className="flex-1">
+          <ScreenHeader title="Calendar" />
           <View className="flex-1 px-5 items-center justify-center">
             <Ionicons
               name="calendar-outline"
@@ -350,6 +365,28 @@ export default function CalendarScreen() {
   return (
     <View className="flex-1 bg-background">
       <SafeAreaView edges={["top"]} className="flex-1">
+        <ScreenHeader
+          title="Calendar"
+          subtitle={family?.name ?? dashboard?.family?.name ?? `${user.name}'s Family`}
+          rightSlot={
+            !isToday ? (
+              <TouchableOpacity
+                onPress={() => setSelectedDate(toDateKey(new Date()))}
+                className="rounded-full px-3 py-1.5 border border-primary-soft flex-row items-center mr-2"
+                activeOpacity={0.7}
+              >
+                <Ionicons
+                  name="today-outline"
+                  size={14}
+                  color={theme.colors["--color-primary"]}
+                />
+                <Text className="text-primary text-xs font-sans-semibold ml-1">
+                  Today
+                </Text>
+              </TouchableOpacity>
+            ) : null
+          }
+        />
         <ScrollView
           className="flex-1"
           contentContainerStyle={{ paddingBottom: 120 }}
@@ -367,34 +404,6 @@ export default function CalendarScreen() {
             animate={{ opacity: 1, translateY: 0 }}
             transition={{ type: "timing", duration: 300 }}
           >
-            {/* Header */}
-            <View className="px-5 mt-2 mb-2 flex-row items-end justify-between">
-              <View>
-                <Text className="text-foreground text-2xl font-sans-bold">
-                  Calendar
-                </Text>
-                <Text className="text-muted text-sm font-sans mt-1">
-                  {family?.name ?? dashboard?.family?.name ?? `${user.name}'s Family`}
-                </Text>
-              </View>
-              {!isToday && (
-                <TouchableOpacity
-                  onPress={() => setSelectedDate(toDateKey(new Date()))}
-                  className="rounded-full px-3 py-1.5 border border-primary-soft flex-row items-center"
-                  activeOpacity={0.7}
-                >
-                  <Ionicons
-                    name="today-outline"
-                    size={14}
-                    color={theme.colors["--color-primary"]}
-                  />
-                  <Text className="text-primary text-xs font-sans-semibold ml-1">
-                    Today
-                  </Text>
-                </TouchableOpacity>
-              )}
-            </View>
-
             {/* Month Calendar */}
             <View className="mx-3 mb-2 rounded-2xl overflow-hidden bg-background">
               <Calendar
@@ -479,6 +488,34 @@ export default function CalendarScreen() {
           </MotiView>
         </ScrollView>
       </SafeAreaView>
+
+      <AddFab
+        actions={[
+          {
+            id: "reminder",
+            label: "Reminder",
+            icon: "notifications-outline",
+            onPress: () => setReminderSheetOpen(true),
+          },
+          {
+            id: "task",
+            label: "Task",
+            icon: "checkmark-done-outline",
+            onPress: () => setTaskSheetOpen(true),
+          },
+        ]}
+      />
+
+      <CreateReminderSheet
+        visible={reminderSheetOpen}
+        onClose={() => setReminderSheetOpen(false)}
+        onCreated={() => load(true)}
+      />
+      <CreateTaskSheet
+        visible={taskSheetOpen}
+        onClose={() => setTaskSheetOpen(false)}
+        onCreated={() => load(true)}
+      />
     </View>
   );
 }

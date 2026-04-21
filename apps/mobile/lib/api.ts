@@ -571,7 +571,7 @@ export interface ReminderItem {
   id: string;
   userId: string;
   familyId: string | null;
-  targetMemberId: string | null;
+  targetMemberIds: string[];
   title: string;
   body: string | null;
   remindAt: string;
@@ -593,7 +593,42 @@ export async function getReminders(params?: {
   if (params?.end) search.set("end", params.end);
   if (params?.status) search.set("status", params.status);
   const qs = search.toString();
-  return apiRequest(`/api/v1/family/reminders${qs ? `?${qs}` : ""}`);
+  return apiRequest(`/api/v1/reminders${qs ? `?${qs}` : ""}`);
+}
+
+export interface CreateReminderRequest {
+  title: string;
+  body?: string;
+  remindAt: string;
+  timezone?: string;
+  targetMemberIds?: string[];
+}
+
+export async function createReminder(
+  data: CreateReminderRequest,
+): Promise<{ reminder: ReminderItem }> {
+  return apiRequest("/api/v1/reminders", {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
+export async function updateReminder(
+  reminderId: string,
+  data: Partial<CreateReminderRequest> & {
+    status?: "pending" | "sent" | "dismissed";
+  },
+): Promise<{ reminder: ReminderItem }> {
+  return apiRequest(`/api/v1/reminders/${reminderId}`, {
+    method: "PATCH",
+    body: JSON.stringify(data),
+  });
+}
+
+export async function deleteReminder(
+  reminderId: string,
+): Promise<{ deleted: boolean }> {
+  return apiRequest(`/api/v1/reminders/${reminderId}`, { method: "DELETE" });
 }
 
 // --- Calendar ---

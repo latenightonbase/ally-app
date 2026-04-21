@@ -90,7 +90,8 @@ export interface Task {
   createdBy: string;
   title: string;
   description: string | null;
-  assignedTo: string | null; // family member ID
+  /** Family member IDs assigned to this task (empty array = unassigned). */
+  assignedTo: string[];
   dueDate: string | null;
   status: TaskStatus;
   recurrence: TaskRecurrence;
@@ -106,7 +107,7 @@ export interface CreateTaskInput {
   familyId: string;
   title: string;
   description?: string;
-  assignedTo?: string;
+  assignedTo?: string[];
   dueDate?: string | Date;
   recurrence?: TaskRecurrence;
   priority?: TaskPriority;
@@ -172,13 +173,20 @@ export interface MealPlan {
 // ─── Reminders ───────────────────────────────────────────────────
 
 export type ReminderStatus = "pending" | "sent" | "dismissed";
-export type ReminderSource = "chat" | "extraction" | "onboarding" | "system";
+export type ReminderSource =
+  | "chat"
+  | "extraction"
+  | "onboarding"
+  | "system"
+  | "user"
+  | "proactive";
 
 export interface Reminder {
   id: string;
   userId: string;
-  familyId: string;
-  targetMemberId: string | null;
+  familyId: string | null;
+  /** Family member IDs this reminder targets (empty = creator only). */
+  targetMemberIds: string[];
   title: string;
   body: string | null;
   remindAt: string;
@@ -186,6 +194,24 @@ export interface Reminder {
   source: ReminderSource;
   status: ReminderStatus;
   createdAt: string;
+}
+
+export interface CreateReminderInput {
+  title: string;
+  body?: string;
+  remindAt: string | Date;
+  timezone?: string;
+  targetMemberIds?: string[];
+  familyId?: string;
+}
+
+export interface UpdateReminderInput {
+  title?: string;
+  body?: string | null;
+  remindAt?: string | Date;
+  timezone?: string;
+  targetMemberIds?: string[];
+  status?: ReminderStatus;
 }
 
 // ─── Family API request/response types ───────────────────────────
