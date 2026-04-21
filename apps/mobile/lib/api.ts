@@ -492,8 +492,14 @@ export async function getFamily(): Promise<{
 export async function createFamily(data: {
   name: string;
   timezone: string;
+  artworkId?: string;
+  inviteEmails?: string[];
   members?: Array<{ name: string; role: string; age?: number }>;
-}): Promise<{ family: Family; members: FamilyMember[] }> {
+}): Promise<{
+  family: Family;
+  members: FamilyMember[];
+  invitedEmails?: string[];
+}> {
   return apiRequest("/api/v1/family/", {
     method: "POST",
     body: JSON.stringify(data),
@@ -544,10 +550,50 @@ export async function joinFamilyByCode(
   });
 }
 
+export async function inviteFamilyByEmails(
+  emails: string[],
+): Promise<{ sent: string[]; skipped: string[] }> {
+  return apiRequest("/api/v1/family/invite-emails", {
+    method: "POST",
+    body: JSON.stringify({ emails }),
+  });
+}
+
 export async function regenerateInviteCode(): Promise<{ code: string }> {
   return apiRequest("/api/v1/family/invite-code/regenerate", {
     method: "POST",
   });
+}
+
+// --- Reminders ---
+
+export interface ReminderItem {
+  id: string;
+  userId: string;
+  familyId: string | null;
+  targetMemberId: string | null;
+  title: string;
+  body: string | null;
+  remindAt: string;
+  timezone: string | null;
+  source: string;
+  status: "pending" | "sent" | "dismissed";
+  notifiedAt: string | null;
+  dismissedAt: string | null;
+  createdAt: string;
+}
+
+export async function getReminders(params?: {
+  start?: string;
+  end?: string;
+  status?: string;
+}): Promise<{ reminders: ReminderItem[] }> {
+  const search = new URLSearchParams();
+  if (params?.start) search.set("start", params.start);
+  if (params?.end) search.set("end", params.end);
+  if (params?.status) search.set("status", params.status);
+  const qs = search.toString();
+  return apiRequest(`/api/v1/family/reminders${qs ? `?${qs}` : ""}`);
 }
 
 // --- Calendar ---

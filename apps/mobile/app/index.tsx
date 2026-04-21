@@ -6,13 +6,15 @@ import { useAppStore } from "../store/useAppStore";
 import { getUserProfile, getFamily } from "../lib/api";
 import { consumePendingInvite } from "./invite/[token]";
 
+type PostAuthDestination = "onboarding" | "family-setup" | "tabs";
+
 export default function Index() {
   const { data: session, isPending } = useSession();
   const setTier = useAppStore((s) => s.setTier);
   const setUser = useAppStore((s) => s.setUser);
   const lastUserId = useRef<string | null>(null);
   const [resolving, setResolving] = useState(false);
-  const [needsOnboarding, setNeedsOnboarding] = useState(false);
+  const [destination, setDestination] = useState<PostAuthDestination>("tabs");
   const [pendingInviteToken, setPendingInviteToken] = useState<string | null>(null);
 
   useEffect(() => {
@@ -27,7 +29,7 @@ export default function Index() {
     lastUserId.current = userId;
 
     setResolving(true);
-    setNeedsOnboarding(false);
+    setDestination("tabs");
 
     (async () => {
       try {
@@ -46,7 +48,11 @@ export default function Index() {
 
         const familyData = await getFamily().catch(() => null);
         if (!familyData?.family) {
-          setNeedsOnboarding(true);
+          // Completed onboarding (has allyName) but hasn't picked a family yet.
+          // Otherwise start the full onboarding from the top.
+          setDestination(
+            serverProfile.allyName ? "family-setup" : "onboarding",
+          );
         }
       } catch {
         // Best-effort
@@ -67,8 +73,11 @@ export default function Index() {
     if (pendingInviteToken) {
       return <Redirect href={`/invite/${pendingInviteToken}` as any} />;
     }
-    if (needsOnboarding) {
+    if (destination === "onboarding") {
       return <Redirect href="/(onboarding)" />;
+    }
+    if (destination === "family-setup") {
+      return <Redirect href="/(onboarding)/family-setup" />;
     }
     return <Redirect href="/(tabs)" />;
   }

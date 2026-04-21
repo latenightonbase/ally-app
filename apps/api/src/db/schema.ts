@@ -53,6 +53,7 @@ export const families = pgTable("families", {
   id: uuid("id").primaryKey().defaultRandom(),
   name: text("name").notNull(),
   inviteCode: text("invite_code").unique(),
+  artworkId: text("artwork_id"),
   createdBy: text("created_by")
     .notNull()
     .references(() => user.id, { onDelete: "cascade" }),

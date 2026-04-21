@@ -35,7 +35,7 @@ export default function OnboardingBriefingTimeScreen() {
   return (
     <OnboardingShell
       step={4}
-      totalSteps={6}
+      totalSteps={7}
       footer={<PrimaryCTA title="Continue" onPress={handleNext} />}
     >
       <View className="mt-4">

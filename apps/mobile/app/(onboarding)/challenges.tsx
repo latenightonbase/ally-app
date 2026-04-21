@@ -48,7 +48,7 @@ export default function OnboardingChallengesScreen() {
   return (
     <OnboardingShell
       step={3}
-      totalSteps={6}
+      totalSteps={7}
       footer={
         <PrimaryCTA
           title="Continue"

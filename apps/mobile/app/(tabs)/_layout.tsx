@@ -35,7 +35,7 @@ export default function TabLayout() {
         tabBarInactiveTintColor: colors["--color-muted"],
         tabBarShowLabel: true,
         tabBarLabelStyle: {
-          fontSize: 10,
+          fontSize: 9,
           fontWeight: "600",
           marginTop: 2,
         },
@@ -70,6 +70,32 @@ export default function TabLayout() {
                   ? "chatbubble-ellipses"
                   : "chatbubble-ellipses-outline"
               }
+              size={22}
+              color={color}
+            />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="calendar"
+        options={{
+          title: "Calendar",
+          tabBarIcon: ({ color, focused }) => (
+            <Ionicons
+              name={focused ? "calendar" : "calendar-outline"}
+              size={22}
+              color={color}
+            />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="lists"
+        options={{
+          title: "Lists",
+          tabBarIcon: ({ color, focused }) => (
+            <Ionicons
+              name={focused ? "list" : "list-outline"}
               size={22}
               color={color}
             />

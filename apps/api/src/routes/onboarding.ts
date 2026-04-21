@@ -144,65 +144,13 @@ export const onboardingRoutes = new Elysia({ prefix: "/api/v1" })
           timezone: body.timezone,
         });
 
-        // --- Create family if the AI extracted family info ---
-        let familyId: string | undefined;
-        let familyCreated = false;
-
-        const familyName = data.familyName || `${body.userName}'s Family`;
-        const familyMembers = data.familyMembers ?? [];
-
-        if (familyMembers.length > 0 || familyName) {
-          const [family] = await db
-            .insert(schema.families)
-            .values({
-              name: familyName,
-              createdBy: user.id,
-              timezone: body.timezone,
-            })
-            .returning({ id: schema.families.id });
-
-          familyId = family.id;
-          familyCreated = true;
-
-          // Add the user as the first family member (admin)
-          await db.insert(schema.familyMembers).values({
-            familyId,
-            userId: user.id,
-            name: body.userName,
-            role: "parent",
-            color: MEMBER_COLORS[0],
-          });
-
-          // Add other family members from onboarding
-          for (let i = 0; i < familyMembers.length; i++) {
-            const member = familyMembers[i];
-            await db.insert(schema.familyMembers).values({
-              familyId,
-              name: member.name,
-              role: member.role || "child",
-              age: member.age ?? null,
-              birthday: member.birthday ?? null,
-              school: member.school ?? null,
-              allergies: member.allergies ?? [],
-              dietaryPreferences: member.dietaryPreferences ?? [],
-              notes: member.notes ?? null,
-              color: MEMBER_COLORS[(i + 1) % MEMBER_COLORS.length],
-            });
-          }
-
-          // Create a default grocery list
-          await db.insert(schema.shoppingLists).values({
-            familyId,
-            name: "Groceries",
-            createdBy: user.id,
-          });
-
-          // Link user to family
-          await db
-            .update(schema.user)
-            .set({ familyId, familyRole: "admin" })
-            .where(eq(schema.user.id, user.id));
-        }
+        // Family creation now happens in a dedicated post-registration step
+        // (apps/mobile/app/(onboarding)/family-setup.tsx), so this endpoint
+        // no longer creates a family. Action items from the magic moment are
+        // stashed in the memory profile and replayed once the user either
+        // creates or joins a family.
+        const familyId: string | undefined = undefined;
+        const familyCreated = false;
 
         // --- Create events/tasks from magic-moment action items ---
         if (familyId && data.actionItems && data.actionItems.length > 0) {

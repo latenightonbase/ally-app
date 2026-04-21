@@ -87,7 +87,7 @@ export default function OnboardingCreateAccountScreen() {
       setUser({ dailyPingTime, timezone });
       reset();
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      router.replace("/(tabs)");
+      router.replace("/(onboarding)/family-setup");
     } catch (e) {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       Alert.alert(
@@ -180,7 +180,7 @@ export default function OnboardingCreateAccountScreen() {
 
   if (finalizing) {
     return (
-      <OnboardingShell step={6} totalSteps={6}>
+      <OnboardingShell step={6} totalSteps={7}>
         <View className="flex-1 items-center justify-center py-20">
           <ActivityIndicator
             size="large"
@@ -201,7 +201,7 @@ export default function OnboardingCreateAccountScreen() {
     return (
       <OnboardingShell
         step={6}
-        totalSteps={6}
+        totalSteps={7}
         keyboardAvoiding
         footer={
           <View className="gap-2">
@@ -260,7 +260,7 @@ export default function OnboardingCreateAccountScreen() {
   }
 
   return (
-    <OnboardingShell step={6} totalSteps={6}>
+    <OnboardingShell step={6} totalSteps={7}>
       <View className="mt-4">
         <MotiView
           from={{ opacity: 0, translateY: 8 }}

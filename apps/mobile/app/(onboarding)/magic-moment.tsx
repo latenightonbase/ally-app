@@ -43,7 +43,7 @@ export default function OnboardingMagicMomentScreen() {
   return (
     <OnboardingShell
       step={5}
-      totalSteps={6}
+      totalSteps={7}
       keyboardAvoiding
       footer={footer}
     >

@@ -3,6 +3,8 @@
 export interface Family {
   id: string;
   name: string;
+  inviteCode: string | null;
+  artworkId: string | null;
   createdBy: string;
   timezone: string;
   createdAt: string;
@@ -191,6 +193,8 @@ export interface Reminder {
 export interface CreateFamilyRequest {
   name: string;
   timezone?: string;
+  artworkId?: string;
+  inviteEmails?: string[];
   members?: {
     name: string;
     role: "parent" | "child" | "other";

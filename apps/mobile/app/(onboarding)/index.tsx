@@ -24,7 +24,7 @@ export default function OnboardingNameScreen() {
   return (
     <OnboardingShell
       step={1}
-      totalSteps={6}
+      totalSteps={7}
       keyboardAvoiding
       footer={
         <PrimaryCTA

@@ -61,7 +61,7 @@ export default function OnboardingFamilyScreen() {
   return (
     <OnboardingShell
       step={2}
-      totalSteps={6}
+      totalSteps={7}
       footer={<PrimaryCTA title="Continue" onPress={handleNext} />}
     >
       <View className="mt-4">

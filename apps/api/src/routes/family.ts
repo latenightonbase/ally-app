@@ -1,6 +1,7 @@
 import { Elysia, t } from "elysia";
 import { authMiddleware } from "../middleware/auth";
 import { sendPushNotification } from "../services/notifications";
+import { sendFamilyInviteEmail } from "../services/email";
 import { buildInviteDeepLink, buildPublicInviteUrl } from "../lib/inviteWeb";
 import { db, schema } from "../db";
 import { and, eq, gte, lte, isNull, desc, asc, sql } from "drizzle-orm";
@@ -49,7 +50,7 @@ export const familyRoutes = new Elysia({ prefix: "/api/v1/family" })
   .post(
     "/",
     async ({ body, user }) => {
-      const { name, timezone, members } = body;
+      const { name, timezone, artworkId, inviteEmails, members } = body;
 
       // Create family
       const [family] = await db
@@ -58,6 +59,7 @@ export const familyRoutes = new Elysia({ prefix: "/api/v1/family" })
           name,
           createdBy: user.id,
           timezone: timezone ?? "America/New_York",
+          artworkId: artworkId ?? null,
           inviteCode: generateInviteCode(),
         })
         .returning();
@@ -85,10 +87,12 @@ export const familyRoutes = new Elysia({ prefix: "/api/v1/family" })
       }
 
       // Also add the user themselves as a parent member
+      const inviterName =
+        (await db.select({ name: schema.user.name }).from(schema.user).where(eq(schema.user.id, user.id)))[0]?.name ?? "Me";
       await db.insert(schema.familyMembers).values({
         familyId: family.id,
         userId: user.id,
-        name: (await db.select({ name: schema.user.name }).from(schema.user).where(eq(schema.user.id, user.id)))[0]?.name ?? "Me",
+        name: inviterName,
         role: "parent",
       });
 
@@ -99,17 +103,57 @@ export const familyRoutes = new Elysia({ prefix: "/api/v1/family" })
         createdBy: user.id,
       });
 
+      // Send invite emails (fire-and-forget)
+      const uniqueEmails = Array.from(
+        new Set(
+          (inviteEmails ?? [])
+            .map((e) => e.trim().toLowerCase())
+            .filter((e) => e.length > 0),
+        ),
+      );
+      if (uniqueEmails.length && family.inviteCode) {
+        // Record pending invites in DB so admins can track them
+        const token = () => crypto.randomBytes(32).toString("hex");
+        const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000); // 30 days
+        await db
+          .insert(schema.familyInvites)
+          .values(
+            uniqueEmails.map((email) => ({
+              familyId: family.id,
+              invitedBy: user.id,
+              email,
+              role: "member" as const,
+              token: token(),
+              expiresAt,
+            })),
+          )
+          .onConflictDoNothing();
+
+        for (const email of uniqueEmails) {
+          sendFamilyInviteEmail({
+            to: email,
+            familyName: family.name,
+            inviterName,
+            inviteCode: family.inviteCode,
+          }).catch((err) =>
+            console.warn(`[family/create] invite email to ${email} failed:`, err),
+          );
+        }
+      }
+
       const allMembers = await db
         .select()
         .from(schema.familyMembers)
         .where(eq(schema.familyMembers.familyId, family.id));
 
-      return { family, members: allMembers };
+      return { family, members: allMembers, invitedEmails: uniqueEmails };
     },
     {
       body: t.Object({
         name: t.String(),
         timezone: t.Optional(t.String()),
+        artworkId: t.Optional(t.String()),
+        inviteEmails: t.Optional(t.Array(t.String())),
         members: t.Optional(
           t.Array(
             t.Object({
@@ -170,6 +214,95 @@ export const familyRoutes = new Elysia({ prefix: "/api/v1/family" })
       body: t.Object({
         email: t.String(),
         role: t.Optional(t.String()),
+      }),
+    },
+  )
+
+  // ─── Batch invite people to the family by email ───────────────
+  .post(
+    "/invite-emails",
+    async ({ body, user, set }) => {
+      const [dbUser] = await db
+        .select({ familyId: schema.user.familyId, familyRole: schema.user.familyRole, name: schema.user.name })
+        .from(schema.user)
+        .where(eq(schema.user.id, user.id));
+
+      if (!dbUser?.familyId) {
+        set.status = 404;
+        return { error: "No family found." };
+      }
+
+      if (dbUser.familyRole !== "admin") {
+        set.status = 403;
+        return { error: "Only the family admin can send invites." };
+      }
+
+      const uniqueEmails = Array.from(
+        new Set(
+          body.emails.map((e) => e.trim().toLowerCase()).filter((e) => e.length > 0),
+        ),
+      );
+
+      if (uniqueEmails.length === 0) {
+        return { sent: [], skipped: [] };
+      }
+
+      const [family] = await db
+        .select({ id: schema.families.id, name: schema.families.name, inviteCode: schema.families.inviteCode })
+        .from(schema.families)
+        .where(eq(schema.families.id, dbUser.familyId));
+
+      if (!family) {
+        set.status = 404;
+        return { error: "Family not found." };
+      }
+
+      let inviteCode = family.inviteCode;
+      if (!inviteCode) {
+        inviteCode = generateInviteCode();
+        await db
+          .update(schema.families)
+          .set({ inviteCode })
+          .where(eq(schema.families.id, family.id));
+      }
+
+      const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000); // 30 days
+      await db
+        .insert(schema.familyInvites)
+        .values(
+          uniqueEmails.map((email) => ({
+            familyId: family.id,
+            invitedBy: user.id,
+            email,
+            role: "member" as const,
+            token: crypto.randomBytes(32).toString("hex"),
+            expiresAt,
+          })),
+        )
+        .onConflictDoNothing();
+
+      const inviterName = dbUser.name ?? "A family member";
+      const results = await Promise.all(
+        uniqueEmails.map((email) =>
+          sendFamilyInviteEmail({
+            to: email,
+            familyName: family.name,
+            inviterName,
+            inviteCode: inviteCode!,
+          })
+            .then((ok) => ({ email, ok }))
+            .catch(() => ({ email, ok: false })),
+        ),
+      );
+
+      return {
+        sent: results.filter((r) => r.ok).map((r) => r.email),
+        skipped: results.filter((r) => !r.ok).map((r) => r.email),
+      };
+    },
+    {
+      body: t.Object({
+        emails: t.Array(t.String()),
       }),
     },
   )
@@ -363,6 +496,64 @@ export const familyRoutes = new Elysia({ prefix: "/api/v1/family" })
     {
       body: t.Object({
         code: t.String(),
+      }),
+    },
+  )
+
+  // ─── Reminders: all reminders for the family in a date range ──
+  .get(
+    "/reminders",
+    async ({ query, user, set }) => {
+      const [dbUser] = await db
+        .select({ familyId: schema.user.familyId })
+        .from(schema.user)
+        .where(eq(schema.user.id, user.id));
+
+      if (!dbUser?.familyId) {
+        set.status = 404;
+        return { error: "No family found." };
+      }
+
+      const conditions = [
+        sql`(${schema.reminders.familyId} = ${dbUser.familyId} OR ${schema.reminders.userId} = ${user.id})`,
+      ];
+
+      if (query.start) {
+        conditions.push(gte(schema.reminders.remindAt, new Date(query.start)));
+      }
+      if (query.end) {
+        conditions.push(lte(schema.reminders.remindAt, new Date(query.end)));
+      }
+      if (query.status) {
+        conditions.push(
+          eq(
+            schema.reminders.status,
+            query.status as "pending" | "sent" | "dismissed",
+          ),
+        );
+      }
+
+      const rows = await db
+        .select()
+        .from(schema.reminders)
+        .where(and(...conditions))
+        .orderBy(asc(schema.reminders.remindAt));
+
+      return {
+        reminders: rows.map((r) => ({
+          ...r,
+          remindAt: r.remindAt?.toISOString(),
+          notifiedAt: r.notifiedAt?.toISOString() ?? null,
+          dismissedAt: r.dismissedAt?.toISOString() ?? null,
+          createdAt: r.createdAt?.toISOString(),
+        })),
+      };
+    },
+    {
+      query: t.Object({
+        start: t.Optional(t.String()),
+        end: t.Optional(t.String()),
+        status: t.Optional(t.String()),
       }),
     },
   )

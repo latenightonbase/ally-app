@@ -363,27 +363,39 @@ async function handleSetFamilyReminder(
   if (when) {
     const remindAt = parseReminderTime(when, ctx.timezone);
 
-    // Dedup: check if a pending reminder already exists within ±5 minutes
-    const DEDUP_WINDOW_MS = 5 * 60_000;
-    const existing = await db
-      .select({ id: schema.reminders.id })
+    // Dedup: check if a pending reminder with a similar title already exists for this user.
+    // This catches the common pattern where the AI sets a reminder on the user's first message
+    // and then sets another one after the user confirms the time — the titles match, times differ.
+    const pendingReminders = await db
+      .select({ id: schema.reminders.id, title: schema.reminders.title })
       .from(schema.reminders)
       .where(
         and(
           eq(schema.reminders.userId, ctx.userId),
           eq(schema.reminders.status, "pending"),
-          gte(schema.reminders.remindAt, new Date(remindAt.getTime() - DEDUP_WINDOW_MS)),
-          lte(schema.reminders.remindAt, new Date(remindAt.getTime() + DEDUP_WINDOW_MS)),
         ),
       )
-      .limit(1);
+      .limit(50);
 
-    if (existing.length > 0) {
+    const similarExisting = pendingReminders.find((r) => {
+      const existingTokens = new Set(r.title.toLowerCase().split(/\W+/).filter(Boolean));
+      const newTokens = new Set(topic.toLowerCase().split(/\W+/).filter(Boolean));
+      const intersection = [...existingTokens].filter((t) => newTokens.has(t)).length;
+      const union = new Set([...existingTokens, ...newTokens]).size;
+      const jaccard = union > 0 ? intersection / union : 0;
+      return jaccard >= 0.5;
+    });
+
+    if (similarExisting) {
+      // Update the existing reminder's time instead of creating a duplicate
+      const { updateReminderTime } = await import("../services/reminderService");
+      await updateReminderTime(similarExisting.id, remindAt);
       return JSON.stringify({
-        already_set: true,
+        updated: true,
         topic,
-        existingReminderId: existing[0].id,
-        message: "A reminder for this is already set.",
+        reminderId: similarExisting.id,
+        scheduledFor: remindAt.toISOString(),
+        message: "Updated existing reminder to new time.",
       });
     }
 

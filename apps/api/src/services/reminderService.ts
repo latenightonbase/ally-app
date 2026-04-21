@@ -261,6 +261,33 @@ export async function processReminders(): Promise<void> {
 }
 
 /**
+ * Update the scheduled time for a pending reminder.
+ * Used when the user refines the reminder time after initial creation.
+ */
+export async function updateReminderTime(
+  reminderId: string,
+  remindAt: Date,
+): Promise<boolean> {
+  const [updated] = await db
+    .update(schema.reminders)
+    .set({ remindAt })
+    .where(
+      and(
+        eq(schema.reminders.id, reminderId),
+        eq(schema.reminders.status, "pending"),
+      ),
+    )
+    .returning({ id: schema.reminders.id });
+
+  if (updated) {
+    console.log(
+      `[reminders] Updated reminder ${reminderId} to ${remindAt.toISOString()}`,
+    );
+  }
+  return !!updated;
+}
+
+/**
  * Dismiss a reminder (user acknowledged it).
  */
 export async function dismissReminder(
