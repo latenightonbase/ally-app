@@ -460,11 +460,6 @@ export const familyRoutes = new Elysia({ prefix: "/api/v1/family" })
         .from(schema.user)
         .where(eq(schema.user.id, user.id));
 
-      if (currentUser?.familyId) {
-        set.status = 409;
-        return { error: "You already belong to a family. Leave your current family first." };
-      }
-
       const code = body.code.trim().toUpperCase();
       const [family] = await db
         .select()
@@ -476,13 +471,27 @@ export const familyRoutes = new Elysia({ prefix: "/api/v1/family" })
         return { error: "Invalid invite code. Check the code and try again." };
       }
 
-      // Link user to family
+      if (currentUser?.familyId === family.id) {
+        return { joined: true, familyId: family.id, switched: false };
+      }
+
+      const previousFamilyId = currentUser?.familyId ?? null;
+      if (previousFamilyId) {
+        await db
+          .delete(schema.familyMembers)
+          .where(
+            and(
+              eq(schema.familyMembers.familyId, previousFamilyId),
+              eq(schema.familyMembers.userId, user.id),
+            ),
+          );
+      }
+
       await db
         .update(schema.user)
         .set({ familyId: family.id, familyRole: "member" })
         .where(eq(schema.user.id, user.id));
 
-      // Create a family member record
       const userName = (await db.select({ name: schema.user.name }).from(schema.user).where(eq(schema.user.id, user.id)))[0]?.name ?? "Member";
       await db.insert(schema.familyMembers).values({
         familyId: family.id,
@@ -491,7 +500,11 @@ export const familyRoutes = new Elysia({ prefix: "/api/v1/family" })
         role: "parent",
       });
 
-      return { joined: true, familyId: family.id };
+      return {
+        joined: true,
+        familyId: family.id,
+        switched: Boolean(previousFamilyId),
+      };
     },
     {
       body: t.Object({
