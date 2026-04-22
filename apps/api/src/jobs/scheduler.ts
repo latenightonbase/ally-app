@@ -1,15 +1,13 @@
 import { db, schema } from "../db";
 import { eq, and, gte } from "drizzle-orm";
 import { runDailyPing } from "./dailyPing";
-import { runWeeklyInsights } from "./weeklyInsights";
 import { runConsolidation } from "./consolidation";
 import { runMemoryMaintenance } from "./memoryMaintenance";
 import { runProactiveAgent } from "./proactiveAgent";
 import { emit } from "../services/events";
-import { registerProactiveHandlers } from "../services/proactive";
+// import { registerProactiveHandlers } from "../services/proactive";
 import { flushAllBatches } from "../services/memoryQueue";
 import { processReminders } from "../services/reminderService";
-import { processCheckins } from "../services/checkinService";
 
 interface ScheduledJob {
   name: string;
@@ -33,19 +31,6 @@ const jobs: ScheduledJob[] = [
     handler: processReminders,
     enabled: true,
     skipDedup: true,
-  },
-  // {
-  //   name: "proactive_checkins",
-  //   cronExpression: "0 */3 * * *",
-  //   handler: processCheckins,
-  //   enabled: true,
-  //   skipDedup: true,
-  // },
-  {
-    name: "weekly_insights",
-    cronExpression: "0 20 * * 0",
-    handler: runWeeklyInsights,
-    enabled: true,
   },
   {
     name: "proactive_scan",
@@ -179,7 +164,7 @@ async function executeJob(job: ScheduledJob) {
 }
 
 export function startScheduler() {
-  registerProactiveHandlers();
+  // registerProactiveHandlers();
 
   const checkInterval = 60_000;
 
