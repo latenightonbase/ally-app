@@ -1,8 +1,8 @@
 import React from "react";
 import { View, Text, Pressable } from "react-native";
-import { router } from "expo-router";
 import { useSession } from "../../lib/auth";
 import { useAppStore } from "../../store/useAppStore";
+import { useSettingsSheet } from "../../store/useSettingsSheet";
 import { Avatar } from "./Avatar";
 
 interface ScreenHeaderProps {
@@ -14,6 +14,7 @@ interface ScreenHeaderProps {
 export function ScreenHeader({ title, subtitle, rightSlot }: ScreenHeaderProps) {
   const session = useSession();
   const storeName = useAppStore((s) => s.user.name);
+  const presentSettings = useSettingsSheet((s) => s.present);
 
   const displayName =
     (session.data?.user as { name?: string; email?: string } | undefined)?.name ??
@@ -45,7 +46,7 @@ export function ScreenHeader({ title, subtitle, rightSlot }: ScreenHeaderProps) 
         <Pressable
           accessibilityRole="button"
           accessibilityLabel="Open profile and settings"
-          onPress={() => router.push("/settings")}
+          onPress={presentSettings}
           hitSlop={8}
           className="active:opacity-70"
         >

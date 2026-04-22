@@ -97,25 +97,44 @@ export function ChatInput({ onSend, disabled = false }: ChatInputProps) {
   const showMic = micAvailable && text.trim().length === 0;
 
   return (
-    <View className="flex-row items-end px-4 py-3 bg-background border-t border-surface">
-      <View className="flex-1 bg-surface rounded-2xl px-4 py-2.5 mr-3 flex-row items-end">
+    <View
+      className="flex-row items-end px-4 py-3"
+      style={{
+        backgroundColor: theme.colors["--color-background"],
+        borderTopWidth: 1,
+        borderTopColor: theme.colors["--color-border"],
+      }}
+    >
+      <View
+        className="flex-1 mr-3 flex-row items-end"
+        style={{
+          backgroundColor: theme.colors["--color-surface"],
+          borderRadius: 24,
+          paddingHorizontal: 18,
+          paddingVertical: 10,
+          borderWidth: 1,
+          borderColor: theme.colors["--color-border"],
+        }}
+      >
         <TextInput
           value={text}
           onChangeText={setText}
-          placeholder={isListening ? "Listening..." : "Type a message..."}
+          placeholder={isListening ? "Listening..." : "Message Anzi..."}
           placeholderTextColor={
             isListening
               ? theme.colors["--color-primary"]
-              : theme.colors["--color-muted"]
+              : theme.colors["--color-faint"]
           }
           multiline
           maxLength={500}
           style={{
             maxHeight: 100,
             color: theme.colors["--color-foreground"],
-            fontSize: 16,
+            fontSize: 15,
+            paddingTop: 4,
+            paddingBottom: 4,
           }}
-          className="flex-1 font-sans text-base"
+          className="flex-1 font-sans"
           onSubmitEditing={handleSend}
           blurOnSubmit={false}
         />
@@ -126,28 +145,59 @@ export function ChatInput({ onSend, disabled = false }: ChatInputProps) {
           <Pressable
             onPress={handleMicPress}
             disabled={disabled}
-            className={`w-11 h-11 rounded-full items-center justify-center ${
-              isListening ? "bg-primary" : "bg-muted/30"
-            }`}
+            style={{
+              width: 46,
+              height: 46,
+              borderRadius: 23,
+              alignItems: "center",
+              justifyContent: "center",
+              backgroundColor: isListening
+                ? theme.colors["--color-primary"]
+                : theme.colors["--color-primary-soft"],
+              shadowColor: isListening
+                ? theme.colors["--color-primary"]
+                : "transparent",
+              shadowOffset: { width: 0, height: 4 },
+              shadowOpacity: 0.3,
+              shadowRadius: 10,
+              elevation: isListening ? 4 : 0,
+            }}
           >
             <Ionicons
               name={isListening ? "mic" : "mic-outline"}
               size={20}
-              color={isListening ? "white" : theme.colors["--color-primary"]}
+              color={
+                isListening ? "#ffffff" : theme.colors["--color-primary"]
+              }
             />
           </Pressable>
         </Animated.View>
       ) : (
         <Pressable
           onPress={handleSend}
-          className={`w-11 h-11 rounded-full items-center justify-center ${
-            canSend ? "bg-primary" : "bg-muted/30"
-          }`}
+          disabled={!canSend}
+          style={{
+            width: 46,
+            height: 46,
+            borderRadius: 23,
+            alignItems: "center",
+            justifyContent: "center",
+            backgroundColor: canSend
+              ? theme.colors["--color-primary"]
+              : theme.colors["--color-primary-soft"],
+            shadowColor: canSend
+              ? theme.colors["--color-primary"]
+              : "transparent",
+            shadowOffset: { width: 0, height: 4 },
+            shadowOpacity: 0.3,
+            shadowRadius: 10,
+            elevation: canSend ? 4 : 0,
+          }}
         >
           <Ionicons
             name="send"
             size={18}
-            color={canSend ? "white" : theme.colors["--color-muted"]}
+            color={canSend ? "#ffffff" : theme.colors["--color-primary"]}
           />
         </Pressable>
       )}

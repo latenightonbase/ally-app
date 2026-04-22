@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { View, Text, TextInput, Pressable, Alert } from "react-native";
+import { View, Text, Pressable, Alert } from "react-native";
 import { useTheme } from "../../context/ThemeContext";
 import {
   addShoppingItems,
@@ -7,7 +7,7 @@ import {
   getShoppingLists,
 } from "../../lib/api";
 import { useFamilyStore } from "../../store/useFamilyStore";
-import { SheetContainer } from "./SheetContainer";
+import { SheetContainer, SheetTextInput } from "./SheetContainer";
 import type { GroceryCategory, ShoppingList } from "@ally/shared";
 
 const CATEGORIES: GroceryCategory[] = [
@@ -39,7 +39,7 @@ export function AddShoppingItemSheet({
   const [category, setCategory] = useState<GroceryCategory | null>(null);
   const [lists, setLists] = useState<ShoppingList[]>([]);
   const [selectedListId, setSelectedListId] = useState<string | null>(null);
-  const [listsLoading, setListsLoading] = useState(false);
+  const [, setListsLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
@@ -108,37 +108,69 @@ export function AddShoppingItemSheet({
     }
   };
 
+  const inputStyle = {
+    backgroundColor: theme.colors["--color-surface"],
+    borderWidth: 1.5,
+    borderColor: theme.colors["--color-border"],
+    borderRadius: 14,
+    paddingHorizontal: 16,
+    paddingVertical: 13,
+    color: theme.colors["--color-foreground"],
+    fontSize: 14,
+    fontFamily: "Nunito_600SemiBold",
+  } as const;
+
+  const mutedLabel = {
+    color: theme.colors["--color-muted"],
+    letterSpacing: 1.2,
+    textTransform: "uppercase" as const,
+  };
+
   return (
     <SheetContainer
       visible={visible}
-      title="Add to shopping"
+      title="Add to Shopping"
       onClose={onClose}
       footer={
         <Pressable
           onPress={handleSubmit}
           disabled={!canSubmit}
-          className="rounded-xl py-3.5 items-center active:opacity-80"
+          className="rounded-2xl items-center active:opacity-80"
           style={{
+            paddingVertical: 15,
             backgroundColor: canSubmit
               ? theme.colors["--color-primary"]
-              : theme.colors["--color-muted"] + "40",
+              : theme.colors["--color-border"],
+            shadowColor: theme.colors["--color-primary"],
+            shadowOffset: { width: 0, height: 6 },
+            shadowOpacity: canSubmit ? 0.3 : 0,
+            shadowRadius: 18,
+            elevation: canSubmit ? 4 : 0,
           }}
         >
           <Text className="text-white text-base font-sans-bold">
-            {submitting ? "Adding…" : "Add to list"}
+            {submitting ? "Adding…" : "Add to List"}
           </Text>
         </Pressable>
       }
     >
       {!family && (
-        <Text className="text-muted text-xs font-sans mb-3">
-          Join or create a family to manage shopping.
-        </Text>
+        <View
+          className="rounded-xl px-3 py-2 mb-4"
+          style={{ backgroundColor: theme.colors["--color-primary-soft"] }}
+        >
+          <Text
+            className="text-xs font-sans-semibold"
+            style={{ color: theme.colors["--color-primary"] }}
+          >
+            Join or create a family to manage shopping.
+          </Text>
+        </View>
       )}
 
       {lists.length > 1 && (
-        <View className="mb-4">
-          <Text className="text-foreground text-xs font-sans-semibold mb-2">
+        <View className="mb-5">
+          <Text className="text-xs font-sans-bold mb-2" style={mutedLabel}>
             List
           </Text>
           <View className="flex-row flex-wrap -mx-1">
@@ -148,18 +180,19 @@ export function AddShoppingItemSheet({
                 <Pressable
                   key={list.id}
                   onPress={() => setSelectedListId(list.id)}
-                  className="mx-1 mb-2 px-3 py-1.5 rounded-full border active:opacity-70"
+                  className="mx-1 mb-2 px-3.5 py-2 rounded-full active:opacity-80"
                   style={{
                     backgroundColor: selected
                       ? theme.colors["--color-primary"]
                       : theme.colors["--color-surface"],
+                    borderWidth: 1.5,
                     borderColor: selected
                       ? theme.colors["--color-primary"]
-                      : theme.colors["--color-primary-soft"],
+                      : theme.colors["--color-border"],
                   }}
                 >
                   <Text
-                    className="text-xs font-sans-semibold"
+                    className="text-xs font-sans-bold"
                     style={{
                       color: selected
                         ? "#fff"
@@ -175,37 +208,34 @@ export function AddShoppingItemSheet({
         </View>
       )}
 
-      <View className="mb-4">
-        <Text className="text-foreground text-xs font-sans-semibold mb-2">
+      <View className="mb-5">
+        <Text className="text-xs font-sans-bold mb-2" style={mutedLabel}>
           Item
         </Text>
-        <TextInput
+        <SheetTextInput
           value={name}
           onChangeText={setName}
           placeholder="e.g. Cheddar cheese"
           placeholderTextColor={theme.colors["--color-muted"]}
-          className="bg-surface border border-primary-soft rounded-xl px-4 py-3 text-foreground text-sm font-sans"
-          style={{ color: theme.colors["--color-foreground"] }}
-          autoFocus
+          style={inputStyle}
         />
       </View>
 
-      <View className="mb-4">
-        <Text className="text-foreground text-xs font-sans-semibold mb-2">
+      <View className="mb-5">
+        <Text className="text-xs font-sans-bold mb-2" style={mutedLabel}>
           Quantity (optional)
         </Text>
-        <TextInput
+        <SheetTextInput
           value={quantity}
           onChangeText={setQuantity}
           placeholder="e.g. 2 blocks"
           placeholderTextColor={theme.colors["--color-muted"]}
-          className="bg-surface border border-primary-soft rounded-xl px-4 py-3 text-foreground text-sm font-sans"
-          style={{ color: theme.colors["--color-foreground"] }}
+          style={inputStyle}
         />
       </View>
 
-      <View className="mb-2">
-        <Text className="text-foreground text-xs font-sans-semibold mb-2">
+      <View className="mb-3">
+        <Text className="text-xs font-sans-bold mb-2" style={mutedLabel}>
           Category (optional)
         </Text>
         <View className="flex-row flex-wrap -mx-1">
@@ -215,18 +245,19 @@ export function AddShoppingItemSheet({
               <Pressable
                 key={c}
                 onPress={() => setCategory(selected ? null : c)}
-                className="mx-1 mb-2 px-3 py-1.5 rounded-full border active:opacity-70"
+                className="mx-1 mb-2 px-3.5 py-2 rounded-full active:opacity-80"
                 style={{
                   backgroundColor: selected
                     ? theme.colors["--color-primary"]
                     : theme.colors["--color-surface"],
+                  borderWidth: 1.5,
                   borderColor: selected
                     ? theme.colors["--color-primary"]
-                    : theme.colors["--color-primary-soft"],
+                    : theme.colors["--color-border"],
                 }}
               >
                 <Text
-                  className="text-xs font-sans-semibold capitalize"
+                  className="text-xs font-sans-bold capitalize"
                   style={{
                     color: selected
                       ? "#fff"

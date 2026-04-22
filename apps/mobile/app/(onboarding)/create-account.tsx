@@ -345,7 +345,7 @@ export default function OnboardingCreateAccountScreen() {
           buttonStyle={
             AppleAuthentication.AppleAuthenticationButtonStyle.BLACK
           }
-          cornerRadius={999}
+          cornerRadius={18}
           style={{ width: "100%", height: 54 }}
           onPress={handleAppleSignUp}
         />
@@ -368,16 +368,23 @@ export default function OnboardingCreateAccountScreen() {
             Haptics.selectionAsync();
             setMode("email");
           }}
-          className="flex-row items-center justify-center gap-2 rounded-full py-4 px-6 bg-surface active:opacity-80"
           style={{
+            height: 54,
+            borderRadius: 18,
+            flexDirection: "row",
+            alignItems: "center",
+            justifyContent: "center",
+            backgroundColor: theme.colors["--color-surface"],
             borderWidth: 1,
-            borderColor: theme.colors["--color-muted"] + "33",
+            borderColor: theme.colors["--color-border"],
           }}
+          className="active:opacity-80"
         >
           <Ionicons
             name="mail-outline"
             size={18}
             color={theme.colors["--color-foreground"]}
+            style={{ marginRight: 8 }}
           />
           <Text className="text-foreground text-base font-sans-semibold">
             Continue with email

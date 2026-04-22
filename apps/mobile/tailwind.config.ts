@@ -10,10 +10,10 @@ const config: Config = {
   theme: {
     extend: {
       fontFamily: {
-        sans: ["PlusJakartaSans_400Regular", "System"],
-        "sans-medium": ["PlusJakartaSans_500Medium", "System"],
-        "sans-semibold": ["PlusJakartaSans_600SemiBold", "System"],
-        "sans-bold": ["PlusJakartaSans_700Bold", "System"],
+        sans: ["Nunito_400Regular", "System"],
+        "sans-medium": ["Nunito_500Medium", "System"],
+        "sans-semibold": ["Nunito_600SemiBold", "System"],
+        "sans-bold": ["Nunito_700Bold", "System"],
       },
       colors: {
         primary: "var(--color-primary)",
@@ -23,6 +23,8 @@ const config: Config = {
         surface: "var(--color-surface)",
         foreground: "var(--color-foreground)",
         muted: "var(--color-muted)",
+        faint: "var(--color-faint)",
+        border: "var(--color-border)",
         accent: "var(--color-accent)",
         danger: "var(--color-danger)",
       },

@@ -94,12 +94,13 @@ export default function FamilyCreateScreen() {
                     Haptics.selectionAsync();
                     setArtworkId(art.id);
                   }}
-                  className="rounded-2xl overflow-hidden"
+                  className="overflow-hidden"
                   style={{
+                    borderRadius: 18,
                     borderWidth: selected ? 2 : 1,
                     borderColor: selected
                       ? theme.colors["--color-primary"]
-                      : theme.colors["--color-muted"] + "22",
+                      : theme.colors["--color-border"],
                   }}
                 >
                   <View

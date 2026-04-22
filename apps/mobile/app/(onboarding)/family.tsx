@@ -25,7 +25,13 @@ function FeatureCard({ icon, title, description, delay }: FeatureCardProps) {
       from={{ opacity: 0, translateY: 12 }}
       animate={{ opacity: 1, translateY: 0 }}
       transition={{ type: "timing", duration: 450, delay }}
-      className="flex-row items-start bg-surface rounded-2xl p-4 mb-3"
+      className="flex-row items-start p-4 mb-3"
+      style={{
+        backgroundColor: theme.colors["--color-surface"],
+        borderRadius: 18,
+        borderWidth: 1,
+        borderColor: theme.colors["--color-border"],
+      }}
     >
       <View
         className="w-11 h-11 rounded-2xl items-center justify-center mr-4"

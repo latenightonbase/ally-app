@@ -6,6 +6,7 @@ import {
   ActivityIndicator,
   RefreshControl,
   TouchableOpacity,
+  Pressable,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { MotiView } from "moti";
@@ -23,31 +24,109 @@ import { ScreenHeader } from "../../components/ui/ScreenHeader";
 import { AddFab } from "../../components/ui/AddFab";
 import { CreateTaskSheet } from "../../components/modals/CreateTaskSheet";
 import { AddShoppingItemSheet } from "../../components/modals/AddShoppingItemSheet";
-import type { Task, ShoppingListItem } from "@ally/shared";
+import type { Task, ShoppingListItem, Reminder } from "@ally/shared";
 
-// ---------- Helper Components ----------
+function Card({ children }: { children: React.ReactNode }) {
+  const { theme } = useTheme();
+  return (
+    <View
+      style={{
+        backgroundColor: theme.colors["--color-surface"],
+        borderRadius: 24,
+        borderWidth: 1,
+        borderColor: theme.colors["--color-border"],
+        padding: 16,
+      }}
+    >
+      {children}
+    </View>
+  );
+}
 
 function SectionHeader({
   title,
   icon,
   count,
+  trailing,
 }: {
   title: string;
   icon: React.ComponentProps<typeof Ionicons>["name"];
   count?: number;
+  trailing?: React.ReactNode;
 }) {
   const { theme } = useTheme();
   return (
-    <View className="flex-row items-center mb-3 mt-6">
-      <Ionicons name={icon} size={20} color={theme.colors["--color-primary"]} />
-      <Text className="text-foreground text-lg font-sans-bold ml-2">
+    <View className="flex-row items-center mb-3 mt-6 px-1">
+      <Ionicons name={icon} size={16} color={theme.colors["--color-primary"]} />
+      <Text
+        className="text-base font-sans-bold ml-2"
+        style={{ color: theme.colors["--color-foreground"] }}
+      >
         {title}
       </Text>
       {count !== undefined && count > 0 && (
-        <View className="bg-primary-soft rounded-full px-2 py-0.5 ml-2">
-          <Text className="text-primary text-xs font-sans-bold">{count}</Text>
+        <View
+          className="rounded-full px-2 py-0.5 ml-2"
+          style={{ backgroundColor: theme.colors["--color-primary-soft"] }}
+        >
+          <Text
+            className="text-xs font-sans-bold"
+            style={{ color: theme.colors["--color-primary"] }}
+          >
+            {count}
+          </Text>
         </View>
       )}
+      <View style={{ flex: 1 }} />
+      {trailing}
+    </View>
+  );
+}
+
+function CircleCheckbox({ checked }: { checked: boolean }) {
+  const { theme } = useTheme();
+  return (
+    <View
+      style={{
+        width: 22,
+        height: 22,
+        borderRadius: 11,
+        borderWidth: 2,
+        borderColor: checked
+          ? theme.colors["--color-primary"]
+          : theme.colors["--color-border"],
+        backgroundColor: checked
+          ? theme.colors["--color-primary"]
+          : "transparent",
+        alignItems: "center",
+        justifyContent: "center",
+      }}
+    >
+      {checked && <Ionicons name="checkmark" size={14} color="#fff" />}
+    </View>
+  );
+}
+
+function SquareCheckbox({ checked }: { checked: boolean }) {
+  const { theme } = useTheme();
+  return (
+    <View
+      style={{
+        width: 22,
+        height: 22,
+        borderRadius: 6,
+        borderWidth: 2,
+        borderColor: checked
+          ? theme.colors["--color-primary"]
+          : theme.colors["--color-border"],
+        backgroundColor: checked
+          ? theme.colors["--color-primary"]
+          : "transparent",
+        alignItems: "center",
+        justifyContent: "center",
+      }}
+    >
+      {checked && <Ionicons name="checkmark" size={14} color="#fff" />}
     </View>
   );
 }
@@ -55,12 +134,14 @@ function SectionHeader({
 function TaskRow({
   task,
   onToggle,
+  last,
 }: {
   task: Task & {
     assignedToName?: string | null;
     assignedToNames?: string[] | null;
   };
   onToggle: (taskId: string) => void;
+  last?: boolean;
 }) {
   const { theme } = useTheme();
   const isCompleted = task.status === "completed";
@@ -72,46 +153,52 @@ function TaskRow({
     : null;
 
   return (
-    <TouchableOpacity
-      className="flex-row items-center bg-surface rounded-xl p-3 mb-2 border border-primary-soft"
+    <Pressable
+      className="flex-row items-center active:opacity-80"
       onPress={() => onToggle(task.id)}
-      activeOpacity={0.7}
+      style={{
+        paddingVertical: 12,
+        borderBottomWidth: last ? 0 : 1,
+        borderBottomColor: theme.colors["--color-border"],
+      }}
     >
-      <Ionicons
-        name={isCompleted ? "checkmark-circle" : "ellipse-outline"}
-        size={22}
-        color={
-          isCompleted
-            ? ((theme.colors as any)["--color-success"] ?? "#059669")
-            : theme.colors["--color-muted"]
-        }
-      />
+      <CircleCheckbox checked={isCompleted} />
       <View className="flex-1 ml-3">
         <Text
-          className={`text-sm font-sans-semibold ${isCompleted ? "text-muted line-through" : "text-foreground"}`}
+          className="text-sm font-sans-bold"
+          style={{
+            color: isCompleted
+              ? theme.colors["--color-muted"]
+              : theme.colors["--color-foreground"],
+            textDecorationLine: isCompleted ? "line-through" : "none",
+          }}
         >
           {task.title}
         </Text>
         {(task.assignedToName || dueText) && (
-          <Text className="text-muted text-xs font-sans mt-0.5">
+          <Text
+            className="text-xs font-sans mt-0.5"
+            style={{ color: theme.colors["--color-muted"] }}
+          >
             {[task.assignedToName, dueText].filter(Boolean).join(" · ")}
           </Text>
         )}
       </View>
-      {task.priority === "high" && (
+      {task.priority === "high" && !isCompleted && (
         <Ionicons
           name="alert-circle"
           size={16}
-          color={(theme.colors as any)["--color-danger"] ?? "#DC2626"}
+          color={theme.colors["--color-danger"]}
         />
       )}
-    </TouchableOpacity>
+    </Pressable>
   );
 }
 
 function CompletedTaskRow({
   task,
   onUnmark,
+  last,
 }: {
   task: Task & {
     assignedToName?: string | null;
@@ -119,30 +206,41 @@ function CompletedTaskRow({
     completedByName?: string | null;
   };
   onUnmark: (taskId: string) => void;
+  last?: boolean;
 }) {
   const { theme } = useTheme();
   const completedTime = task.completedAt
     ? new Date(task.completedAt).toLocaleDateString("en-US", {
         month: "short",
         day: "numeric",
-        hour: "numeric",
-        minute: "2-digit",
       })
     : null;
   const completedBy = task.completedByName ?? task.assignedToName ?? null;
 
   return (
-    <View className="flex-row items-center bg-surface/60 rounded-xl p-3 mb-2 border border-primary-soft">
-      <Ionicons
-        name="checkmark-circle"
-        size={22}
-        color={(theme.colors as any)["--color-success"] ?? "#059669"}
-      />
+    <View
+      className="flex-row items-center"
+      style={{
+        paddingVertical: 10,
+        borderBottomWidth: last ? 0 : 1,
+        borderBottomColor: theme.colors["--color-border"],
+      }}
+    >
+      <CircleCheckbox checked />
       <View className="flex-1 ml-3">
-        <Text className="text-muted text-sm font-sans-semibold line-through">
+        <Text
+          className="text-sm font-sans-semibold"
+          style={{
+            color: theme.colors["--color-muted"],
+            textDecorationLine: "line-through",
+          }}
+        >
           {task.title}
         </Text>
-        <Text className="text-muted text-xs font-sans mt-0.5">
+        <Text
+          className="text-xs font-sans mt-0.5"
+          style={{ color: theme.colors["--color-faint"] }}
+        >
           {[completedBy ? `by ${completedBy}` : null, completedTime]
             .filter(Boolean)
             .join(" · ")}
@@ -151,9 +249,15 @@ function CompletedTaskRow({
       <TouchableOpacity
         onPress={() => onUnmark(task.id)}
         hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-        className="ml-2 px-2 py-1 rounded-lg bg-primary-soft"
+        className="ml-2 px-2.5 py-1 rounded-full"
+        style={{ backgroundColor: theme.colors["--color-primary-soft"] }}
       >
-        <Text className="text-primary text-xs font-sans-semibold">Undo</Text>
+        <Text
+          className="text-xs font-sans-bold"
+          style={{ color: theme.colors["--color-primary"] }}
+        >
+          Undo
+        </Text>
       </TouchableOpacity>
     </View>
   );
@@ -175,50 +279,69 @@ function ShoppingSection({
 
   return (
     <View>
-      {unchecked.map((item) => (
-        <TouchableOpacity
+      {unchecked.map((item, i) => (
+        <Pressable
           key={item.id}
-          className="flex-row items-center py-2.5 px-1"
+          className="flex-row items-center active:opacity-80"
           onPress={() => onToggleItem(item.id)}
-          activeOpacity={0.7}
+          style={{
+            paddingVertical: 11,
+            borderBottomWidth: i === unchecked.length - 1 && checked.length === 0 ? 0 : 1,
+            borderBottomColor: theme.colors["--color-border"],
+          }}
         >
-          <Ionicons
-            name="square-outline"
-            size={20}
-            color={theme.colors["--color-muted"]}
-          />
-          <Text className="text-foreground text-sm font-sans ml-3 flex-1">
+          <SquareCheckbox checked={false} />
+          <Text
+            className="text-sm font-sans-semibold ml-3 flex-1"
+            style={{ color: theme.colors["--color-foreground"] }}
+          >
             {item.name}
           </Text>
           {item.quantity && (
-            <Text className="text-muted text-xs font-sans">{item.quantity}</Text>
+            <Text
+              className="text-xs font-sans-semibold"
+              style={{ color: theme.colors["--color-muted"] }}
+            >
+              {item.quantity}
+            </Text>
           )}
-        </TouchableOpacity>
+        </Pressable>
       ))}
       {checked.length > 0 && (
-        <View className="mt-2 opacity-50">
-          <Text className="text-muted text-xs font-sans-bold mb-1">
+        <View className="mt-2">
+          <Text
+            className="text-xs font-sans-bold mb-1"
+            style={{
+              color: theme.colors["--color-muted"],
+              letterSpacing: 1.2,
+              textTransform: "uppercase",
+            }}
+          >
             Checked off ({checked.length})
           </Text>
           {checked.slice(0, 3).map((item) => (
-            <TouchableOpacity
+            <Pressable
               key={item.id}
-              className="flex-row items-center py-1.5 px-1"
+              className="flex-row items-center py-2 active:opacity-80"
               onPress={() => onToggleItem(item.id)}
-              activeOpacity={0.7}
             >
-              <Ionicons
-                name="checkbox"
-                size={20}
-                color={theme.colors["--color-muted"]}
-              />
-              <Text className="text-muted text-sm font-sans ml-3 line-through">
+              <SquareCheckbox checked />
+              <Text
+                className="text-sm font-sans ml-3"
+                style={{
+                  color: theme.colors["--color-muted"],
+                  textDecorationLine: "line-through",
+                }}
+              >
                 {item.name}
               </Text>
-            </TouchableOpacity>
+            </Pressable>
           ))}
           {checked.length > 3 && (
-            <Text className="text-muted text-xs font-sans ml-8">
+            <Text
+              className="text-xs font-sans mt-1 ml-8"
+              style={{ color: theme.colors["--color-faint"] }}
+            >
               +{checked.length - 3} more
             </Text>
           )}
@@ -227,8 +350,6 @@ function ShoppingSection({
     </View>
   );
 }
-
-// ---------- Main Screen ----------
 
 export default function ListsScreen() {
   const {
@@ -333,13 +454,18 @@ export default function ListsScreen() {
   );
 
   const upcomingReminders = useMemo(
-    () => (dashboard as any)?.upcomingReminders ?? [],
+    () =>
+      (dashboard as unknown as { upcomingReminders?: Reminder[] })
+        ?.upcomingReminders ?? [],
     [dashboard],
   );
 
   if (dashboardLoading && !dashboard && tasks.length === 0) {
     return (
-      <View className="flex-1 bg-background items-center justify-center">
+      <View
+        className="flex-1 items-center justify-center"
+        style={{ backgroundColor: theme.colors["--color-background"] }}
+      >
         <ActivityIndicator
           size="large"
           color={theme.colors["--color-primary"]}
@@ -350,7 +476,10 @@ export default function ListsScreen() {
 
   if (!hasFamily) {
     return (
-      <View className="flex-1 bg-background">
+      <View
+        className="flex-1"
+        style={{ backgroundColor: theme.colors["--color-background"] }}
+      >
         <SafeAreaView edges={["top"]} className="flex-1">
           <ScreenHeader title="Lists" />
           <View className="flex-1 px-5 items-center justify-center">
@@ -359,7 +488,10 @@ export default function ListsScreen() {
               size={48}
               color={theme.colors["--color-muted"]}
             />
-            <Text className="text-muted text-sm font-sans text-center mt-3">
+            <Text
+              className="text-sm font-sans text-center mt-3"
+              style={{ color: theme.colors["--color-muted"] }}
+            >
               Join or create a family to see shared lists.
             </Text>
           </View>
@@ -369,15 +501,15 @@ export default function ListsScreen() {
   }
 
   return (
-    <View className="flex-1 bg-background">
+    <View
+      className="flex-1"
+      style={{ backgroundColor: theme.colors["--color-background"] }}
+    >
       <SafeAreaView edges={["top"]} className="flex-1">
-        <ScreenHeader
-          title="Lists"
-          subtitle="Tasks, reminders, and shopping for the family"
-        />
+        <ScreenHeader title="Lists" subtitle="Tasks, reminders & shopping" />
         <ScrollView
           className="flex-1 px-5"
-          contentContainerStyle={{ paddingBottom: 120 }}
+          contentContainerStyle={{ paddingBottom: 140 }}
           showsVerticalScrollIndicator={false}
           refreshControl={
             <RefreshControl
@@ -401,7 +533,6 @@ export default function ListsScreen() {
               </Text>
             )}
 
-            {/* Reminders */}
             {upcomingReminders.length > 0 && (
               <>
                 <SectionHeader
@@ -409,134 +540,205 @@ export default function ListsScreen() {
                   icon="notifications-outline"
                   count={upcomingReminders.length}
                 />
-                {upcomingReminders.map((r: any) => {
-                  const remindDate = new Date(r.remindAt);
-                  const isToday =
-                    remindDate.toDateString() === new Date().toDateString();
-                  const timeStr = remindDate.toLocaleTimeString("en-US", {
-                    hour: "numeric",
-                    minute: "2-digit",
-                  });
-                  const dateStr = isToday
-                    ? `Today, ${timeStr}`
-                    : `${remindDate.toLocaleDateString("en-US", {
-                        weekday: "short",
-                        month: "short",
-                        day: "numeric",
-                      })}, ${timeStr}`;
-                  return (
-                    <View
-                      key={r.id}
-                      className="bg-surface rounded-2xl p-4 mb-2 border border-primary-soft flex-row items-center"
-                    >
-                      <Ionicons
-                        name="alarm-outline"
-                        size={20}
-                        color={theme.colors["--color-primary"]}
-                      />
-                      <View className="flex-1 ml-3">
-                        <Text className="text-foreground text-base font-sans-semibold">
-                          {r.title}
-                        </Text>
-                        <Text className="text-muted text-sm font-sans mt-1">
-                          {dateStr}
-                        </Text>
-                        {r.body && (
-                          <Text className="text-muted text-xs font-sans mt-0.5">
-                            {r.body}
+                <Card>
+                  {upcomingReminders.map((r, i, arr) => {
+                    const remindDate = new Date(r.remindAt);
+                    const isToday =
+                      remindDate.toDateString() ===
+                      new Date().toDateString();
+                    const timeStr = remindDate.toLocaleTimeString("en-US", {
+                      hour: "numeric",
+                      minute: "2-digit",
+                    });
+                    const dateStr = isToday
+                      ? `Today, ${timeStr}`
+                      : `${remindDate.toLocaleDateString("en-US", {
+                          weekday: "short",
+                          month: "short",
+                          day: "numeric",
+                        })}, ${timeStr}`;
+                    const last = i === arr.length - 1;
+                    return (
+                      <View
+                        key={r.id}
+                        className="flex-row items-center"
+                        style={{
+                          paddingVertical: 12,
+                          borderBottomWidth: last ? 0 : 1,
+                          borderBottomColor: theme.colors["--color-border"],
+                        }}
+                      >
+                        <View
+                          style={{
+                            width: 34,
+                            height: 34,
+                            borderRadius: 17,
+                            backgroundColor:
+                              theme.colors["--color-primary-soft"],
+                            alignItems: "center",
+                            justifyContent: "center",
+                            marginRight: 12,
+                          }}
+                        >
+                          <Ionicons
+                            name="alarm-outline"
+                            size={16}
+                            color={theme.colors["--color-primary"]}
+                          />
+                        </View>
+                        <View className="flex-1">
+                          <Text
+                            className="text-sm font-sans-bold"
+                            style={{
+                              color: theme.colors["--color-foreground"],
+                            }}
+                          >
+                            {r.title}
                           </Text>
-                        )}
+                          <Text
+                            className="text-xs font-sans mt-0.5"
+                            style={{ color: theme.colors["--color-muted"] }}
+                          >
+                            {dateStr}
+                          </Text>
+                        </View>
                       </View>
-                    </View>
-                  );
-                })}
-                <Text className="text-muted text-xs font-sans mt-1 ml-1">
-                  Showing next 7 days
-                </Text>
+                    );
+                  })}
+                </Card>
               </>
             )}
 
-            {/* Tasks */}
             <SectionHeader
               title="To Do"
               icon="checkbox-outline"
               count={pendingTasks.length}
+              trailing={
+                <Pressable
+                  onPress={() => setTaskSheetOpen(true)}
+                  className="active:opacity-70"
+                  hitSlop={8}
+                >
+                  <Text
+                    className="text-xs font-sans-bold"
+                    style={{ color: theme.colors["--color-primary"] }}
+                  >
+                    + Add
+                  </Text>
+                </Pressable>
+              }
             />
             {pendingTasks.length > 0 ? (
-              pendingTasks.map((task) => (
-                <TaskRow
-                  key={task.id}
-                  task={task}
-                  onToggle={handleToggleTask}
-                />
-              ))
+              <Card>
+                {pendingTasks.map((task, i) => (
+                  <TaskRow
+                    key={task.id}
+                    task={task}
+                    onToggle={handleToggleTask}
+                    last={i === pendingTasks.length - 1}
+                  />
+                ))}
+              </Card>
             ) : (
-              <View className="bg-surface/50 rounded-2xl p-6 items-center">
-                <Ionicons
-                  name="checkmark-done-outline"
-                  size={32}
-                  color={theme.colors["--color-muted"]}
-                />
-                <Text className="text-muted text-sm font-sans mt-2 text-center">
-                  All caught up! 🎉
-                </Text>
-              </View>
+              <Card>
+                <View className="items-center py-4">
+                  <Ionicons
+                    name="checkmark-done-outline"
+                    size={32}
+                    color={theme.colors["--color-muted"]}
+                  />
+                  <Text
+                    className="text-sm font-sans mt-2 text-center"
+                    style={{ color: theme.colors["--color-muted"] }}
+                  >
+                    All caught up! 🎉
+                  </Text>
+                </View>
+              </Card>
             )}
 
-            {/* Completed */}
             {completedTasks.length > 0 && (
               <>
                 <TouchableOpacity
-                  className="flex-row items-center mt-4 mb-2"
+                  className="flex-row items-center mt-4 mb-2 px-1"
                   onPress={() => setShowCompleted(!showCompleted)}
                   activeOpacity={0.7}
                 >
                   <Ionicons
                     name={showCompleted ? "chevron-down" : "chevron-forward"}
-                    size={18}
+                    size={14}
                     color={theme.colors["--color-muted"]}
                   />
-                  <Text className="text-muted text-sm font-sans-semibold ml-1">
+                  <Text
+                    className="text-xs font-sans-bold ml-1"
+                    style={{
+                      color: theme.colors["--color-muted"],
+                      letterSpacing: 1.2,
+                      textTransform: "uppercase",
+                    }}
+                  >
                     Completed ({completedTasks.length})
                   </Text>
                 </TouchableOpacity>
-                {showCompleted &&
-                  completedTasks.map((task) => (
-                    <CompletedTaskRow
-                      key={task.id}
-                      task={task}
-                      onUnmark={handleToggleTask}
-                    />
-                  ))}
+                {showCompleted && (
+                  <Card>
+                    {completedTasks.map((task, i) => (
+                      <CompletedTaskRow
+                        key={task.id}
+                        task={task}
+                        onUnmark={handleToggleTask}
+                        last={i === completedTasks.length - 1}
+                      />
+                    ))}
+                  </Card>
+                )}
               </>
             )}
 
-            {/* Shopping */}
             <SectionHeader
               title="Shopping List"
               icon="cart-outline"
               count={
                 shoppingLists[0]?.items.filter((i) => !i.checked).length ?? 0
               }
+              trailing={
+                <Pressable
+                  onPress={() => setShoppingSheetOpen(true)}
+                  className="active:opacity-70"
+                  hitSlop={8}
+                >
+                  <Text
+                    className="text-xs font-sans-bold"
+                    style={{ color: theme.colors["--color-primary"] }}
+                  >
+                    + Add
+                  </Text>
+                </Pressable>
+              }
             />
             {shoppingLists.length > 0 && shoppingLists[0].items.length > 0 ? (
-              <View className="bg-surface rounded-2xl p-4 border border-primary-soft">
+              <Card>
                 <ShoppingSection
                   lists={shoppingLists}
                   onToggleItem={handleToggleShoppingItem}
                 />
-              </View>
+              </Card>
             ) : (
-              <View className="bg-surface/50 rounded-2xl p-6 items-center">
-                <Ionicons
-                  name="bag-check-outline"
-                  size={32}
-                  color={theme.colors["--color-muted"]}
-                />
-                <Text className="text-muted text-sm font-sans mt-2 text-center">
-                  Shopping list is empty — tell Anzi what you need!
-                </Text>
-              </View>
+              <Card>
+                <View className="items-center py-4">
+                  <Ionicons
+                    name="bag-check-outline"
+                    size={32}
+                    color={theme.colors["--color-muted"]}
+                  />
+                  <Text
+                    className="text-sm font-sans mt-2 text-center"
+                    style={{ color: theme.colors["--color-muted"] }}
+                  >
+                    Shopping list is empty — tell Anzi what you need!
+                  </Text>
+                </View>
+              </Card>
             )}
 
             <View className="h-8" />

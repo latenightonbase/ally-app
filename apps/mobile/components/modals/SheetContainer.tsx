@@ -1,14 +1,16 @@
-import React from "react";
-import {
-  Modal,
-  Pressable,
-  View,
-  Text,
-  KeyboardAvoidingView,
-  Platform,
-  ScrollView,
-} from "react-native";
+import React, { useCallback, useEffect, useMemo, useRef } from "react";
+import { View, Text, Pressable, Platform } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
+import {
+  BottomSheetModal,
+  BottomSheetBackdrop,
+  BottomSheetScrollView,
+  BottomSheetFooter,
+  BottomSheetTextInput,
+  type BottomSheetBackdropProps,
+  type BottomSheetFooterProps,
+} from "@gorhom/bottom-sheet";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useTheme } from "../../context/ThemeContext";
 
 interface SheetContainerProps {
@@ -19,6 +21,8 @@ interface SheetContainerProps {
   footer?: React.ReactNode;
 }
 
+export { BottomSheetTextInput as SheetTextInput };
+
 export function SheetContainer({
   visible,
   title,
@@ -26,60 +30,138 @@ export function SheetContainer({
   children,
   footer,
 }: SheetContainerProps) {
-  const { theme } = useTheme();
+  const { theme, themeVars } = useTheme();
+  const sheetRef = useRef<BottomSheetModal>(null);
+  const insets = useSafeAreaInsets();
+
+  const snapPoints = useMemo(() => ["88%"], []);
+
+  useEffect(() => {
+    if (visible) {
+      sheetRef.current?.present();
+    } else {
+      sheetRef.current?.dismiss();
+    }
+  }, [visible]);
+
+  const handleDismiss = useCallback(() => {
+    onClose();
+  }, [onClose]);
+
+  const renderBackdrop = useCallback(
+    (props: BottomSheetBackdropProps) => (
+      <BottomSheetBackdrop
+        {...props}
+        appearsOnIndex={0}
+        disappearsOnIndex={-1}
+        pressBehavior="close"
+        opacity={0.55}
+      />
+    ),
+    []
+  );
+
+  const footerHeight = footer ? 72 + insets.bottom : 0;
+
+  const renderFooter = useCallback(
+    (props: BottomSheetFooterProps) => {
+      if (!footer) return null;
+      return (
+        <BottomSheetFooter {...props} bottomInset={0}>
+          <View
+            style={[
+              themeVars,
+              {
+                paddingHorizontal: 20,
+                paddingTop: 10,
+                paddingBottom: Math.max(insets.bottom, 16),
+                backgroundColor: theme.colors["--color-background"],
+                borderTopWidth: 1,
+                borderTopColor: theme.colors["--color-border"],
+              },
+            ]}
+          >
+            {footer}
+          </View>
+        </BottomSheetFooter>
+      );
+    },
+    [footer, insets.bottom, theme.colors, themeVars]
+  );
 
   return (
-    <Modal
-      visible={visible}
-      transparent
-      animationType="slide"
-      onRequestClose={onClose}
+    <BottomSheetModal
+      ref={sheetRef}
+      snapPoints={snapPoints}
+      enableDynamicSizing={false}
+      enablePanDownToClose
+      keyboardBehavior={Platform.OS === "ios" ? "interactive" : "interactive"}
+      keyboardBlurBehavior="restore"
+      android_keyboardInputMode="adjustResize"
+      backdropComponent={renderBackdrop}
+      footerComponent={footer ? renderFooter : undefined}
+      handleIndicatorStyle={{
+        backgroundColor: theme.colors["--color-border"],
+        width: 40,
+      }}
+      backgroundStyle={{
+        backgroundColor: theme.colors["--color-background"],
+        borderTopLeftRadius: 28,
+        borderTopRightRadius: 28,
+      }}
+      onDismiss={handleDismiss}
     >
-      <Pressable
-        className="flex-1 bg-foreground/40 justify-end"
-        onPress={onClose}
+      <View style={[{ flex: 1 }, themeVars]}>
+      <View
+        style={{
+          paddingHorizontal: 20,
+          paddingTop: 4,
+          paddingBottom: 12,
+          flexDirection: "row",
+          alignItems: "center",
+          justifyContent: "space-between",
+        }}
       >
-        <Pressable onPress={() => {}}>
-          <KeyboardAvoidingView
-            behavior={Platform.OS === "ios" ? "padding" : undefined}
-          >
-            <View
-              className="rounded-t-3xl px-5 pt-4 pb-8"
-              style={{ backgroundColor: theme.colors["--color-background"] }}
-            >
-              <View className="items-center mb-3">
-                <View className="w-10 h-1 rounded-full bg-muted/40" />
-              </View>
-              <View className="flex-row items-center justify-between mb-4">
-                <Text className="text-foreground text-xl font-sans-bold flex-1">
-                  {title}
-                </Text>
-                <Pressable
-                  onPress={onClose}
-                  hitSlop={8}
-                  className="active:opacity-70 p-1"
-                >
-                  <Ionicons
-                    name="close"
-                    size={22}
-                    color={theme.colors["--color-muted"]}
-                  />
-                </Pressable>
-              </View>
-
-              <ScrollView
-                keyboardShouldPersistTaps="handled"
-                showsVerticalScrollIndicator={false}
-                style={{ maxHeight: 520 }}
-              >
-                {children}
-              </ScrollView>
-
-              {footer ? <View className="mt-4">{footer}</View> : null}
-            </View>
-          </KeyboardAvoidingView>
+        <Text
+          style={{ color: theme.colors["--color-foreground"] }}
+          className="text-xl font-sans-bold flex-1"
+        >
+          {title}
+        </Text>
+        <Pressable
+          onPress={onClose}
+          hitSlop={10}
+          className="active:opacity-70"
+          style={{
+            width: 32,
+            height: 32,
+            borderRadius: 16,
+            backgroundColor: theme.colors["--color-surface"],
+            borderWidth: 1,
+            borderColor: theme.colors["--color-border"],
+            alignItems: "center",
+            justifyContent: "center",
+          }}
+        >
+          <Ionicons
+            name="close"
+            size={16}
+            color={theme.colors["--color-muted"]}
+          />
         </Pressable>
-      </Pressable>
-    </Modal>
+      </View>
+
+      <BottomSheetScrollView
+        keyboardShouldPersistTaps="handled"
+        contentContainerStyle={{
+          paddingHorizontal: 20,
+          paddingBottom: footerHeight + 24,
+        }}
+        showsVerticalScrollIndicator={false}
+      >
+        {children}
+      </BottomSheetScrollView>
+      </View>
+    </BottomSheetModal>
   );
 }

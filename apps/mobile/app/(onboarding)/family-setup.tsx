@@ -27,10 +27,17 @@ function ChoiceCard({ icon, title, description, delay, onPress }: ChoiceCardProp
     >
       <Pressable
         onPress={onPress}
-        className="flex-row items-start bg-surface rounded-2xl p-5 active:opacity-80"
+        className="flex-row items-start active:opacity-80"
         style={{
+          backgroundColor: theme.colors["--color-surface"],
+          borderRadius: 20,
+          padding: 18,
           borderWidth: 1,
-          borderColor: theme.colors["--color-muted"] + "22",
+          borderColor: theme.colors["--color-border"],
+          shadowColor: theme.colors["--color-primary"],
+          shadowOffset: { width: 0, height: 4 },
+          shadowOpacity: 0.06,
+          shadowRadius: 12,
         }}
       >
         <View

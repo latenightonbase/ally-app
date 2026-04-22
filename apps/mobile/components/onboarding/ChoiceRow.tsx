@@ -13,6 +13,7 @@ const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
 interface ChoiceRowProps {
   label: string;
+  description?: string;
   leading?: string; // emoji or short prefix
   selected: boolean;
   onPress: () => void;
@@ -20,24 +21,29 @@ interface ChoiceRowProps {
 
 export function ChoiceRow({
   label,
+  description,
   leading,
   selected,
   onPress,
 }: ChoiceRowProps) {
   const { theme } = useTheme();
   const scale = useSharedValue(1);
-  const borderProgress = useSharedValue(selected ? 1 : 0);
+  const anim = useSharedValue(selected ? 1 : 0);
 
   useEffect(() => {
-    borderProgress.value = withTiming(selected ? 1 : 0, { duration: 220 });
+    anim.value = withTiming(selected ? 1 : 0, { duration: 220 });
   }, [selected]);
 
   const animatedStyle = useAnimatedStyle(() => ({
     transform: [{ scale: scale.value }],
     borderColor: selected
       ? theme.colors["--color-primary"]
-      : theme.colors["--color-muted"] + "33",
+      : theme.colors["--color-border"],
     borderWidth: selected ? 2 : 1,
+    backgroundColor: selected
+      ? theme.colors["--color-primary-soft"]
+      : theme.colors["--color-surface"],
+    shadowOpacity: selected ? 0.14 : 0.04,
   }));
 
   const handlePressIn = () => {
@@ -52,23 +58,60 @@ export function ChoiceRow({
       onPress={onPress}
       onPressIn={handlePressIn}
       onPressOut={handlePressOut}
-      style={animatedStyle}
-      className="flex-row items-center px-5 py-4 rounded-2xl bg-surface"
+      style={[
+        {
+          flexDirection: "row",
+          alignItems: "center",
+          paddingHorizontal: 18,
+          paddingVertical: 16,
+          borderRadius: 18,
+          shadowColor: theme.colors["--color-primary"],
+          shadowOffset: { width: 0, height: 4 },
+          shadowRadius: 14,
+        },
+        animatedStyle,
+      ]}
     >
-      {leading && <Text className="text-xl mr-3">{leading}</Text>}
-      <Text
-        className={`text-base flex-1 ${
-          selected
-            ? "text-foreground font-sans-semibold"
-            : "text-foreground font-sans"
-        }`}
-      >
-        {label}
-      </Text>
+      {leading && (
+        <Text className="mr-3" style={{ fontSize: 22 }}>
+          {leading}
+        </Text>
+      )}
+      <View style={{ flex: 1 }}>
+        <Text
+          className={selected ? "font-sans-bold" : "font-sans-semibold"}
+          style={{
+            color: theme.colors["--color-foreground"],
+            fontSize: 15,
+          }}
+        >
+          {label}
+        </Text>
+        {description && (
+          <Text
+            className="font-sans mt-0.5"
+            style={{
+              color: theme.colors["--color-muted"],
+              fontSize: 13,
+            }}
+          >
+            {description}
+          </Text>
+        )}
+      </View>
       <View
-        className={`w-6 h-6 rounded-full items-center justify-center ${
-          selected ? "bg-primary" : "border-2 border-muted/40"
-        }`}
+        style={{
+          width: 24,
+          height: 24,
+          borderRadius: 12,
+          alignItems: "center",
+          justifyContent: "center",
+          backgroundColor: selected
+            ? theme.colors["--color-primary"]
+            : "transparent",
+          borderWidth: selected ? 0 : 2,
+          borderColor: theme.colors["--color-border"],
+        }}
       >
         {selected && <Ionicons name="checkmark" size={14} color="#ffffff" />}
       </View>

@@ -17,6 +17,8 @@ export type ThemeColors = Record<`--${string}`, string> & {
   "--color-surface": string;
   "--color-foreground": string;
   "--color-muted": string;
+  "--color-faint": string;
+  "--color-border": string;
   "--color-danger": string;
 };
 
@@ -43,9 +45,11 @@ export const THEMES: ThemeDefinition[] = [
       "--color-secondary": "#C4A95B",
       "--color-accent": "#A8C49E",
       "--color-background": "#FAF7F2",
-      "--color-surface": "#F5F0E8",
+      "--color-surface": "#FFFFFF",
       "--color-foreground": "#2D2A26",
       "--color-muted": "#A09A90",
+      "--color-faint": "#C4B9A8",
+      "--color-border": "#EDE5DA",
       "--color-danger": "#C75D5D",
     },
     preview: { background: "#FAF7F2", primary: "#7C9A72", surface: "#F5F0E8" },
@@ -63,6 +67,8 @@ export const THEMES: ThemeDefinition[] = [
       "--color-surface": "#2A2520",
       "--color-foreground": "#F5F0E8",
       "--color-muted": "#6B6560",
+      "--color-faint": "#4A443E",
+      "--color-border": "#352F2A",
       "--color-danger": "#D47A7A",
     },
     preview: { background: "#1A1714", primary: "#98B88E", surface: "#2A2520" },
@@ -72,17 +78,19 @@ export const THEMES: ThemeDefinition[] = [
     label: "Terracotta & Clay",
     isDark: false,
     colors: {
-      "--color-primary": "#C47A5A",
-      "--color-primary-soft": "rgba(196, 122, 90, 0.12)",
+      "--color-primary": "#C96A3B",
+      "--color-primary-soft": "#FAEEE6",
       "--color-secondary": "#A65D3F",
-      "--color-accent": "#D4947A",
-      "--color-background": "#F8F4EE",
-      "--color-surface": "#F5F0E8",
-      "--color-foreground": "#2E1F14",
-      "--color-muted": "#A3917F",
-      "--color-danger": "#C75050",
+      "--color-accent": "#E8A87C",
+      "--color-background": "#FDF8F3",
+      "--color-surface": "#FFFFFF",
+      "--color-foreground": "#2D1F16",
+      "--color-muted": "#9B8A7A",
+      "--color-faint": "#C4B5A8",
+      "--color-border": "#EDE0D5",
+      "--color-danger": "#C95B5B",
     },
-    preview: { background: "#F8F4EE", primary: "#C47A5A", surface: "#F5F0E8" },
+    preview: { background: "#FDF8F3", primary: "#C96A3B", surface: "#FFFFFF" },
   },
   {
     id: "terra-dark",
@@ -97,6 +105,8 @@ export const THEMES: ThemeDefinition[] = [
       "--color-surface": "#2C1F1A",
       "--color-foreground": "#F5F0E8",
       "--color-muted": "#7A6A5C",
+      "--color-faint": "#4A3F36",
+      "--color-border": "#38291F",
       "--color-danger": "#D47A7A",
     },
     preview: { background: "#1B1210", primary: "#D4917A", surface: "#2C1F1A" },
@@ -111,12 +121,14 @@ export const THEMES: ThemeDefinition[] = [
       "--color-secondary": "#A393C5",
       "--color-accent": "#B3A5D0",
       "--color-background": "#FAF7F2",
-      "--color-surface": "#F5F0E8",
+      "--color-surface": "#FFFFFF",
       "--color-foreground": "#2A2535",
       "--color-muted": "#908A82",
+      "--color-faint": "#C4BCB4",
+      "--color-border": "#ECE4DC",
       "--color-danger": "#B85C5C",
     },
-    preview: { background: "#FAF7F2", primary: "#8B7AAF", surface: "#F5F0E8" },
+    preview: { background: "#FAF7F2", primary: "#8B7AAF", surface: "#FFFFFF" },
   },
   {
     id: "lav-dark",
@@ -131,6 +143,8 @@ export const THEMES: ThemeDefinition[] = [
       "--color-surface": "#221E2C",
       "--color-foreground": "#EDE8F4",
       "--color-muted": "#605A6C",
+      "--color-faint": "#3E384A",
+      "--color-border": "#2C2636",
       "--color-danger": "#D47A7A",
     },
     preview: { background: "#16131C", primary: "#A899C8", surface: "#221E2C" },
@@ -145,12 +159,14 @@ export const THEMES: ThemeDefinition[] = [
       "--color-secondary": "#D4A843",
       "--color-accent": "#6B9B78",
       "--color-background": "#F8F4EE",
-      "--color-surface": "#F5F0E8",
+      "--color-surface": "#FFFFFF",
       "--color-foreground": "#1C2E1F",
       "--color-muted": "#8A9080",
+      "--color-faint": "#BCC2B4",
+      "--color-border": "#E6E1D5",
       "--color-danger": "#C75D5D",
     },
-    preview: { background: "#F8F4EE", primary: "#3D6B4E", surface: "#F5F0E8" },
+    preview: { background: "#F8F4EE", primary: "#3D6B4E", surface: "#FFFFFF" },
   },
   {
     id: "honey-dark",
@@ -165,13 +181,15 @@ export const THEMES: ThemeDefinition[] = [
       "--color-surface": "#1C2B20",
       "--color-foreground": "#EDE8D8",
       "--color-muted": "#5C695E",
+      "--color-faint": "#3E4B40",
+      "--color-border": "#2A362E",
       "--color-danger": "#D47A7A",
     },
     preview: { background: "#111A14", primary: "#6B9B78", surface: "#1C2B20" },
   },
 ];
 
-export const DEFAULT_THEME: ThemeId = "sand-light";
+export const DEFAULT_THEME: ThemeId = "terra-light";
 
 export function getTheme(id: ThemeId): ThemeDefinition {
   return THEMES.find((t) => t.id === id) ?? THEMES[0];

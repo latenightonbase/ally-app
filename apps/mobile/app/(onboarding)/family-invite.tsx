@@ -134,10 +134,22 @@ export default function FamilyInviteScreen() {
           <Pressable
             onPress={addEmail}
             disabled={emailDraft.trim().length === 0}
-            className="w-12 h-12 rounded-2xl items-center justify-center bg-primary"
-            style={{ opacity: emailDraft.trim().length === 0 ? 0.4 : 1 }}
+            style={{
+              width: 52,
+              height: 52,
+              borderRadius: 26,
+              alignItems: "center",
+              justifyContent: "center",
+              backgroundColor: theme.colors["--color-primary"],
+              opacity: emailDraft.trim().length === 0 ? 0.4 : 1,
+              shadowColor: theme.colors["--color-primary"],
+              shadowOffset: { width: 0, height: 6 },
+              shadowOpacity: 0.3,
+              shadowRadius: 14,
+              elevation: 4,
+            }}
           >
-            <Ionicons name="add" size={22} color="#ffffff" />
+            <Ionicons name="add" size={24} color="#ffffff" />
           </Pressable>
         </View>
 
@@ -151,10 +163,12 @@ export default function FamilyInviteScreen() {
             {emails.map((email) => (
               <View
                 key={email}
-                className="flex-row items-center bg-surface rounded-2xl px-4 py-3"
+                className="flex-row items-center px-4 py-3.5"
                 style={{
+                  backgroundColor: theme.colors["--color-surface"],
+                  borderRadius: 16,
                   borderWidth: 1,
-                  borderColor: theme.colors["--color-muted"] + "22",
+                  borderColor: theme.colors["--color-border"],
                 }}
               >
                 <Ionicons

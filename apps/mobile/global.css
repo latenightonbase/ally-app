@@ -10,55 +10,37 @@ html, body, #root {
 }
 
 /* ============================================
-   THEME: Sand & Sage (Light) — DEFAULT
-   Warm cream backgrounds, sage green accents
+   THEME: Terracotta & Clay (Light) — DEFAULT
+   Warm linen backgrounds, terracotta accents
    ============================================ */
 :root {
-  --color-primary: #7C9A72;
-  --color-primary-soft: rgba(124, 154, 114, 0.12);
-  --color-secondary: #C4A95B;
-  --color-accent: #A8C49E;
-  --color-background: #FAF7F2;
-  --color-surface: #F5F0E8;
-  --color-foreground: #2D2A26;
-  --color-muted: #A09A90;
-  --color-danger: #C75D5D;
-}
-
-/* ============================================
-   THEME: Sand & Sage (Dark)
-   ============================================ */
-.theme-sand-dark {
-  --color-primary: #98B88E;
-  --color-primary-soft: rgba(152, 184, 142, 0.15);
-  --color-secondary: #D4B96B;
-  --color-accent: #7C9A72;
-  --color-background: #1A1714;
-  --color-surface: #2A2520;
-  --color-foreground: #F5F0E8;
-  --color-muted: #6B6560;
-  --color-danger: #D47A7A;
-}
-
-/* ============================================
-   THEME: Terracotta & Clay (Light)
-   Light linen backgrounds, warm terracotta accents
-   ============================================ */
-.theme-terra-light {
-  --color-primary: #C47A5A;
-  --color-primary-soft: rgba(196, 122, 90, 0.12);
+  --color-primary: #C96A3B;
+  --color-primary-soft: #FAEEE6;
   --color-secondary: #A65D3F;
-  --color-accent: #D4947A;
-  --color-background: #F8F4EE;
-  --color-surface: #F5F0E8;
-  --color-foreground: #2E1F14;
-  --color-muted: #A3917F;
-  --color-danger: #C75050;
+  --color-accent: #E8A87C;
+  --color-background: #FDF8F3;
+  --color-surface: #FFFFFF;
+  --color-foreground: #2D1F16;
+  --color-muted: #9B8A7A;
+  --color-faint: #C4B5A8;
+  --color-border: #EDE0D5;
+  --color-danger: #C95B5B;
 }
 
-/* ============================================
-   THEME: Terracotta & Clay (Dark)
-   ============================================ */
+.theme-terra-light {
+  --color-primary: #C96A3B;
+  --color-primary-soft: #FAEEE6;
+  --color-secondary: #A65D3F;
+  --color-accent: #E8A87C;
+  --color-background: #FDF8F3;
+  --color-surface: #FFFFFF;
+  --color-foreground: #2D1F16;
+  --color-muted: #9B8A7A;
+  --color-faint: #C4B5A8;
+  --color-border: #EDE0D5;
+  --color-danger: #C95B5B;
+}
+
 .theme-terra-dark {
   --color-primary: #D4917A;
   --color-primary-soft: rgba(212, 145, 122, 0.15);
@@ -68,28 +50,53 @@ html, body, #root {
   --color-surface: #2C1F1A;
   --color-foreground: #F5F0E8;
   --color-muted: #7A6A5C;
+  --color-faint: #4A3F36;
+  --color-border: #38291F;
   --color-danger: #D47A7A;
 }
 
-/* ============================================
-   THEME: Lavender & Stone (Light)
-   Warm cream backgrounds, muted lavender accents
-   ============================================ */
+.theme-sand-light {
+  --color-primary: #7C9A72;
+  --color-primary-soft: rgba(124, 154, 114, 0.12);
+  --color-secondary: #C4A95B;
+  --color-accent: #A8C49E;
+  --color-background: #FAF7F2;
+  --color-surface: #FFFFFF;
+  --color-foreground: #2D2A26;
+  --color-muted: #A09A90;
+  --color-faint: #C4B9A8;
+  --color-border: #EDE5DA;
+  --color-danger: #C75D5D;
+}
+
+.theme-sand-dark {
+  --color-primary: #98B88E;
+  --color-primary-soft: rgba(152, 184, 142, 0.15);
+  --color-secondary: #D4B96B;
+  --color-accent: #7C9A72;
+  --color-background: #1A1714;
+  --color-surface: #2A2520;
+  --color-foreground: #F5F0E8;
+  --color-muted: #6B6560;
+  --color-faint: #4A443E;
+  --color-border: #352F2A;
+  --color-danger: #D47A7A;
+}
+
 .theme-lav-light {
   --color-primary: #8B7AAF;
   --color-primary-soft: rgba(139, 122, 175, 0.12);
   --color-secondary: #A393C5;
   --color-accent: #B3A5D0;
   --color-background: #FAF7F2;
-  --color-surface: #F5F0E8;
+  --color-surface: #FFFFFF;
   --color-foreground: #2A2535;
   --color-muted: #908A82;
+  --color-faint: #C4BCB4;
+  --color-border: #ECE4DC;
   --color-danger: #B85C5C;
 }
 
-/* ============================================
-   THEME: Lavender & Stone (Dark)
-   ============================================ */
 .theme-lav-dark {
   --color-primary: #A899C8;
   --color-primary-soft: rgba(168, 153, 200, 0.15);
@@ -99,28 +106,25 @@ html, body, #root {
   --color-surface: #221E2C;
   --color-foreground: #EDE8F4;
   --color-muted: #605A6C;
+  --color-faint: #3E384A;
+  --color-border: #2C2636;
   --color-danger: #D47A7A;
 }
 
-/* ============================================
-   THEME: Honey & Forest (Light)
-   Soft sand backgrounds, honey gold & forest green
-   ============================================ */
 .theme-honey-light {
   --color-primary: #3D6B4E;
   --color-primary-soft: rgba(61, 107, 78, 0.12);
   --color-secondary: #D4A843;
   --color-accent: #6B9B78;
   --color-background: #F8F4EE;
-  --color-surface: #F5F0E8;
+  --color-surface: #FFFFFF;
   --color-foreground: #1C2E1F;
   --color-muted: #8A9080;
+  --color-faint: #BCC2B4;
+  --color-border: #E6E1D5;
   --color-danger: #C75D5D;
 }
 
-/* ============================================
-   THEME: Honey & Forest (Dark)
-   ============================================ */
 .theme-honey-dark {
   --color-primary: #6B9B78;
   --color-primary-soft: rgba(107, 155, 120, 0.15);
@@ -130,5 +134,7 @@ html, body, #root {
   --color-surface: #1C2B20;
   --color-foreground: #EDE8D8;
   --color-muted: #5C695E;
+  --color-faint: #3E4B40;
+  --color-border: #2A362E;
   --color-danger: #D47A7A;
 }

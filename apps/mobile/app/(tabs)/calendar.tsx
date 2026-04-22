@@ -89,32 +89,47 @@ function ItemCard({ item }: { item: ScheduleItem }) {
         ? "checkbox-outline"
         : "alarm-outline";
   const isCompleted = item.status === "completed";
+  const accentColor = item.color ?? theme.colors["--color-primary"];
 
   return (
-    <View className="bg-surface rounded-2xl p-4 mb-2 border border-primary-soft">
-      <View className="flex-row items-start">
+    <View
+      className="rounded-2xl mb-2.5 overflow-hidden"
+      style={{
+        backgroundColor: theme.colors["--color-surface"],
+        borderWidth: 1,
+        borderColor: theme.colors["--color-border"],
+      }}
+    >
+      <View className="flex-row items-center px-4 py-3.5">
         <View
-          className="w-9 h-9 rounded-full items-center justify-center mr-3"
           style={{
-            backgroundColor:
-              (item.color ?? theme.colors["--color-primary"]) + "20",
+            width: 40,
+            height: 40,
+            borderRadius: 20,
+            backgroundColor: theme.colors["--color-primary-soft"],
+            alignItems: "center",
+            justifyContent: "center",
+            marginRight: 12,
           }}
         >
-          <Ionicons
-            name={iconName}
-            size={18}
-            color={item.color ?? theme.colors["--color-primary"]}
-          />
+          <Ionicons name={iconName} size={18} color={accentColor} />
         </View>
         <View className="flex-1">
           <Text
-            className={`text-foreground text-base font-sans-semibold ${
-              isCompleted ? "line-through text-muted" : ""
-            }`}
+            className="text-base font-sans-bold"
+            style={{
+              color: isCompleted
+                ? theme.colors["--color-muted"]
+                : theme.colors["--color-foreground"],
+              textDecorationLine: isCompleted ? "line-through" : "none",
+            }}
           >
             {item.title}
           </Text>
-          <Text className="text-muted text-xs font-sans mt-0.5">
+          <Text
+            className="text-xs font-sans mt-0.5"
+            style={{ color: theme.colors["--color-muted"] }}
+          >
             {item.allDay ? "All day" : formatTime(item.time)}
             {item.location ? ` · ${item.location}` : ""}
             {item.subtitle ? ` · ${item.subtitle}` : ""}
@@ -122,13 +137,26 @@ function ItemCard({ item }: { item: ScheduleItem }) {
           {item.assignedNames && item.assignedNames.length > 0 && (
             <View className="flex-row flex-wrap mt-1.5">
               {item.assignedNames.map((name, i) => (
-                <Text key={i} className="text-muted text-xs font-sans mr-2">
+                <Text
+                  key={i}
+                  className="text-xs font-sans-semibold mr-2"
+                  style={{ color: theme.colors["--color-faint"] }}
+                >
                   {name}
                 </Text>
               ))}
             </View>
           )}
         </View>
+        <View
+          style={{
+            width: 4,
+            alignSelf: "stretch",
+            backgroundColor: accentColor,
+            borderRadius: 2,
+            marginLeft: 12,
+          }}
+        />
       </View>
     </View>
   );
@@ -311,29 +339,33 @@ export default function CalendarScreen() {
 
   const calendarTheme = useMemo(
     () => ({
-      backgroundColor: theme.colors["--color-background"],
-      calendarBackground: theme.colors["--color-background"],
+      backgroundColor: theme.colors["--color-surface"],
+      calendarBackground: theme.colors["--color-surface"],
       textSectionTitleColor: theme.colors["--color-muted"],
       selectedDayBackgroundColor: theme.colors["--color-primary"],
       selectedDayTextColor: "#ffffff",
       todayTextColor: theme.colors["--color-primary"],
+      todayBackgroundColor: theme.colors["--color-primary-soft"],
       dayTextColor: theme.colors["--color-foreground"],
-      textDisabledColor: theme.colors["--color-muted"] + "60",
+      textDisabledColor: theme.colors["--color-faint"],
       monthTextColor: theme.colors["--color-foreground"],
       arrowColor: theme.colors["--color-primary"],
-      textMonthFontFamily: "PlusJakartaSans_700Bold",
-      textDayFontFamily: "PlusJakartaSans_500Medium",
-      textDayHeaderFontFamily: "PlusJakartaSans_600SemiBold",
+      textMonthFontFamily: "Nunito_700Bold",
+      textDayFontFamily: "Nunito_600SemiBold",
+      textDayHeaderFontFamily: "Nunito_700Bold",
       textMonthFontSize: 18,
       textDayFontSize: 14,
-      textDayHeaderFontSize: 12,
+      textDayHeaderFontSize: 11,
     }),
     [theme],
   );
 
   if (loading) {
     return (
-      <View className="flex-1 bg-background items-center justify-center">
+      <View
+        className="flex-1 items-center justify-center"
+        style={{ backgroundColor: theme.colors["--color-background"] }}
+      >
         <ActivityIndicator
           size="large"
           color={theme.colors["--color-primary"]}
@@ -344,7 +376,10 @@ export default function CalendarScreen() {
 
   if (!hasFamily) {
     return (
-      <View className="flex-1 bg-background">
+      <View
+        className="flex-1"
+        style={{ backgroundColor: theme.colors["--color-background"] }}
+      >
         <SafeAreaView edges={["top"]} className="flex-1">
           <ScreenHeader title="Calendar" />
           <View className="flex-1 px-5 items-center justify-center">
@@ -353,7 +388,10 @@ export default function CalendarScreen() {
               size={48}
               color={theme.colors["--color-muted"]}
             />
-            <Text className="text-muted text-sm font-sans text-center mt-3">
+            <Text
+              className="text-sm font-sans text-center mt-3"
+              style={{ color: theme.colors["--color-muted"] }}
+            >
               Join or create a family to see the shared calendar.
             </Text>
           </View>
@@ -363,7 +401,10 @@ export default function CalendarScreen() {
   }
 
   return (
-    <View className="flex-1 bg-background">
+    <View
+      className="flex-1"
+      style={{ backgroundColor: theme.colors["--color-background"] }}
+    >
       <SafeAreaView edges={["top"]} className="flex-1">
         <ScreenHeader
           title="Calendar"
@@ -372,15 +413,19 @@ export default function CalendarScreen() {
             !isToday ? (
               <TouchableOpacity
                 onPress={() => setSelectedDate(toDateKey(new Date()))}
-                className="rounded-full px-3 py-1.5 border border-primary-soft flex-row items-center mr-2"
+                className="rounded-full px-3 py-1.5 flex-row items-center mr-2"
                 activeOpacity={0.7}
+                style={{
+                  backgroundColor: theme.colors["--color-primary"],
+                  shadowColor: theme.colors["--color-primary"],
+                  shadowOffset: { width: 0, height: 3 },
+                  shadowOpacity: 0.3,
+                  shadowRadius: 8,
+                  elevation: 3,
+                }}
               >
-                <Ionicons
-                  name="today-outline"
-                  size={14}
-                  color={theme.colors["--color-primary"]}
-                />
-                <Text className="text-primary text-xs font-sans-semibold ml-1">
+                <Ionicons name="today-outline" size={13} color="#ffffff" />
+                <Text className="text-white text-xs font-sans-bold ml-1">
                   Today
                 </Text>
               </TouchableOpacity>
@@ -404,54 +449,80 @@ export default function CalendarScreen() {
             animate={{ opacity: 1, translateY: 0 }}
             transition={{ type: "timing", duration: 300 }}
           >
-            {/* Month Calendar */}
-            <View className="mx-3 mb-2 rounded-2xl overflow-hidden bg-background">
+            <View
+              className="mx-5 mb-3 rounded-3xl overflow-hidden"
+              style={{
+                backgroundColor: theme.colors["--color-surface"],
+                borderWidth: 1,
+                borderColor: theme.colors["--color-border"],
+                paddingVertical: 8,
+              }}
+            >
               <Calendar
                 current={selectedDate}
                 onDayPress={(day) => setSelectedDate(day.dateString)}
                 markingType="multi-dot"
                 markedDates={markedDates}
-                theme={calendarTheme as any}
+                theme={calendarTheme as never}
                 enableSwipeMonths
                 firstDay={0}
               />
             </View>
 
-            {/* Legend */}
-            <View className="px-5 mb-2 flex-row flex-wrap">
+            <View className="px-5 mb-4 flex-row flex-wrap">
               <View className="flex-row items-center mr-4 mb-1">
                 <View
                   className="w-2 h-2 rounded-full mr-1.5"
                   style={{ backgroundColor: theme.colors["--color-primary"] }}
                 />
-                <Text className="text-muted text-xs font-sans">Events</Text>
-              </View>
-              <View className="flex-row items-center mr-4 mb-1">
-                <View
-                  className="w-2 h-2 rounded-full mr-1.5"
-                  style={{ backgroundColor: theme.colors["--color-secondary"] }}
-                />
-                <Text className="text-muted text-xs font-sans">Tasks</Text>
+                <Text
+                  className="text-xs font-sans-semibold"
+                  style={{ color: theme.colors["--color-muted"] }}
+                >
+                  Events
+                </Text>
               </View>
               <View className="flex-row items-center mr-4 mb-1">
                 <View
                   className="w-2 h-2 rounded-full mr-1.5"
                   style={{ backgroundColor: theme.colors["--color-accent"] }}
                 />
-                <Text className="text-muted text-xs font-sans">Reminders</Text>
+                <Text
+                  className="text-xs font-sans-semibold"
+                  style={{ color: theme.colors["--color-muted"] }}
+                >
+                  Reminders
+                </Text>
+              </View>
+              <View className="flex-row items-center mr-4 mb-1">
+                <View
+                  className="w-2 h-2 rounded-full mr-1.5"
+                  style={{ backgroundColor: theme.colors["--color-secondary"] }}
+                />
+                <Text
+                  className="text-xs font-sans-semibold"
+                  style={{ color: theme.colors["--color-muted"] }}
+                >
+                  Tasks
+                </Text>
               </View>
             </View>
 
-            {/* Selected day schedule */}
-            <View className="px-5 mt-2">
-              <Text className="text-foreground text-lg font-sans-bold">
+            <View className="px-5 mt-1">
+              <Text
+                className="text-lg font-sans-bold"
+                style={{ color: theme.colors["--color-foreground"] }}
+              >
                 {selectedDateObj.toLocaleDateString("en-US", {
                   weekday: "long",
                   month: "long",
                   day: "numeric",
                 })}
               </Text>
-              <Text className="text-muted text-xs font-sans mb-3">
+              <Text
+                className="text-xs font-sans mb-3"
+                style={{ color: theme.colors["--color-muted"] }}
+              >
                 {selectedItems.length === 0
                   ? "Nothing scheduled"
                   : `${selectedItems.length} item${selectedItems.length === 1 ? "" : "s"}`}
@@ -471,13 +542,23 @@ export default function CalendarScreen() {
                   <ItemCard key={item.id} item={item} />
                 ))
               ) : (
-                <View className="bg-surface/50 rounded-2xl p-6 items-center">
+                <View
+                  className="rounded-3xl p-6 items-center"
+                  style={{
+                    backgroundColor: theme.colors["--color-surface"],
+                    borderWidth: 1,
+                    borderColor: theme.colors["--color-border"],
+                  }}
+                >
                   <Ionicons
                     name="sunny-outline"
                     size={32}
                     color={theme.colors["--color-muted"]}
                   />
-                  <Text className="text-muted text-sm font-sans mt-2 text-center">
+                  <Text
+                    className="text-sm font-sans mt-2 text-center"
+                    style={{ color: theme.colors["--color-muted"] }}
+                  >
                     {selectedDateObj < new Date(new Date().toDateString())
                       ? "Nothing happened on this day."
                       : "Nothing scheduled — enjoy the free time!"}

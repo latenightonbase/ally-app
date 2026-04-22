@@ -27,8 +27,79 @@ import { CreateTaskSheet } from "../../components/modals/CreateTaskSheet";
 import { AddShoppingItemSheet } from "../../components/modals/AddShoppingItemSheet";
 import type { CalendarEvent, Task, Reminder } from "@ally/shared";
 
-function ScheduleItem({ event }: { event: CalendarEvent }) {
+function Card({
+  children,
+  style,
+  onPress,
+}: {
+  children: React.ReactNode;
+  style?: object;
+  onPress?: () => void;
+}) {
   const { theme } = useTheme();
+  const inner = {
+    backgroundColor: theme.colors["--color-surface"],
+    borderRadius: 24,
+    borderWidth: 1,
+    borderColor: theme.colors["--color-border"],
+    padding: 18,
+    ...(style ?? {}),
+  } as const;
+  if (onPress) {
+    return (
+      <Pressable onPress={onPress} style={inner} className="active:opacity-80">
+        {children}
+      </Pressable>
+    );
+  }
+  return <View style={inner}>{children}</View>;
+}
+
+function SectionHeader({
+  icon,
+  title,
+  badge,
+}: {
+  icon: React.ComponentProps<typeof Ionicons>["name"];
+  title: string;
+  badge?: number;
+}) {
+  const { theme } = useTheme();
+  return (
+    <View className="flex-row items-center mb-3 px-1">
+      <Ionicons name={icon} size={16} color={theme.colors["--color-primary"]} />
+      <Text
+        className="text-base font-sans-bold ml-2"
+        style={{ color: theme.colors["--color-foreground"] }}
+      >
+        {title}
+      </Text>
+      {typeof badge === "number" && badge > 0 && (
+        <View
+          className="rounded-full px-2 py-0.5 ml-2"
+          style={{ backgroundColor: theme.colors["--color-primary-soft"] }}
+        >
+          <Text
+            className="text-xs font-sans-bold"
+            style={{ color: theme.colors["--color-primary"] }}
+          >
+            {badge}
+          </Text>
+        </View>
+      )}
+    </View>
+  );
+}
+
+function ScheduleRow({
+  event,
+  last,
+}: {
+  event: CalendarEvent;
+  last?: boolean;
+}) {
+  const { theme } = useTheme();
+  const color = event.color ?? theme.colors["--color-primary"];
   const time = event.allDay
     ? "All day"
     : new Date(event.startTime).toLocaleTimeString("en-US", {
@@ -37,16 +108,33 @@ function ScheduleItem({ event }: { event: CalendarEvent }) {
       });
 
   return (
-    <View className="flex-row items-center py-3 border-b border-primary-soft">
+    <View
+      className="flex-row items-center py-3"
+      style={{
+        borderBottomWidth: last ? 0 : 1,
+        borderBottomColor: theme.colors["--color-border"],
+      }}
+    >
       <View
-        className="w-1 h-10 rounded-full mr-3"
-        style={{ backgroundColor: event.color ?? theme.colors["--color-primary"] }}
+        style={{
+          width: 4,
+          height: 36,
+          borderRadius: 2,
+          backgroundColor: color,
+          marginRight: 14,
+        }}
       />
       <View className="flex-1">
-        <Text className="text-foreground font-sans-semibold text-sm">
+        <Text
+          className="font-sans-bold text-sm"
+          style={{ color: theme.colors["--color-foreground"] }}
+        >
           {event.title}
         </Text>
-        <Text className="text-muted text-xs font-sans mt-0.5">
+        <Text
+          className="text-xs font-sans mt-0.5"
+          style={{ color: theme.colors["--color-muted"] }}
+        >
           {time}
           {event.location ? ` · ${event.location}` : ""}
         </Text>
@@ -68,45 +156,71 @@ function QuickAction({
   return (
     <Pressable
       onPress={onPress}
-      className="flex-1 bg-surface rounded-2xl py-4 items-center border border-primary-soft active:opacity-70"
+      className="flex-1 items-center active:opacity-80"
+      style={{
+        backgroundColor: theme.colors["--color-surface"],
+        borderWidth: 1,
+        borderColor: theme.colors["--color-border"],
+        borderRadius: 20,
+        paddingVertical: 14,
+      }}
     >
-      <Ionicons name={icon} size={22} color={theme.colors["--color-primary"]} />
-      <Text className="text-foreground text-xs font-sans-semibold mt-1.5">
+      <View
+        style={{
+          width: 36,
+          height: 36,
+          borderRadius: 18,
+          backgroundColor: theme.colors["--color-primary-soft"],
+          alignItems: "center",
+          justifyContent: "center",
+          marginBottom: 6,
+        }}
+      >
+        <Ionicons name={icon} size={18} color={theme.colors["--color-primary"]} />
+      </View>
+      <Text
+        className="text-xs font-sans-bold"
+        style={{ color: theme.colors["--color-foreground"] }}
+      >
         {label}
       </Text>
     </Pressable>
   );
 }
 
-function TaskQuickView({ tasks }: { tasks: Task[] }) {
+function TaskRow({ task, last }: { task: Task; last?: boolean }) {
   const { theme } = useTheme();
-  if (tasks.length === 0) return null;
-
   return (
-    <View className="mt-1">
-      {tasks.slice(0, 3).map((task) => (
-        <View key={task.id} className="flex-row items-center py-2">
-          <Ionicons
-            name="ellipse-outline"
-            size={16}
-            color={theme.colors["--color-muted"]}
-          />
-          <Text className="text-foreground text-sm font-sans ml-2 flex-1" numberOfLines={1}>
-            {task.title}
-          </Text>
-          {task.priority === "high" && (
-            <Ionicons
-              name="alert-circle"
-              size={14}
-              color={theme.colors["--color-error"] ?? "#DC2626"}
-            />
-          )}
-        </View>
-      ))}
-      {tasks.length > 3 && (
-        <Text className="text-muted text-xs font-sans mt-1">
-          +{tasks.length - 3} more
-        </Text>
+    <View
+      className="flex-row items-center py-3"
+      style={{
+        borderBottomWidth: last ? 0 : 1,
+        borderBottomColor: theme.colors["--color-border"],
+      }}
+    >
+      <View
+        style={{
+          width: 20,
+          height: 20,
+          borderRadius: 10,
+          borderWidth: 2,
+          borderColor: theme.colors["--color-border"],
+          marginRight: 12,
+        }}
+      />
+      <Text
+        className="text-sm font-sans-semibold flex-1"
+        style={{ color: theme.colors["--color-foreground"] }}
+        numberOfLines={1}
+      >
+        {task.title}
+      </Text>
+      {task.priority === "high" && (
+        <Ionicons
+          name="alert-circle"
+          size={16}
+          color={theme.colors["--color-danger"]}
+        />
       )}
     </View>
   );
@@ -128,7 +242,7 @@ export default function HomeScreen() {
 
   const [refreshing, setRefreshing] = useState(false);
   const [briefingText, setBriefingText] = useState<string | null>(null);
-  const [briefingLoading, setBriefingLoading] = useState(true);
+  const [, setBriefingLoading] = useState(true);
   const [reminderSheetOpen, setReminderSheetOpen] = useState(false);
   const [taskSheetOpen, setTaskSheetOpen] = useState(false);
   const [shoppingSheetOpen, setShoppingSheetOpen] = useState(false);
@@ -171,7 +285,7 @@ export default function HomeScreen() {
   );
 
   const upcomingReminders = useMemo(
-    () => (dashboard as any)?.upcomingReminders ?? [],
+    () => ((dashboard as unknown as { upcomingReminders?: Reminder[] })?.upcomingReminders ?? []),
     [dashboard],
   ) as Reminder[];
 
@@ -194,38 +308,64 @@ export default function HomeScreen() {
 
   if (dashboardLoading && !dashboard) {
     return (
-      <View className="flex-1 bg-background items-center justify-center">
-        <ActivityIndicator size="large" className="text-primary" />
+      <View
+        className="flex-1 items-center justify-center"
+        style={{ backgroundColor: theme.colors["--color-background"] }}
+      >
+        <ActivityIndicator
+          size="large"
+          color={theme.colors["--color-primary"]}
+        />
       </View>
     );
   }
 
+  const briefingLines = briefingText
+    ? briefingText
+        .split("\n")
+        .map((line) => line.trim())
+        .filter((line) => line.startsWith("•") || line.startsWith("-"))
+        .map((line) => line.replace(/^[•\-]\s*/, ""))
+    : [];
+
   return (
-    <View className="flex-1 bg-background">
+    <View
+      className="flex-1"
+      style={{ backgroundColor: theme.colors["--color-background"] }}
+    >
       <SafeAreaView edges={["top"]} className="flex-1">
         <ScreenHeader />
         <ScrollView
           className="flex-1 px-5"
-          contentContainerStyle={{ paddingBottom: 120 }}
+          contentContainerStyle={{ paddingBottom: 100 }}
           showsVerticalScrollIndicator={false}
           refreshControl={
             <RefreshControl
               refreshing={refreshing}
               onRefresh={() => load(true)}
+              tintColor={theme.colors["--color-primary"]}
             />
           }
         >
           <MotiView
             from={{ opacity: 0, translateY: 12 }}
-            animate={{ opacity: 1, translateY: 0 }}
+            animate={{ opacity: 1, translateY:0 }}
             transition={{ type: "timing", duration: 400 }}
           >
-            {/* Greeting */}
-            <View className="mb-5 mt-2">
-              <Text className="text-foreground text-2xl font-sans-bold">
-                {greeting}, {userName || "there"}
+            <View className="mb-5 mt-1">
+              <Text
+                className="text-2xl font-sans-bold"
+                style={{ color: theme.colors["--color-foreground"] }}
+              >
+                {greeting},{"\n"}
+                <Text style={{ color: theme.colors["--color-primary"] }}>
+                  {userName || "there"}
+                </Text>
               </Text>
-              <Text className="text-muted text-sm font-sans mt-1">
+              <Text
+                className="text-sm font-sans mt-2"
+                style={{ color: theme.colors["--color-muted"] }}
+              >
                 {new Date().toLocaleDateString("en-US", {
                   weekday: "long",
                   month: "long",
@@ -234,38 +374,63 @@ export default function HomeScreen() {
               </Text>
             </View>
 
-            {/* AI Briefing */}
-            {briefingText && (
-              <View className="bg-primary/10 rounded-2xl p-4 mb-5 border border-primary-soft">
-                <View className="flex-row items-center mb-2">
-                  <Text className="text-lg mr-2">📋</Text>
-                  <Text className="text-primary font-sans-bold text-sm">
+            {briefingLines.length > 0 && (
+              <View
+                className="rounded-3xl p-5 mb-5"
+                style={{
+                  backgroundColor: theme.colors["--color-primary-soft"],
+                  borderWidth: 1,
+                  borderColor: theme.colors["--color-primary-soft"],
+                }}
+              >
+                <View className="flex-row items-center mb-3">
+                  <View
+                    style={{
+                      width: 30,
+                      height: 30,
+                      borderRadius: 15,
+                      backgroundColor: theme.colors["--color-primary"],
+                      alignItems: "center",
+                      justifyContent: "center",
+                      marginRight: 10,
+                    }}
+                  >
+                    <Ionicons name="sparkles" size={16} color="#ffffff" />
+                  </View>
+                  <Text
+                    className="font-sans-bold text-sm"
+                    style={{ color: theme.colors["--color-primary"] }}
+                  >
                     Today at a Glance
                   </Text>
                 </View>
-                <View>
-                  {briefingText
-                    .split("\n")
-                    .map((line) => line.trim())
-                    .filter((line) => line.startsWith("•") || line.startsWith("-"))
-                    .map((line, idx) => (
-                      <Text
-                        key={idx}
-                        className="text-foreground text-sm font-sans leading-5 mb-1.5"
-                      >
-                        {line}
-                      </Text>
-                    ))}
-                </View>
+                {briefingLines.map((line, idx) => (
+                  <View key={idx} className="flex-row mb-1.5">
+                    <Text
+                      className="font-sans-bold mr-2"
+                      style={{ color: theme.colors["--color-primary"] }}
+                    >
+                      •
+                    </Text>
+                    <Text
+                      className="text-sm font-sans flex-1"
+                      style={{
+                        color: theme.colors["--color-foreground"],
+                        lineHeight: 20,
+                      }}
+                    >
+                      {line}
+                    </Text>
+                  </View>
+                ))}
               </View>
             )}
 
-            {/* Quick Actions */}
-            <View className="flex-row gap-3 mb-5">
+            <View className="flex-row gap-3 mb-6">
               <QuickAction
-                icon="checkmark-done-outline"
-                label="New Task"
-                onPress={() => setTaskSheetOpen(true)}
+                icon="add"
+                label="Add Event"
+                onPress={() => router.push("/(tabs)/calendar")}
               />
               <QuickAction
                 icon="cart-outline"
@@ -274,146 +439,181 @@ export default function HomeScreen() {
               />
               <QuickAction
                 icon="notifications-outline"
-                label="Remind"
+                label="Remind Me"
                 onPress={() => setReminderSheetOpen(true)}
               />
             </View>
 
-            {/* Today's Schedule */}
             <View className="mb-5">
-              <View className="flex-row items-center mb-3">
-                <Ionicons
-                  name="calendar-outline"
-                  size={18}
-                  color={theme.colors["--color-primary"]}
-                />
-                <Text className="text-foreground text-base font-sans-bold ml-2">
-                  Today's Schedule
-                </Text>
-                {todayEvents.length > 0 && (
-                  <View className="bg-primary-soft rounded-full px-2 py-0.5 ml-2">
-                    <Text className="text-primary text-xs font-sans-bold">
-                      {todayEvents.length}
+              <SectionHeader
+                icon="calendar-outline"
+                title="Today's Schedule"
+                badge={todayEvents.length}
+              />
+              {todayEvents.length > 0 ? (
+                <Card>
+                  {todayEvents.map((event, i) => (
+                    <ScheduleRow
+                      key={event.id}
+                      event={event}
+                      last={i === todayEvents.length - 1}
+                    />
+                  ))}
+                </Card>
+              ) : (
+                <Card>
+                  <View className="items-center py-2">
+                    <Text className="text-2xl mb-1">🎉</Text>
+                    <Text
+                      className="text-sm font-sans text-center"
+                      style={{ color: theme.colors["--color-muted"] }}
+                    >
+                      Clear day ahead — no scheduled chaos!
                     </Text>
                   </View>
-                )}
-              </View>
-
-              {todayEvents.length > 0 ? (
-                <View className="bg-surface rounded-2xl px-4 border border-primary-soft">
-                  {todayEvents.map((event, i) => (
-                    <ScheduleItem key={event.id} event={event} />
-                  ))}
-                </View>
-              ) : (
-                <View className="bg-surface/50 rounded-2xl p-5 items-center">
-                  <Text className="text-2xl mb-1">🎉</Text>
-                  <Text className="text-muted text-sm font-sans text-center">
-                    Clear day ahead — no scheduled chaos!
-                  </Text>
-                </View>
+                </Card>
               )}
             </View>
 
-            {/* Upcoming Reminders */}
             {upcomingReminders.length > 0 && (
               <View className="mb-5">
-                <View className="flex-row items-center mb-3">
-                  <Ionicons
-                    name="notifications-outline"
-                    size={18}
-                    color={theme.colors["--color-primary"]}
-                  />
-                  <Text className="text-foreground text-base font-sans-bold ml-2">
-                    Reminders
-                  </Text>
-                  <View className="bg-primary-soft rounded-full px-2 py-0.5 ml-2">
-                    <Text className="text-primary text-xs font-sans-bold">
-                      {upcomingReminders.length}
-                    </Text>
-                  </View>
-                </View>
-                <View className="bg-surface rounded-2xl px-4 border border-primary-soft">
-                  {upcomingReminders.slice(0, 5).map((r) => {
+                <SectionHeader
+                  icon="notifications-outline"
+                  title="Reminders"
+                  badge={upcomingReminders.length}
+                />
+                <Card>
+                  {upcomingReminders.slice(0, 5).map((r, i, arr) => {
                     const remindDate = new Date(r.remindAt);
-                    const isToday = remindDate.toDateString() === new Date().toDateString();
-                    const timeStr = remindDate.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+                    const isToday =
+                      remindDate.toDateString() ===
+                      new Date().toDateString();
+                    const timeStr = remindDate.toLocaleTimeString("en-US", {
+                      hour: "numeric",
+                      minute: "2-digit",
+                    });
                     const dateStr = isToday
                       ? `Today, ${timeStr}`
-                      : `${remindDate.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })}, ${timeStr}`;
+                      : `${remindDate.toLocaleDateString("en-US", {
+                          weekday: "short",
+                          month: "short",
+                          day: "numeric",
+                        })}, ${timeStr}`;
+                    const last = i === arr.length - 1;
                     return (
-                      <View key={r.id} className="flex-row items-center py-3 border-b border-primary-soft">
-                        <Ionicons name="alarm-outline" size={16} color={theme.colors["--color-primary"]} />
-                        <View className="flex-1 ml-3">
-                          <Text className="text-foreground font-sans-semibold text-sm">{r.title}</Text>
-                          <Text className="text-muted text-xs font-sans mt-0.5">{dateStr}</Text>
+                      <View
+                        key={r.id}
+                        className="flex-row items-center py-3"
+                        style={{
+                          borderBottomWidth: last ? 0 : 1,
+                          borderBottomColor: theme.colors["--color-border"],
+                        }}
+                      >
+                        <View
+                          style={{
+                            width: 32,
+                            height: 32,
+                            borderRadius: 16,
+                            backgroundColor:
+                              theme.colors["--color-primary-soft"],
+                            alignItems: "center",
+                            justifyContent: "center",
+                            marginRight: 12,
+                          }}
+                        >
+                          <Ionicons
+                            name="alarm-outline"
+                            size={15}
+                            color={theme.colors["--color-primary"]}
+                          />
+                        </View>
+                        <View className="flex-1">
+                          <Text
+                            className="font-sans-bold text-sm"
+                            style={{
+                              color: theme.colors["--color-foreground"],
+                            }}
+                          >
+                            {r.title}
+                          </Text>
+                          <Text
+                            className="text-xs font-sans mt-0.5"
+                            style={{ color: theme.colors["--color-muted"] }}
+                          >
+                            {dateStr}
+                          </Text>
                         </View>
                       </View>
                     );
                   })}
-                </View>
-                <Text className="text-muted text-xs font-sans mt-1.5 ml-1">
-                  Showing next 7 days
-                </Text>
+                </Card>
               </View>
             )}
 
-            {/* Action Items */}
             {pendingTasks.length > 0 && (
               <View className="mb-5">
-                <View className="flex-row items-center mb-3">
-                  <Ionicons
-                    name="checkbox-outline"
-                    size={18}
-                    color={theme.colors["--color-primary"]}
-                  />
-                  <Text className="text-foreground text-base font-sans-bold ml-2">
-                    To Do
-                  </Text>
-                  <View className="bg-primary-soft rounded-full px-2 py-0.5 ml-2">
-                    <Text className="text-primary text-xs font-sans-bold">
-                      {pendingTasks.length}
-                    </Text>
-                  </View>
-                </View>
-                <View className="bg-surface rounded-2xl px-4 py-1 border border-primary-soft">
-                  <TaskQuickView tasks={pendingTasks} />
-                </View>
+                <SectionHeader
+                  icon="checkbox-outline"
+                  title="To Do"
+                  badge={pendingTasks.length}
+                />
+                <Card>
+                  {pendingTasks.map((t, i, arr) => (
+                    <TaskRow
+                      key={t.id}
+                      task={t}
+                      last={i === arr.length - 1}
+                    />
+                  ))}
+                </Card>
               </View>
             )}
 
-            {/* Shopping */}
             {groceryCount > 0 && (
-              <Pressable
-                onPress={() => router.push("/(tabs)/family")}
-                className="bg-surface rounded-2xl p-4 flex-row items-center border border-primary-soft mb-5 active:opacity-70"
-              >
-                <View
-                  className="w-10 h-10 rounded-full items-center justify-center mr-3"
-                  style={{
-                    backgroundColor: theme.colors["--color-primary"] + "20",
-                  }}
-                >
-                  <Ionicons
-                    name="cart"
-                    size={20}
-                    color={theme.colors["--color-primary"]}
-                  />
-                </View>
-                <View className="flex-1">
-                  <Text className="text-foreground font-sans-semibold text-sm">
-                    Grocery List
-                  </Text>
-                  <Text className="text-muted text-xs font-sans">
-                    {groceryCount} item{groceryCount !== 1 ? "s" : ""} remaining
-                  </Text>
-                </View>
-                <Ionicons
-                  name="chevron-forward"
-                  size={18}
-                  color={theme.colors["--color-muted"]}
-                />
-              </Pressable>
+              <View className="mb-5">
+                <SectionHeader icon="cart-outline" title="Shopping" />
+                <Card onPress={() => router.push("/(tabs)/lists")}>
+                  <View className="flex-row items-center">
+                    <View
+                      style={{
+                        width: 44,
+                        height: 44,
+                        borderRadius: 22,
+                        backgroundColor: theme.colors["--color-primary-soft"],
+                        alignItems: "center",
+                        justifyContent: "center",
+                        marginRight: 14,
+                      }}
+                    >
+                      <Ionicons
+                        name="cart"
+                        size={20}
+                        color={theme.colors["--color-primary"]}
+                      />
+                    </View>
+                    <View className="flex-1">
+                      <Text
+                        className="font-sans-bold text-sm"
+                        style={{ color: theme.colors["--color-foreground"] }}
+                      >
+                        Grocery List
+                      </Text>
+                      <Text
+                        className="text-xs font-sans mt-0.5"
+                        style={{ color: theme.colors["--color-muted"] }}
+                      >
+                        {groceryCount} item
+                        {groceryCount !== 1 ? "s" : ""} remaining
+                      </Text>
+                    </View>
+                    <Ionicons
+                      name="chevron-forward"
+                      size={18}
+                      color={theme.colors["--color-faint"]}
+                    />
+                  </View>
+                </Card>
+              </View>
             )}
           </MotiView>
         </ScrollView>

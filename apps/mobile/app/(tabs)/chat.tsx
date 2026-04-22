@@ -9,6 +9,7 @@ import {
   Pressable,
   Animated,
   AppState,
+  ScrollView,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -31,14 +32,53 @@ import {
 } from "../../lib/api";
 import { useSession } from "../../lib/auth";
 
-// const CHAT_SUGGESTIONS = [
-//   "How are you feeling today?",
-//   "Tell me something interesting",
-//   "Help me plan my day",
-//   "I need advice on something",
-//   "What should I focus on?",
-//   "I'm feeling stressed",
-// ];
+const CHAT_SUGGESTIONS = [
+  "Plan our week",
+  "Add a grocery item",
+  "Set a reminder",
+  "What's coming up?",
+];
+
+function SuggestionChips({
+  onPress,
+}: {
+  onPress: (suggestion: string) => void;
+}) {
+  const { theme } = useTheme();
+
+  return (
+    <ScrollView
+      horizontal
+      showsHorizontalScrollIndicator={false}
+      contentContainerStyle={{ paddingHorizontal: 16, gap: 8, paddingTop: 4 }}
+    >
+      {CHAT_SUGGESTIONS.map((suggestion) => (
+        <Pressable
+          key={suggestion}
+          onPress={() => onPress(suggestion)}
+          style={{
+            paddingHorizontal: 16,
+            paddingVertical: 10,
+            borderRadius: 999,
+            backgroundColor: theme.colors["--color-surface"],
+            borderWidth: 1,
+            borderColor: theme.colors["--color-primary-soft"],
+          }}
+        >
+          <Text
+            className="font-sans-semibold"
+            style={{
+              color: theme.colors["--color-primary"],
+              fontSize: 13,
+            }}
+          >
+            {suggestion}
+          </Text>
+        </Pressable>
+      ))}
+    </ScrollView>
+  );
+}
 
 function toLocalMessage(m: Message): ChatMessage {
   return {
@@ -465,7 +505,7 @@ export default function ChatScreen() {
     [handleSend],
   );
 
-  const showSuggestions = messages.length <= 1;
+  const showSuggestions = messages.length <= 5 && !isTyping && !isStreaming;
 
   if (isHydrating) {
     const userName = useAppStore.getState().user?.name;
@@ -545,23 +585,19 @@ export default function ChatScreen() {
           onContentSizeChange={() => {
             flatListRef.current?.scrollToEnd({ animated: false });
           }}
-          ListFooterComponent={
-            <>
-              {isTyping && <TypingIndicator />}
-              {/* {showSuggestions && (
-                <View className="mt-4 mb-2">
-                  <Text className="text-muted text-sm font-sans-semibold mb-3 px-1">
-                    Suggestions
-                  </Text>
-
-                </View>
-              )} */}
-            </>
-          }
+          ListFooterComponent={isTyping ? <TypingIndicator /> : null}
         />
 
         <View style={{ paddingBottom: keyboardVisible ? 0 : tabBarHeight }}>
-          <ChatInput onSend={handleSend} disabled={isTyping || isStreaming || isConnected === false} />
+          {showSuggestions && (
+            <View style={{ paddingBottom: 8 }}>
+              <SuggestionChips onPress={handleSuggestionPress} />
+            </View>
+          )}
+          <ChatInput
+            onSend={handleSend}
+            disabled={isTyping || isStreaming || isConnected === false}
+          />
         </View>
       </KeyboardAvoidingView>
     </View>

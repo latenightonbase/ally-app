@@ -1,11 +1,12 @@
 import React from "react";
-import { Text, Pressable } from "react-native";
+import { Text, Pressable, View } from "react-native";
 import Animated, {
   useAnimatedStyle,
   useSharedValue,
   withSpring,
 } from "react-native-reanimated";
 import { Ionicons } from "@expo/vector-icons";
+import { useTheme } from "../../context/ThemeContext";
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
@@ -16,7 +17,7 @@ interface PrimaryCTAProps {
   onPress: () => void;
   disabled?: boolean;
   icon?: IoniconsName;
-  variant?: "solid" | "ghost";
+  variant?: "solid" | "ghost" | "soft";
 }
 
 export function PrimaryCTA({
@@ -26,6 +27,7 @@ export function PrimaryCTA({
   icon = "arrow-forward",
   variant = "solid",
 }: PrimaryCTAProps) {
+  const { theme } = useTheme();
   const scale = useSharedValue(1);
 
   const animatedStyle = useAnimatedStyle(() => ({
@@ -46,10 +48,57 @@ export function PrimaryCTA({
         onPress={disabled ? undefined : onPress}
         disabled={disabled}
         className="items-center justify-center py-3"
-        style={({ pressed }) => ({ opacity: pressed && !disabled ? 0.6 : 1 })}
+        style={({ pressed }) => ({
+          opacity: pressed && !disabled ? 0.6 : 1,
+        })}
       >
-        <Text className="text-muted font-sans-medium text-sm">{title}</Text>
+        <Text
+          className="font-sans-medium text-sm"
+          style={{ color: theme.colors["--color-muted"] }}
+        >
+          {title}
+        </Text>
       </Pressable>
+    );
+  }
+
+  if (variant === "soft") {
+    return (
+      <AnimatedPressable
+        onPress={disabled ? undefined : onPress}
+        onPressIn={handlePressIn}
+        onPressOut={handlePressOut}
+        disabled={disabled}
+        style={[
+          animatedStyle,
+          {
+            flexDirection: "row",
+            alignItems: "center",
+            justifyContent: "center",
+            height: 54,
+            paddingHorizontal: 22,
+            borderRadius: 18,
+            backgroundColor: theme.colors["--color-primary-soft"],
+            opacity: disabled ? 0.5 : 1,
+          },
+        ]}
+      >
+        <Text
+          className="font-sans-semibold"
+          style={{
+            color: theme.colors["--color-primary"],
+            fontSize: 16,
+            marginRight: 8,
+          }}
+        >
+          {title}
+        </Text>
+        <Ionicons
+          name={icon}
+          size={18}
+          color={theme.colors["--color-primary"]}
+        />
+      </AnimatedPressable>
     );
   }
 
@@ -59,15 +108,34 @@ export function PrimaryCTA({
       onPressIn={handlePressIn}
       onPressOut={handlePressOut}
       disabled={disabled}
-      style={animatedStyle}
-      className={`flex-row items-center justify-center bg-primary rounded-full py-4 px-6 ${
-        disabled ? "opacity-40" : ""
-      }`}
+      style={[
+        animatedStyle,
+        {
+          flexDirection: "row",
+          alignItems: "center",
+          justifyContent: "center",
+          height: 54,
+          paddingHorizontal: 22,
+          borderRadius: 18,
+          backgroundColor: theme.colors["--color-primary"],
+          opacity: disabled ? 0.5 : 1,
+          shadowColor: theme.colors["--color-primary"],
+          shadowOffset: { width: 0, height: 6 },
+          shadowOpacity: disabled ? 0 : 0.4,
+          shadowRadius: 20,
+          elevation: disabled ? 0 : 6,
+        },
+      ]}
     >
-      <Text className="text-white font-sans-semibold text-base mr-2">
+      <Text
+        className="font-sans-semibold text-white"
+        style={{ fontSize: 16, marginRight: 8 }}
+      >
         {title}
       </Text>
-      <Ionicons name={icon} size={18} color="#ffffff" />
+      <View>
+        <Ionicons name={icon} size={18} color="#ffffff" />
+      </View>
     </AnimatedPressable>
   );
 }

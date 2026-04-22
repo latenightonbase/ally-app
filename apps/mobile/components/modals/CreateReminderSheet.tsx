@@ -1,8 +1,8 @@
 import React, { useEffect, useState } from "react";
-import { View, Text, TextInput, Pressable, Alert } from "react-native";
+import { View, Text, Pressable, Alert } from "react-native";
 import { useTheme } from "../../context/ThemeContext";
 import { createReminder } from "../../lib/api";
-import { SheetContainer } from "./SheetContainer";
+import { SheetContainer, SheetTextInput } from "./SheetContainer";
 import { WhenPicker } from "./WhenPicker";
 import { FamilyMemberPicker } from "./FamilyMemberPicker";
 
@@ -63,71 +63,92 @@ export function CreateReminderSheet({
     }
   };
 
+  const inputStyle = {
+    backgroundColor: theme.colors["--color-surface"],
+    borderWidth: 1.5,
+    borderColor: theme.colors["--color-border"],
+    borderRadius: 14,
+    paddingHorizontal: 16,
+    paddingVertical: 13,
+    color: theme.colors["--color-foreground"],
+    fontSize: 14,
+    fontFamily: "Nunito_600SemiBold",
+  } as const;
+
+  const mutedLabel = {
+    color: theme.colors["--color-muted"],
+    letterSpacing: 1.2,
+    textTransform: "uppercase" as const,
+  };
+
   return (
     <SheetContainer
       visible={visible}
-      title="New reminder"
+      title="New Reminder"
       onClose={onClose}
       footer={
         <Pressable
           onPress={handleSubmit}
           disabled={!canSubmit}
-          className="rounded-xl py-3.5 items-center active:opacity-80"
+          className="rounded-2xl items-center active:opacity-80"
           style={{
+            paddingVertical: 15,
             backgroundColor: canSubmit
               ? theme.colors["--color-primary"]
-              : theme.colors["--color-muted"] + "40",
+              : theme.colors["--color-border"],
+            shadowColor: theme.colors["--color-primary"],
+            shadowOffset: { width: 0, height: 6 },
+            shadowOpacity: canSubmit ? 0.3 : 0,
+            shadowRadius: 18,
+            elevation: canSubmit ? 4 : 0,
           }}
         >
           <Text className="text-white text-base font-sans-bold">
-            {submitting ? "Saving…" : "Create reminder"}
+            {submitting ? "Saving…" : "Create Reminder"}
           </Text>
         </Pressable>
       }
     >
-      <View className="mb-4">
-        <Text className="text-foreground text-xs font-sans-semibold mb-2">
+      <View className="mb-5">
+        <Text className="text-xs font-sans-bold mb-2" style={mutedLabel}>
           What should I remind about?
         </Text>
-        <TextInput
+        <SheetTextInput
           value={title}
           onChangeText={setTitle}
           placeholder="e.g. Pick up cheese on the way home"
           placeholderTextColor={theme.colors["--color-muted"]}
-          className="bg-surface border border-primary-soft rounded-xl px-4 py-3 text-foreground text-sm font-sans"
-          style={{ color: theme.colors["--color-foreground"] }}
-          autoFocus
+          style={inputStyle}
         />
       </View>
 
-      <View className="mb-4">
-        <Text className="text-foreground text-xs font-sans-semibold mb-2">
+      <View className="mb-5">
+        <Text className="text-xs font-sans-bold mb-2" style={mutedLabel}>
           Notes (optional)
         </Text>
-        <TextInput
+        <SheetTextInput
           value={body}
           onChangeText={setBody}
           placeholder="Add extra context…"
           placeholderTextColor={theme.colors["--color-muted"]}
           multiline
-          className="bg-surface border border-primary-soft rounded-xl px-4 py-3 text-foreground text-sm font-sans"
           style={{
-            color: theme.colors["--color-foreground"],
+            ...inputStyle,
             minHeight: 60,
             textAlignVertical: "top",
           }}
         />
       </View>
 
-      <View className="mb-4">
-        <Text className="text-foreground text-xs font-sans-semibold mb-2">
+      <View className="mb-5">
+        <Text className="text-xs font-sans-bold mb-2" style={mutedLabel}>
           When?
         </Text>
         <WhenPicker value={remindAt} onChange={setRemindAt} />
       </View>
 
-      <View className="mb-2">
-        <Text className="text-foreground text-xs font-sans-semibold mb-2">
+      <View className="mb-3">
+        <Text className="text-xs font-sans-bold mb-2" style={mutedLabel}>
           Mention family members (optional)
         </Text>
         <FamilyMemberPicker

@@ -6,7 +6,6 @@ import {
   Platform,
   Alert,
   ActivityIndicator,
-  Pressable,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { MotiView } from "moti";
@@ -14,9 +13,8 @@ import { Easing } from "react-native-reanimated";
 import { router } from "expo-router";
 import * as AppleAuthentication from "expo-apple-authentication";
 import * as Haptics from "expo-haptics";
-import { Ionicons } from "@expo/vector-icons";
 import { TextInput } from "../../components/ui/TextInput";
-import { Button } from "../../components/ui/Button";
+import { PrimaryCTA } from "../../components/onboarding/PrimaryCTA";
 import { useTheme } from "../../context/ThemeContext";
 import { authClient } from "../../lib/auth";
 import { useAppStore, clearPersistedStorage } from "../../store/useAppStore";
@@ -155,8 +153,8 @@ export default function SignInScreen() {
               {/* Sign in with Apple */}
               <AppleAuthentication.AppleAuthenticationButton
                 buttonType={AppleAuthentication.AppleAuthenticationButtonType.SIGN_IN}
-                buttonStyle={AppleAuthentication.AppleAuthenticationButtonStyle.WHITE}
-                cornerRadius={16}
+                buttonStyle={AppleAuthentication.AppleAuthenticationButtonStyle.BLACK}
+                cornerRadius={18}
                 style={{ width: "100%", height: 54 }}
                 onPress={handleAppleSignIn}
               />
@@ -193,11 +191,10 @@ export default function SignInScreen() {
               />
 
               <View className="mt-4">
-                <Button
+                <PrimaryCTA
                   title={loading ? "Signing in..." : "Sign In"}
                   onPress={handleSignIn}
                   disabled={loading}
-                  size="lg"
                 />
               </View>
 
@@ -225,23 +222,11 @@ export default function SignInScreen() {
                 <View className="flex-1 h-px bg-muted/20" />
               </View>
 
-              <Pressable
+              <PrimaryCTA
+                title="Get Started"
                 onPress={handleGetStarted}
-                className="flex-row items-center justify-center gap-2 rounded-2xl py-4 px-5 bg-primary-soft active:opacity-80"
-                style={{
-                  borderWidth: 1,
-                  borderColor: theme.colors["--color-primary"] + "40",
-                }}
-              >
-                <Text className="text-primary text-base font-sans-semibold">
-                  Get Started
-                </Text>
-                <Ionicons
-                  name="arrow-forward"
-                  size={18}
-                  color={theme.colors["--color-primary"]}
-                />
-              </Pressable>
+                variant="soft"
+              />
 
               <Text className="text-muted text-xs font-sans text-center leading-5 mt-3">
                 1-minute setup. No credit card.

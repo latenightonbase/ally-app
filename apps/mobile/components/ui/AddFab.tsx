@@ -1,11 +1,5 @@
-import React, { useState, useRef, useEffect } from "react";
-import {
-  View,
-  Text,
-  Pressable,
-  Animated,
-  Modal,
-} from "react-native";
+import React, { useEffect, useRef, useState } from "react";
+import { View, Text, Pressable, Animated, Modal } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { useTheme } from "../../context/ThemeContext";
@@ -19,11 +13,10 @@ export interface AddFabAction {
 
 interface AddFabProps {
   actions: AddFabAction[];
-  /** Bottom offset in px (on top of safe area); defaults to 100 to clear the tab bar. */
   bottomOffset?: number;
 }
 
-export function AddFab({ actions, bottomOffset = 100 }: AddFabProps) {
+export function AddFab({ actions, bottomOffset = 110 }: AddFabProps) {
   const { theme } = useTheme();
   const [open, setOpen] = useState(false);
   const anim = useRef(new Animated.Value(0)).current;
@@ -43,6 +36,20 @@ export function AddFab({ actions, bottomOffset = 100 }: AddFabProps) {
 
   const close = () => setOpen(false);
 
+  const fabStyle = {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    backgroundColor: theme.colors["--color-primary"],
+    alignItems: "center" as const,
+    justifyContent: "center" as const,
+    shadowColor: theme.colors["--color-primary"],
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.1,
+    shadowRadius: 16,
+    elevation: 8,
+  };
+
   if (actions.length === 1) {
     return (
       <View
@@ -56,17 +63,10 @@ export function AddFab({ actions, bottomOffset = 100 }: AddFabProps) {
             Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
             actions[0].onPress();
           }}
-          className="w-14 h-14 rounded-full items-center justify-center active:opacity-80"
-          style={{
-            backgroundColor: theme.colors["--color-primary"],
-            shadowColor: "#000",
-            shadowOffset: { width: 0, height: 4 },
-            shadowOpacity: 0.2,
-            shadowRadius: 8,
-            elevation: 6,
-          }}
+          style={fabStyle}
+          className="active:opacity-80"
         >
-          <Ionicons name="add" size={28} color="#fff" />
+          <Ionicons name="add" size={26} color="#fff" />
         </Pressable>
       </View>
     );
@@ -87,18 +87,11 @@ export function AddFab({ actions, bottomOffset = 100 }: AddFabProps) {
           accessibilityRole="button"
           accessibilityLabel={open ? "Close actions" : "Add new"}
           onPress={toggle}
-          className="w-14 h-14 rounded-full items-center justify-center active:opacity-80"
-          style={{
-            backgroundColor: theme.colors["--color-primary"],
-            shadowColor: "#000",
-            shadowOffset: { width: 0, height: 4 },
-            shadowOpacity: 0.2,
-            shadowRadius: 8,
-            elevation: 6,
-          }}
+          style={fabStyle}
+          className="active:opacity-80"
         >
           <Animated.View style={{ transform: [{ rotate }] }}>
-            <Ionicons name="add" size={28} color="#fff" />
+            <Ionicons name="add" size={26} color="#fff" />
           </Animated.View>
         </Pressable>
       </View>
@@ -109,10 +102,7 @@ export function AddFab({ actions, bottomOffset = 100 }: AddFabProps) {
         animationType="fade"
         onRequestClose={close}
       >
-        <Pressable
-          className="flex-1 bg-foreground/20"
-          onPress={close}
-        >
+        <Pressable className="flex-1 bg-foreground/20" onPress={close}>
           <View
             pointerEvents="box-none"
             style={{
@@ -121,7 +111,7 @@ export function AddFab({ actions, bottomOffset = 100 }: AddFabProps) {
               bottom: bottomOffset + 72,
             }}
           >
-            {actions.map((action, idx) => (
+            {actions.map((action) => (
               <Pressable
                 key={action.id}
                 onPress={() => {
@@ -132,27 +122,38 @@ export function AddFab({ actions, bottomOffset = 100 }: AddFabProps) {
                 className="flex-row items-center justify-end mb-3 active:opacity-80"
               >
                 <View
-                  className="mr-3 px-3 py-1.5 rounded-full"
+                  className="mr-3 px-3.5 py-2 rounded-full"
                   style={{
                     backgroundColor: theme.colors["--color-surface"],
+                    borderWidth: 1,
+                    borderColor: theme.colors["--color-border"],
+                    shadowColor: "#2D1F16",
+                    shadowOffset: { width: 0, height: 4 },
+                    shadowOpacity: 0.12,
+                    shadowRadius: 10,
+                    elevation: 3,
                   }}
                 >
                   <Text
-                    className="text-foreground text-xs font-sans-semibold"
+                    className="text-xs font-sans-bold"
                     style={{ color: theme.colors["--color-foreground"] }}
                   >
                     {action.label}
                   </Text>
                 </View>
                 <View
-                  className="w-12 h-12 rounded-full items-center justify-center"
                   style={{
+                    width: 46,
+                    height: 46,
+                    borderRadius: 23,
                     backgroundColor: theme.colors["--color-primary"],
-                    shadowColor: "#000",
-                    shadowOffset: { width: 0, height: 3 },
-                    shadowOpacity: 0.2,
-                    shadowRadius: 6,
-                    elevation: 5,
+                    alignItems: "center",
+                    justifyContent: "center",
+                    shadowColor: theme.colors["--color-primary"],
+                    shadowOffset: { width: 0, height: 4 },
+                    shadowOpacity: 0.3,
+                    shadowRadius: 12,
+                    elevation: 6,
                   }}
                 >
                   <Ionicons name={action.icon} size={20} color="#fff" />

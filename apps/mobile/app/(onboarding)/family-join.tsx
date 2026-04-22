@@ -82,13 +82,22 @@ export default function FamilyJoinScreen() {
       </View>
 
       <View
-        className="bg-surface rounded-2xl p-5"
         style={{
+          backgroundColor: theme.colors["--color-surface"],
+          borderRadius: 20,
+          padding: 20,
           borderWidth: 1,
-          borderColor: theme.colors["--color-muted"] + "22",
+          borderColor: theme.colors["--color-border"],
         }}
       >
-        <Text className="text-muted text-sm font-sans-medium mb-3">
+        <Text
+          className="text-xs font-sans-bold mb-3"
+          style={{
+            color: theme.colors["--color-muted"],
+            letterSpacing: 1.2,
+            textTransform: "uppercase",
+          }}
+        >
           Invite code
         </Text>
         <TextInput
@@ -97,24 +106,31 @@ export default function FamilyJoinScreen() {
             setCode(t.toUpperCase().replace(/\s/g, ""));
             setError(null);
           }}
-          placeholder="e.g. A3KX7Q"
-          placeholderTextColor={theme.colors["--color-muted"]}
+          placeholder="A3KX7Q"
+          placeholderTextColor={theme.colors["--color-faint"]}
           autoCapitalize="characters"
           autoCorrect={false}
           maxLength={6}
           autoFocus
-          className="bg-background rounded-xl px-4 py-4 text-foreground text-xl font-sans-bold text-center"
+          className="font-sans-bold text-center"
           style={{
-            letterSpacing: 8,
+            letterSpacing: 10,
+            fontSize: 26,
             color: theme.colors["--color-foreground"],
-            borderWidth: 1,
-            borderColor: theme.colors["--color-primary"] + "33",
+            backgroundColor: theme.colors["--color-background"],
+            borderWidth: 2,
+            borderColor: error
+              ? theme.colors["--color-danger"]
+              : theme.colors["--color-primary-soft"],
+            borderRadius: 14,
+            paddingHorizontal: 16,
+            paddingVertical: 16,
           }}
         />
         {error && (
           <Text
             className="text-sm font-sans mt-3"
-            style={{ color: theme.colors["--color-error"] ?? "#DC2626" }}
+            style={{ color: theme.colors["--color-danger"] }}
           >
             {error}
           </Text>

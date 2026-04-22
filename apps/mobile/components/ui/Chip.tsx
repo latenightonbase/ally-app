@@ -5,6 +5,7 @@ import Animated, {
   useSharedValue,
   withSpring,
 } from "react-native-reanimated";
+import { useTheme } from "../../context/ThemeContext";
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
@@ -15,6 +16,7 @@ interface ChipProps {
 }
 
 export function Chip({ label, selected, onPress }: ChipProps) {
+  const { theme } = useTheme();
   const scale = useSharedValue(1);
 
   const animatedStyle = useAnimatedStyle(() => ({
@@ -22,7 +24,7 @@ export function Chip({ label, selected, onPress }: ChipProps) {
   }));
 
   const handlePress = () => {
-    scale.value = withSpring(0.98, { damping: 20, stiffness: 400 });
+    scale.value = withSpring(0.97, { damping: 20, stiffness: 400 });
     setTimeout(() => {
       scale.value = withSpring(1, { damping: 20, stiffness: 400 });
     }, 100);
@@ -32,17 +34,36 @@ export function Chip({ label, selected, onPress }: ChipProps) {
   return (
     <AnimatedPressable
       onPress={handlePress}
-      style={animatedStyle}
-      className={`px-4 py-2.5 rounded-full mr-2 mb-2 ${
-        selected
-          ? "bg-primary"
-          : "bg-surface border border-primary-soft"
-      }`}
+      style={[
+        animatedStyle,
+        {
+          paddingHorizontal: 16,
+          paddingVertical: 10,
+          borderRadius: 999,
+          marginRight: 8,
+          marginBottom: 8,
+          backgroundColor: selected
+            ? theme.colors["--color-primary-soft"]
+            : theme.colors["--color-surface"],
+          borderWidth: 1.5,
+          borderColor: selected
+            ? theme.colors["--color-primary"]
+            : theme.colors["--color-border"],
+          shadowColor: selected ? theme.colors["--color-primary"] : "transparent",
+          shadowOffset: { width: 0, height: 4 },
+          shadowOpacity: selected ? 0.18 : 0,
+          shadowRadius: 12,
+          elevation: selected ? 2 : 0,
+        },
+      ]}
     >
       <Text
-        className={`text-sm font-sans-medium ${
-          selected ? "text-white" : "text-foreground"
-        }`}
+        className="text-sm font-sans-bold"
+        style={{
+          color: selected
+            ? theme.colors["--color-primary"]
+            : theme.colors["--color-foreground"],
+        }}
       >
         {label}
       </Text>

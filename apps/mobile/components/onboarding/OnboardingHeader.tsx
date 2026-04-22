@@ -1,5 +1,5 @@
 import React from "react";
-import { View, Text, Pressable } from "react-native";
+import { View, Pressable } from "react-native";
 import { MotiView } from "moti";
 import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
@@ -20,7 +20,6 @@ export function OnboardingHeader({
   onBack,
 }: OnboardingHeaderProps) {
   const { theme } = useTheme();
-  const progress = Math.max(0, Math.min(1, step / totalSteps));
   const showBack = canGoBack && step > 1;
 
   const handleBack = () => {
@@ -33,8 +32,8 @@ export function OnboardingHeader({
   };
 
   return (
-    <View className="px-6 pt-2 pb-4">
-      <View className="flex-row items-center justify-between h-10 mb-3">
+    <View className="px-6 pt-3 pb-5">
+      <View className="flex-row items-center h-10 mb-4">
         <MotiView
           animate={{
             opacity: showBack ? 1 : 0,
@@ -46,7 +45,16 @@ export function OnboardingHeader({
           <Pressable
             onPress={handleBack}
             hitSlop={12}
-            className="w-10 h-10 rounded-full items-center justify-center bg-surface/80"
+            style={{
+              width: 40,
+              height: 40,
+              borderRadius: 20,
+              alignItems: "center",
+              justifyContent: "center",
+              backgroundColor: theme.colors["--color-surface"],
+              borderWidth: 1,
+              borderColor: theme.colors["--color-border"],
+            }}
           >
             <Ionicons
               name="chevron-back"
@@ -55,27 +63,28 @@ export function OnboardingHeader({
             />
           </Pressable>
         </MotiView>
-
-        <MotiView
-          key={`counter-${step}`}
-          from={{ opacity: 0, translateY: -4 }}
-          animate={{ opacity: 1, translateY: 0 }}
-          transition={{ type: "timing", duration: 300 }}
-        >
-          <Text className="text-muted text-xs font-sans-semibold tracking-widest uppercase">
-            {step} / {totalSteps}
-          </Text>
-        </MotiView>
-
-        <View className="w-10" />
       </View>
 
-      <View className="h-1 rounded-full bg-surface overflow-hidden">
-        <MotiView
-          animate={{ width: `${Math.max(5, progress * 100)}%` }}
-          transition={{ type: "timing", duration: 600 }}
-          className="h-full rounded-full bg-primary"
-        />
+      <View className="flex-row items-center" style={{ gap: 6 }}>
+        {Array.from({ length: totalSteps }).map((_, i) => {
+          const active = i < step;
+          return (
+            <MotiView
+              key={i}
+              animate={{
+                backgroundColor: active
+                  ? theme.colors["--color-primary"]
+                  : theme.colors["--color-primary-soft"],
+              }}
+              transition={{ type: "timing", duration: 300 }}
+              style={{
+                flex: 1,
+                height: 4,
+                borderRadius: 2,
+              }}
+            />
+          );
+        })}
       </View>
     </View>
   );
