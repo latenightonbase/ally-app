@@ -264,13 +264,16 @@ export async function runDailyPing() {
         columns: { familyId: true },
       });
 
+      let familyEvents: typeof schema.calendarEvents.$inferSelect[] = [];
+      let familyTasks: typeof schema.tasks.$inferSelect[] = [];
+
       if (dbUser?.familyId) {
         const dayStart = new Date(now);
         dayStart.setHours(0, 0, 0, 0);
         const dayEnd = new Date(now);
         dayEnd.setHours(23, 59, 59, 999);
 
-        const [familyEvents, familyMembers, familyTasks] = await Promise.all([
+        const [fetchedEvents, familyMembers, fetchedTasks] = await Promise.all([
           db
             .select()
             .from(schema.calendarEvents)
@@ -298,6 +301,9 @@ export async function runDailyPing() {
             )
             .limit(5),
         ]);
+
+        familyEvents = fetchedEvents;
+        familyTasks = fetchedTasks;
 
         const memberMap = new Map(familyMembers.map((m) => [m.id, m.name]));
 
@@ -395,6 +401,28 @@ export async function runDailyPing() {
             .map((g) => `- ${g.description} (${g.category}, updated ${formatRelativeDate(g.updatedAt, now)})`)
             .join("\n")}`,
         );
+      }
+
+      // Require at least one concrete actionable item (event, task, reminder, or
+      // follow-up) before sending a ping. Without this guard Claude produces
+      // empty filler like "I'd love to know what you have planned today!"
+      const hasActionableContext =
+        pendingFollowups.length > 0 ||
+        upcomingEvents.length > 0 ||
+        todayReminders.length > 0 ||
+        familyEvents.length > 0 ||
+        familyTasks.length > 0;
+
+      if (!hasActionableContext) {
+        console.log(`[daily_ping] Skipped ${userRow.id} — no actionable context to share`);
+        await db.insert(schema.jobRuns).values({
+          jobName: "daily_ping",
+          userId: userRow.id,
+          status: "skipped",
+          completedAt: new Date(),
+          metadata: { reason: "no_actionable_context" },
+        });
+        continue;
       }
 
       const contextBlock =
