@@ -44,6 +44,7 @@ function buildMessages(input: ConversationInput): Anthropic.MessageParam[] {
     input.relevantFacts,
     input.sessionSummaries,
     input.sessionCount ?? 0,
+    input.toolContext?.timezone,
   );
   const systemTokens = estimateTokens(systemText);
   const outputBudget = 400; // reserved for response
@@ -104,6 +105,7 @@ function enforceTokenBudget(input: ConversationInput): ConversationInput {
     input.relevantFacts,
     input.sessionSummaries,
     input.sessionCount ?? 0,
+    input.toolContext?.timezone,
   );
 
   const historyText = input.conversationHistory
@@ -196,6 +198,7 @@ function enforceTokenBudget(input: ConversationInput): ConversationInput {
     [],
     undefined,
     input.sessionCount ?? 0,
+    input.toolContext?.timezone,
   );
   totalTokens =
     estimateTokensLocal(reducedSystemText) +
@@ -281,6 +284,7 @@ function buildCachedSystemPrompt(input: ConversationInput): Anthropic.Messages.T
     input.relevantFacts,
     input.sessionSummaries,
     input.sessionCount ?? 0,
+    input.toolContext?.timezone,
   );
   return [
     {

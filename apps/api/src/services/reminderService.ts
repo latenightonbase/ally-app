@@ -335,6 +335,80 @@ export async function getPendingReminders(userId: string, limit = 10) {
     .limit(limit);
 }
 
+const WEEKDAY_NAMES = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
+
+/**
+ * Convert local {year, month, day, hour, minute} in an IANA timezone to a UTC Date.
+ * Uses the "fake UTC + correction" trick with Intl.DateTimeFormat.
+ */
+function localToUtc(
+  year: number,
+  month: number,
+  day: number,
+  hour: number,
+  minute: number,
+  tz: string,
+): Date {
+  const fakeUtc = new Date(Date.UTC(year, month - 1, day, hour, minute, 0));
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: tz,
+    hour: "numeric",
+    minute: "numeric",
+    day: "numeric",
+    hour12: false,
+  }).formatToParts(fakeUtc);
+  const get = (type: string) =>
+    parseInt(parts.find((p) => p.type === type)?.value ?? "0");
+  const tzHour = get("hour") % 24;
+  const tzMinute = get("minute");
+  const errorMs = ((tzHour - hour) * 60 + (tzMinute - minute)) * 60_000;
+  return new Date(fakeUtc.getTime() - errorMs);
+}
+
+/**
+ * Get current date components (year, month 1-12, day, weekday 0=Sun) in an IANA timezone.
+ */
+function nowInTimezone(tz: string): { year: number; month: number; day: number; weekday: number } {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: tz,
+    year: "numeric",
+    month: "numeric",
+    day: "numeric",
+    weekday: "short",
+  }).formatToParts(new Date());
+  const get = (type: string) => parts.find((p) => p.type === type)?.value ?? "";
+  const weekdayStr = get("weekday").toLowerCase();
+  const weekdayMap: Record<string, number> = { sun: 0, mon: 1, tue: 2, wed: 3, thu: 4, fri: 5, sat: 6 };
+  return {
+    year: parseInt(get("year")),
+    month: parseInt(get("month")),
+    day: parseInt(get("day")),
+    weekday: weekdayMap[weekdayStr] ?? 0,
+  };
+}
+
+/**
+ * Extract hour and minute from a time expression like "9am", "3:30pm", "14:00".
+ * Returns null if no time pattern is found.
+ */
+function extractTime(lower: string): { hour: number; minute: number } | null {
+  const match = lower.match(/(\d{1,2})(?::(\d{2}))?\s*(am|pm)/i);
+  if (match) {
+    let hour = parseInt(match[1]);
+    const minute = match[2] ? parseInt(match[2]) : 0;
+    const meridiem = match[3].toLowerCase();
+    if (meridiem === "pm" && hour !== 12) hour += 12;
+    if (meridiem === "am" && hour === 12) hour = 0;
+    return { hour, minute };
+  }
+  // 24h format without am/pm: e.g. "at 14:00"
+  const match24 = lower.match(/\bat\s+(\d{1,2}):(\d{2})\b/);
+  if (match24) {
+    return { hour: parseInt(match24[1]), minute: parseInt(match24[2]) };
+  }
+  return null;
+}
+
 /**
  * Try to parse a natural-language date/time reference into an absolute Date.
  * Falls back to a 24-hour-from-now default if parsing fails.
@@ -344,47 +418,77 @@ export function parseReminderTime(
   timezone?: string,
 ): Date {
   const now = new Date();
+  const tz = timezone ?? Intl.DateTimeFormat().resolvedOptions().timeZone;
   const lower = timeRef.toLowerCase().trim();
 
-  // Relative time patterns
+  // ── Relative offsets (timezone-agnostic) ──
   const inMinutes = lower.match(/in\s+(\d+)\s+min(ute)?s?/);
-  if (inMinutes) {
-    return new Date(now.getTime() + parseInt(inMinutes[1]) * 60_000);
-  }
+  if (inMinutes) return new Date(now.getTime() + parseInt(inMinutes[1]) * 60_000);
 
   const inHours = lower.match(/in\s+(\d+)\s+hours?/);
-  if (inHours) {
-    return new Date(now.getTime() + parseInt(inHours[1]) * 3600_000);
-  }
+  if (inHours) return new Date(now.getTime() + parseInt(inHours[1]) * 3600_000);
 
   const inDays = lower.match(/in\s+(\d+)\s+days?/);
-  if (inDays) {
-    return new Date(now.getTime() + parseInt(inDays[1]) * 86400_000);
+  if (inDays) return new Date(now.getTime() + parseInt(inDays[1]) * 86400_000);
+
+  const inWeeks = lower.match(/in\s+(\d+)\s+weeks?/);
+  if (inWeeks) return new Date(now.getTime() + parseInt(inWeeks[1]) * 7 * 86400_000);
+
+  const { year, month, day, weekday } = nowInTimezone(tz);
+  const timeOfDay = extractTime(lower);
+  const defaultHour = timeOfDay?.hour ?? 9;
+  const defaultMinute = timeOfDay?.minute ?? 0;
+
+  // ── "tonight" ──
+  if (lower.includes("tonight")) {
+    const t = extractTime(lower);
+    return localToUtc(year, month, day, t?.hour ?? 20, t?.minute ?? 0, tz);
   }
 
-  // "tomorrow" patterns
+  // ── "today" ──
+  if (lower.startsWith("today") || lower === "today") {
+    return localToUtc(year, month, day, defaultHour, defaultMinute, tz);
+  }
+
+  // ── "tomorrow" ──
   if (lower.includes("tomorrow")) {
-    const tomorrow = new Date(now);
-    tomorrow.setDate(tomorrow.getDate() + 1);
-
-    const timeMatch = lower.match(/(\d{1,2})\s*(am|pm)/i);
-    if (timeMatch) {
-      let hours = parseInt(timeMatch[1]);
-      if (timeMatch[2].toLowerCase() === "pm" && hours !== 12) hours += 12;
-      if (timeMatch[2].toLowerCase() === "am" && hours === 12) hours = 0;
-      tomorrow.setHours(hours, 0, 0, 0);
-    } else {
-      tomorrow.setHours(9, 0, 0, 0);
-    }
-    return tomorrow;
+    const t = extractTime(lower);
+    const h = t?.hour ?? 9;
+    const m = t?.minute ?? 0;
+    // Increment day in local calendar
+    const tomorrowLocal = new Date(Date.UTC(year, month - 1, day + 1));
+    const tp = new Intl.DateTimeFormat("en-US", {
+      timeZone: tz,
+      year: "numeric", month: "numeric", day: "numeric",
+    }).formatToParts(tomorrowLocal);
+    const tg = (type: string) => parseInt(tp.find((p) => p.type === type)?.value ?? "0");
+    return localToUtc(tg("year"), tg("month"), tg("day"), h, m, tz);
   }
 
-  // "next week" pattern
-  if (lower.includes("next week")) {
+  // ── "next week" (generic, no weekday) ──
+  if (lower === "next week" || lower.match(/^next week$/)) {
     return new Date(now.getTime() + 7 * 86400_000);
   }
 
-  // Try ISO date parsing
+  // ── "[this|next] weekday" e.g. "this friday", "next monday", "wednesday" ──
+  for (let i = 0; i < WEEKDAY_NAMES.length; i++) {
+    const dayName = WEEKDAY_NAMES[i];
+    if (!lower.includes(dayName)) continue;
+
+    const isNext = lower.includes("next " + dayName);
+    let daysAhead = i - weekday;
+    if (daysAhead <= 0 || isNext) daysAhead += 7;
+
+    const targetUtc = new Date(Date.UTC(year, month - 1, day + daysAhead));
+    const tp = new Intl.DateTimeFormat("en-US", {
+      timeZone: tz,
+      year: "numeric", month: "numeric", day: "numeric",
+    }).formatToParts(targetUtc);
+    const tg = (type: string) => parseInt(tp.find((p) => p.type === type)?.value ?? "0");
+    return localToUtc(tg("year"), tg("month"), tg("day"), defaultHour, defaultMinute, tz);
+  }
+
+  // ── ISO datetime string (already UTC or with offset) ──
   const isoDate = new Date(timeRef);
   if (!isNaN(isoDate.getTime()) && isoDate > now) {
     return isoDate;

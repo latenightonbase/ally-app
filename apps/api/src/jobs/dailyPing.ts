@@ -414,14 +414,51 @@ export async function runDailyPing() {
         familyTasks.length > 0;
 
       if (!hasActionableContext) {
-        console.log(`[daily_ping] Skipped ${userRow.id} — no actionable context to share`);
+        const goodMorningText = `Good morning, ${displayName}! 🌅`;
+
+        let gmConversationId: string;
+        const gmRecentConv = await db.query.conversations.findFirst({
+          where: sql`${schema.conversations.userId} = ${userRow.id}`,
+          orderBy: sql`${schema.conversations.lastMessageAt} DESC`,
+          columns: { id: true },
+        });
+
+        if (gmRecentConv) {
+          gmConversationId = gmRecentConv.id;
+        } else {
+          const [newConv] = await db
+            .insert(schema.conversations)
+            .values({ userId: userRow.id, preview: goodMorningText })
+            .returning({ id: schema.conversations.id });
+          gmConversationId = newConv.id;
+        }
+
+        await db.insert(schema.messages).values({
+          conversationId: gmConversationId,
+          role: "ally",
+          content: goodMorningText,
+        });
+
+        if (userRow.expoPushToken) {
+          await sendPushNotification(
+            userRow.expoPushToken,
+            allyName,
+            goodMorningText,
+            { type: "daily_ping" },
+          ).catch((err) => {
+            console.warn(`[daily_ping] Push notification failed for ${userRow.id}:`, err);
+          });
+        }
+
         await db.insert(schema.jobRuns).values({
           jobName: "daily_ping",
           userId: userRow.id,
-          status: "skipped",
+          status: "completed",
           completedAt: new Date(),
-          metadata: { reason: "no_actionable_context" },
+          metadata: { message: goodMorningText, conversationId: gmConversationId },
         });
+
+        console.log(`[daily_ping] Sent good morning to ${userRow.id} — no scheduled context`);
         continue;
       }
 
@@ -450,7 +487,7 @@ You are ${allyName}, a family AI assistant for ${displayName}. Write a brief, wa
 FORMAT:
 - Lead with the most important thing happening today (event, task, or reminder).
 - Mention 1-2 other things worth knowing (schedule, tasks due, grocery needs).
-- End with something encouraging or a quick question about what needs attention.
+- End with something encouraging or actionable. Do NOT ask open-ended questions like "What do you have planned?".
 - Keep it scannable — names, times, specifics. Not vague.
 - Use 1-2 emojis naturally. This should feel like a text from a friend, not a notification bot.
 

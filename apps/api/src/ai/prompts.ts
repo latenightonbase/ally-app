@@ -65,6 +65,7 @@ export function buildAnziSystemPrompt(
   })[],
   sessionSummaries?: string,
   sessionCount: number = 0,
+  timezone?: string,
 ): string {
   const now = new Date();
   let memoryBlock = "";
@@ -213,14 +214,22 @@ export function buildAnziSystemPrompt(
         ? `Pattern connections (${sessionCount} sessions): Connect dots across sessions. "Last time you forgot the snack schedule was right before a busy work week — want me to set a reminder for Tuesday?" Aim for one cross-session connection per conversation.`
         : `Active recall: Reference details from past conversations casually. "Didn't Jake have that science project? How'd it go?" The goal: they think "Anzi remembered."`;
 
+  const tzOptions = timezone ? { timeZone: timezone } : {};
   const today = new Date().toLocaleDateString("en-US", {
     weekday: "long",
     year: "numeric",
     month: "long",
     day: "numeric",
+    ...tzOptions,
   });
+  const currentTime = new Date().toLocaleTimeString("en-US", {
+    hour: "numeric",
+    minute: "2-digit",
+    ...tzOptions,
+  });
+  const tzLabel = timezone ?? "UTC";
 
-  return `Today is ${today}.
+  return `Today is ${today} at ${currentTime} (${tzLabel}).
 
 You are Anzi, an AI family assistant — the smart, proactive organizer that makes sure nothing falls through the cracks for the whole family, not just mom.
 
